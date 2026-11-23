@@ -53,6 +53,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -97,6 +98,8 @@ sealed interface DrawerEntry {
 fun AppDrawer(
     sections: List<List<DrawerEntry>>,
     horizontalMargin: Dp,
+    /** Drawer open fraction (0..1), read during drawing for the row cascade. */
+    progress: () -> Float,
     searchable: List<AppEntry>,
     labelFor: (AppEntry) -> String,
     isHidden: (AppEntry) -> Boolean,
@@ -185,6 +188,7 @@ fun AppDrawer(
                                 entries = pages.getOrNull(pageIndex).orEmpty(),
                                 cellHeight = cellHeight,
                                 horizontalMargin = horizontalMargin,
+                                progress = progress,
                                 labelFor = labelFor,
                                 isHidden = isHidden,
                                 onAppClick = onAppClick,
@@ -272,6 +276,7 @@ private fun DrawerPage(
     entries: List<DrawerEntry>,
     cellHeight: Dp,
     horizontalMargin: Dp,
+    progress: () -> Float,
     labelFor: (AppEntry) -> String,
     isHidden: (AppEntry) -> Boolean,
     onAppClick: (AppEntry) -> Unit,
@@ -279,8 +284,18 @@ private fun DrawerPage(
     onFolderClick: (DrawerFolder) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = horizontalMargin)) {
-        entries.chunked(DRAWER_COLUMNS).forEach { rowEntries ->
-            Row(Modifier.fillMaxWidth().height(cellHeight)) {
+        entries.chunked(DRAWER_COLUMNS).forEachIndexed { rowIndex, rowEntries ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(cellHeight)
+                    // Rows rise into place one after another as the drawer opens.
+                    .graphicsLayer {
+                        val rowProgress = ((progress() - rowIndex * 0.06f) / 0.64f).coerceIn(0f, 1f)
+                        translationY = (1f - rowProgress) * 56.dp.toPx()
+                        alpha = rowProgress
+                    }
+            ) {
                 rowEntries.forEach { entry ->
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         when (entry) {
@@ -296,6 +311,7 @@ private fun DrawerPage(
                                 name = entry.folder.name,
                                 icons = entry.members.map { it.icon },
                                 tileSize = DRAWER_ICON,
+                                color = if (entry.folder.color != 0) Color(entry.folder.color) else DefaultFolderColor,
                                 onClick = { onFolderClick(entry.folder) },
                             )
                         }

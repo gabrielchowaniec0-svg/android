@@ -56,8 +56,8 @@ sealed interface HomeItem {
 
 data class HomePage(val id: String, val items: List<HomeItem>)
 
-/** A folder in the all-apps drawer. */
-data class DrawerFolder(val id: String, val name: String, val appKeys: List<String>)
+/** A folder in the all-apps drawer. [color] is an ARGB tint for its tile (0 = default). */
+data class DrawerFolder(val id: String, val name: String, val appKeys: List<String>, val color: Int = 0)
 
 /**
  * [drawerOrder] is the custom app-drawer order: "app:<key>", "folder:<id>", or
@@ -449,6 +449,7 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                     put("id", f.id)
                     put("name", f.name)
                     put("keys", JSONArray(f.appKeys))
+                    put("color", f.color)
                 })
             }
         })
@@ -497,7 +498,12 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
             val foldersJson = root.optJSONArray("drawerFolders") ?: JSONArray()
             val folders = (0 until foldersJson.length()).map { i ->
                 val f = foldersJson.getJSONObject(i)
-                DrawerFolder(f.optString("id").ifEmpty { newId() }, f.optString("name", "Folder"), f.optJSONArray("keys").toStringList())
+                DrawerFolder(
+                    f.optString("id").ifEmpty { newId() },
+                    f.optString("name", "Folder"),
+                    f.optJSONArray("keys").toStringList(),
+                    f.optInt("color", 0),
+                )
             }
             val order = root.optJSONArray("drawerOrder").toStringList()
             if (pages.isEmpty()) emptyLayout() else HomeLayout(pages, folders, order)

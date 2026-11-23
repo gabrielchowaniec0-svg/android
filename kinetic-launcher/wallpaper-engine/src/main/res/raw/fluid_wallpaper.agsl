@@ -7,6 +7,7 @@ uniform float2 iResolution;   // surface size in pixels
 uniform float  iTime;         // seconds since the engine started
 uniform float2 iTouch;        // smoothed touch point in pixels (drifts to 0,0 when idle)
 uniform float  iFocus;        // 0 = normal, 1 = softened/dimmed behind the app drawer
+uniform float2 iTilt;         // phone tilt, -1..1, for depth parallax
 
 const float PI = 3.14159265;
 
@@ -62,7 +63,9 @@ half4 main(float2 fragCoord) {
         fbm(uv * 1.5 + iTime * 0.03),
         fbm(uv * 1.5 - iTime * 0.025 + 5.2)
     );
-    float2 p = uv + (warp - 0.5) * 0.35;
+    // parallax: each ribbon layer shifts by a different amount with tilt
+    float2 par = iTilt * 0.05;
+    float2 p = uv + (warp - 0.5) * 0.35 + par;
 
     // deep base gradient: near-black slate at the top, navy toward the bottom
     half3 topCol    = half3(0.015, 0.020, 0.035);
@@ -72,8 +75,8 @@ half4 main(float2 fragCoord) {
     // layered ribbons, each a cool slate/indigo ink
     float soft = 1.0 + iFocus * 1.6;              // wider, blurrier ribbons
     float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16 * soft);
-    float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11 * soft);
-    float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20 * soft);
+    float r2 = ribbon(p * 1.15 + par * 0.8, 1.7, 3.1, 0.28, 0.11 * soft);
+    float r3 = ribbon(p * 0.85 - par * 0.6, 4.0, 1.7, 0.45, 0.20 * soft);
 
     col += half3(0.12, 0.17, 0.33) * half(r1);
     col += half3(0.18, 0.26, 0.42) * half(r2);

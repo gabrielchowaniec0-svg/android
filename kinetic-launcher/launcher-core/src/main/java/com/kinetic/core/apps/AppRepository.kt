@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
 import android.graphics.Rect
+import android.graphics.drawable.BitmapDrawable
+import android.os.Process
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
@@ -53,6 +55,8 @@ class AppRepository(context: Context) {
     private val userManager = appContext.getSystemService(UserManager::class.java)
     private val densityDpi = appContext.resources.displayMetrics.densityDpi
     private val iconPx = (64 * appContext.resources.displayMetrics.density).roundToInt()
+    private val renderer = IconRenderer(iconPx)
+    private val me = Process.myUserHandle()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val iconCache = ConcurrentHashMap<String, ImageBitmap>()
@@ -143,7 +147,14 @@ class AppRepository(context: Context) {
         return out.sortedBy { it.label.lowercase() }
     }
 
-    /** Badged icon (adds the work-profile briefcase where relevant), rendered once and cached. */
-    private fun renderIcon(info: LauncherActivityInfo): ImageBitmap =
-        info.getBadgedIcon(densityDpi).toBitmap(iconPx, iconPx).asImageBitmap()
+    /**
+     * Every icon drawn into the same squircle at the same size (see [IconRenderer]),
+     * plus the work-profile briefcase where relevant. Rendered once and cached.
+     */
+    private fun renderIcon(info: LauncherActivityInfo): ImageBitmap {
+        val shaped = renderer.render(info.getIcon(densityDpi))
+        if (info.user == me) return shaped.asImageBitmap()
+        val badged = appContext.packageManager.getUserBadgedIcon(BitmapDrawable(appContext.resources, shaped), info.user)
+        return badged.toBitmap(iconPx, iconPx).asImageBitmap()
+    }
 }

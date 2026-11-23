@@ -147,6 +147,17 @@ Phone and computer must be on the **same network**. For Android 13+:
 - To start over: app list ▸ **⋮** ▸ **Reset to my phone's layout**.
 - In edit mode, tap a folder ▸ **Make large (2 × 2)** / **Make small**.
 
+**Look & motion**
+- Every app icon is drawn into the same One UI–style squircle at the same size,
+  including old square or logo‑only icons, so the grid looks even.
+- Icons, folders and widgets have a soft 3D look: shadow, top gloss and a
+  bevelled rim. Widgets get rounded corners.
+- Tilt the phone: the home screen leans slightly and the wallpaper's ribbon
+  layers shift at different depths (parallax). The sensor only runs while the
+  home screen is visible.
+- Icons squish when pressed, pages shrink/fade as you swipe, and app-list rows
+  rise into place one after another when it opens.
+
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the
   home screen, the icons glide in along the wallpaper's flow lines.

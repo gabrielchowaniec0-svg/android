@@ -23,7 +23,7 @@ import java.util.UUID
 object MyPhoneLayout {
 
     /** Bump when the layout below changes, so it's re-applied once. */
-    const val VERSION = 1
+    const val VERSION = 2
 
     data class AppRef(val label: String, val packages: List<String>)
 
@@ -37,6 +37,10 @@ object MyPhoneLayout {
         val name: String,
         val members: List<AppRef>,
         val rule: ((AppEntry) -> Boolean)? = null,
+        /** Where in [members] the rule-matched apps go (default: at the end). */
+        val rulePosition: Int = -1,
+        /** Tile tint (ARGB), sampled from the One UI screenshots. 0 = default dark. */
+        val color: Int = 0,
     ) : Slot
     private data object SPageBreak : Slot
 
@@ -66,11 +70,12 @@ object MyPhoneLayout {
         SFolder(
             "Microsoft",
             listOf(
-                app("Copilot", "com.microsoft.copilot"),
+                app("Microsoft 365 Copilot", "com.microsoft.office.officehubrow", "com.microsoft.copilot"),
                 app("OneDrive", "com.microsoft.skydrive"),
-                app("Outlook", "com.microsoft.office.outlook"),
+                app("Yahoo Mail", "com.yahoo.mobile.client.android.mail"),
             ),
             rule = pkgStarts("com.microsoft."),
+            rulePosition = 2, // other Microsoft apps go before Yahoo Mail
         ),
         SFolder(
             "Samsung",
@@ -96,7 +101,7 @@ object MyPhoneLayout {
         ),
         SFolder(
             "Xfinity",
-            emptyList(),
+            listOf(app("PG Mobile")),
             rule = { a -> a.label.contains("xfinity", ignoreCase = true) || a.packageName.contains("comcast") || a.packageName.contains("xfinity") },
         ),
         SApp(app("Calculator", "com.sec.android.app.popupcalculator")),
@@ -109,10 +114,10 @@ object MyPhoneLayout {
         SApp(app("Life360", "com.life360.android.safetymapd")),
         SApp(app("Browser", "com.sec.android.app.sbrowser")),
         SApp(app("Messages", "com.google.android.apps.messaging")),
-        SApp(app("Phone", "com.samsung.android.dialer")),
+        SApp(app("Phone", "com.google.android.dialer")),
         SApp(app("News", "com.samsung.android.app.spage", "com.samsung.android.news")),
         SApp(app("Notes", "com.samsung.android.app.notes")),
-        SApp(app("Phone", "com.google.android.dialer")),
+        SApp(app("Phone", "com.samsung.android.dialer")),
         SApp(app("Play Store", "com.android.vending")),
         SApp(app("Modes and Routines", "com.samsung.android.app.routines")),
         SApp(app("Store", "com.sec.android.app.samsungapps")),
@@ -123,8 +128,19 @@ object MyPhoneLayout {
 
         // ---- page 2 (One UI shows these folders without names) ----
         SApp(app("Discord", "com.discord")),
-        SFolder("", listOf(app("Roblox", "com.roblox.client")), rule = isGame),
+        SFolder("", listOf(app("Roblox", "com.roblox.client")), rule = isGame, color = 0xD9546A7F.toInt()),
         SApp(app("Wallet", "com.google.android.apps.walletnfcrel")),
+        SFolder(
+            "",
+            listOf(
+                app("Compass"),
+                app("Flightradar24", "com.flightradar24free"),
+                app("StackBlitz"),
+                app("Flat"),
+                app("Audio Editor"),
+            ),
+            color = 0xD962626D.toInt(),
+        ),
         SFolder(
             "",
             listOf(
@@ -133,6 +149,7 @@ object MyPhoneLayout {
                 app("Starbucks", "com.starbucks.mobilecard"),
                 app("Chick-fil-A", "com.chickfila.cfaflagship"),
             ),
+            color = 0xD9577170.toInt(),
         ),
         SFolder(
             "",
@@ -144,8 +161,9 @@ object MyPhoneLayout {
                 app("Norton AntiTrack"),
                 app("Norton Cleaner"),
             ),
+            color = 0xD95E604E.toInt(),
         ),
-        SFolder("", listOf(app("Netflix", "com.netflix.mediaclient"), app("Disney+", "com.disney.disneyplus"))),
+        SFolder("", listOf(app("Netflix", "com.netflix.mediaclient"), app("Disney+", "com.disney.disneyplus")), color = 0xD9595B81.toInt()),
         SFolder(
             "",
             listOf(
@@ -154,16 +172,20 @@ object MyPhoneLayout {
                 app("Link to Windows", "com.microsoft.appmanager"),
                 app("Mic to Speaker"),
             ),
+            color = 0xD962515F.toInt(),
         ),
         SFolder(
             "",
             listOf(
                 app("Canva", "com.canva.editor"),
                 app("Picsart", "com.picsart.studio"),
+                app("Creative studio"),
                 app("Docs", "com.google.android.apps.docs.editors.docs"),
                 app("CamScanner", "com.intsig.camscanner"),
                 app("CapCut", "com.lemon.lvoverseas"),
+                app("EX File Manager"),
             ),
+            color = 0xD9666875.toInt(),
         ),
         SFolder(
             "",
@@ -172,14 +194,17 @@ object MyPhoneLayout {
                 app("Amazon Shopping", "com.amazon.mShop.android.shopping"),
                 app("Shop", "com.shopify.arrive"),
             ),
+            color = 0xD9675E5F.toInt(),
         ),
         SFolder(
             "",
             listOf(
                 app("Feit Electric"),
+                app("Kasa", "com.tplink.kasa_android"),
                 app("myQ", "com.chamberlain.android.liftmaster.myq"),
                 app("Ring", "com.ringapp"),
             ),
+            color = 0xD958727D.toInt(),
         ),
         SApp(app("Samsung Pass", "com.samsung.android.samsungpass")),
         SPageBreak,
@@ -192,7 +217,7 @@ object MyPhoneLayout {
         SFolder(
             "business 🤑💵",
             listOf(
-                app("Messenger", "com.facebook.orca"),
+                app("GroupMe", "com.groupme.android"),
                 app("YouTube", "com.google.android.youtube"),
                 app("Instagram", "com.instagram.android"),
                 app("Facebook", "com.facebook.katana"),
@@ -244,7 +269,7 @@ object MyPhoneLayout {
     )
 
     private val DOCK = listOf(
-        app("Phone", "com.samsung.android.dialer"),
+        app("Phone", "com.google.android.dialer"),
         app("Messages", "com.google.android.apps.messaging"),
         app("Gmail", "com.google.android.gm"),
         app("Camera", "com.sec.android.app.camera"),
@@ -291,7 +316,13 @@ object MyPhoneLayout {
             if (slot is SFolder && slot.rule != null) {
                 @Suppress("UNCHECKED_CAST")
                 val members = resolved[i] as MutableList<AppEntry>
-                members += drawer.remaining().filter(slot.rule).onEach { drawer.markUsed(it) }
+                val extra = drawer.remaining().filter(slot.rule).onEach { drawer.markUsed(it) }
+                // rulePosition counts listed members; skip ones that aren't installed.
+                val at = if (slot.rulePosition < 0) members.size else {
+                    val listedBefore = slot.members.take(slot.rulePosition)
+                    members.count { m -> listedBefore.any { ref -> ref.packages.contains(m.packageName) || ref.label.equals(m.label, ignoreCase = true) } }
+                }
+                members.addAll(at.coerceIn(0, members.size), extra)
             }
         }
 
@@ -304,7 +335,7 @@ object MyPhoneLayout {
                     @Suppress("UNCHECKED_CAST")
                     val members = resolved[i] as List<AppEntry>
                     if (members.isNotEmpty()) {
-                        val f = DrawerFolder(newId(), slot.name, members.map { it.key })
+                        val f = DrawerFolder(newId(), slot.name, members.map { it.key }, slot.color)
                         folders += f
                         order += "folder:${f.id}"
                     }
