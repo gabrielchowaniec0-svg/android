@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,6 +90,7 @@ import com.kinetic.lockscreen.UnlockTransitionController
 import com.kinetic.lockscreen.UnlockWidget
 import com.kinetic.lockscreen.rememberUnlockController
 import com.kinetic.security.StealthCustomizationManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -161,8 +163,9 @@ fun KineticHome(
     val drawerSpring = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow) }
     val dragRangePx = with(density) { 360.dp.toPx() }
 
-    // 3D parallax: the home screen leans slightly as you tilt the phone.
-    val tilt = rememberDeviceTilt(active = isResumed && !drawerShowing && !editMode)
+    // 3D parallax: the home screen leans slightly as you tilt the phone (paused in Battery Saver).
+    val powerSave = rememberPowerSaveMode()
+    val tilt = rememberDeviceTilt(active = isResumed && !drawerShowing && !editMode && !powerSave)
 
     fun openDrawer() {
         drawerOpen = true
@@ -739,7 +742,12 @@ fun KineticHome(
     }
 }
 
-/** A live Android widget. In edit mode a transparent layer on top takes the taps instead. */
+/**
+ * A live Android widget. Its shadow, rounded corners and bevel follow the
+ * widget's *own* card edges (found by [WidgetEdgeDetector]), not the grid cell,
+ * so there's no frame around widgets that have a margin. In edit mode a
+ * transparent layer on top takes the taps instead.
+ */
 @Composable
 private fun WidgetCell(
     appWidgetId: Int,
@@ -748,15 +756,16 @@ private fun WidgetCell(
     onEditTap: () -> Unit,
 ) {
     val view = remember(appWidgetId) { widgets.viewFor(appWidgetId) }
-    val corner = 24.dp
-    val cornerPx = with(LocalDensity.current) { corner.toPx() }
+    val minRadiusPx = with(LocalDensity.current) { 18.dp.toPx() }
+    var edges by remember(appWidgetId) { mutableStateOf<WidgetEdges?>(null) }
+    var layoutTick by remember(appWidgetId) { mutableIntStateOf(0) }
+    val cardShape: WidgetCardShape? = edges?.takeIf { it.isCard }?.let { WidgetCardShape(it, minRadiusPx) }
+
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .jiggle(editMode)
             .padding(6.dp)
-            // Rounded, bevelled and lifted off the wallpaper, like the icons.
-            .depth3D(RoundedCornerShape(corner), elevation = 8.dp, gloss = 0.5f)
     ) {
         if (view == null) {
             Box(
@@ -775,27 +784,54 @@ private fun WidgetCell(
                 // Lets responsive widgets pick the right layout for their cell size.
                 view.updateAppWidgetSize(Bundle(), listOf(SizeF(widthDp, heightDp)))
             }
+            // Find the card after the widget has drawn, and again later in case it loads slowly.
+            LaunchedEffect(view, widthDp, heightDp, layoutTick) {
+                for (wait in longArrayOf(300, 1200, 4000)) {
+                    delay(wait)
+                    WidgetEdgeDetector.detect(view)?.let { edges = it }
+                }
+            }
             AndroidView(
                 factory = { _ ->
                     // The same view object is reused across screens, so detach it first.
                     (view.parent as? ViewGroup)?.removeView(view)
-                    // Also round the view itself, for widgets that draw outside Compose's clip.
-                    view.outlineProvider = object : ViewOutlineProvider() {
-                        override fun getOutline(v: View, outline: Outline) {
-                            outline.setRoundRect(0, 0, v.width, v.height, cornerPx)
-                        }
+                    view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+                        if (r - l != orr - ol || b - t != ob - ot) layoutTick++
                     }
-                    view.clipToOutline = true
                     view
                 },
-                modifier = Modifier.fillMaxSize(),
+                update = { v ->
+                    // Round the view itself too, for widgets that draw outside Compose's clip.
+                    val shape = cardShape
+                    if (shape == null) {
+                        v.clipToOutline = false
+                    } else {
+                        v.outlineProvider = object : ViewOutlineProvider() {
+                            override fun getOutline(target: View, outline: Outline) {
+                                val e = shape.edges
+                                outline.setRoundRect(
+                                    e.left.roundToInt(), e.top.roundToInt(),
+                                    e.right.roundToInt().coerceAtMost(target.width),
+                                    e.bottom.roundToInt().coerceAtMost(target.height),
+                                    shape.radiusFor(target.width.toFloat(), target.height.toFloat()),
+                                )
+                            }
+                        }
+                        v.clipToOutline = true
+                        v.invalidateOutline()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Shadow, rounded clip and bevel exactly on the widget's own edges.
+                    .then(if (cardShape != null) Modifier.depth3D(cardShape, elevation = 8.dp, gloss = 0.5f) else Modifier),
             )
         }
         if (editMode) {
             Box(
                 Modifier
                     .matchParentSize()
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.5f), cardShape ?: RoundedCornerShape(24.dp))
                     .clickable(onClick = onEditTap)
             )
         }

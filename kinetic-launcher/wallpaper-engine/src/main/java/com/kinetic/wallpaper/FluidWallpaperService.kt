@@ -1,5 +1,9 @@
 package com.kinetic.wallpaper
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RuntimeShader
@@ -9,6 +13,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.service.wallpaper.WallpaperService
 import android.view.Choreographer
 import android.view.MotionEvent
@@ -60,10 +65,44 @@ class FluidWallpaperService : WallpaperService() {
         private var tiltTargetY = 0f
         private var tiltX = 0f
         private var tiltY = 0f
+        private var sensorOn = false
+
+        // Pause the tilt sensor in Battery Saver (it keeps the sensor and CPU awake).
+        private val power = getSystemService(PowerManager::class.java)
+        private val powerSaveReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) = updateSensor()
+        }
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(true)
+            registerReceiver(
+                powerSaveReceiver,
+                IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
+        }
+
+        override fun onDestroy() {
+            runCatching { unregisterReceiver(powerSaveReceiver) }
+            stop()
+            super.onDestroy()
+        }
+
+        /** Sensor on only while the wallpaper is visible and Battery Saver is off. */
+        private fun updateSensor() {
+            val want = running && rotationSensor != null && power?.isPowerSaveMode != true
+            if (want && !sensorOn) {
+                basePitch = Float.NaN
+                sensors?.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_GAME)
+                sensorOn = true
+            } else if (!want && sensorOn) {
+                sensors?.unregisterListener(this)
+                sensorOn = false
+                // Let the wallpaper ease back to centre.
+                tiltTargetX = 0f
+                tiltTargetY = 0f
+            }
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -113,14 +152,13 @@ class FluidWallpaperService : WallpaperService() {
         private fun start() {
             if (running) return
             running = true
-            basePitch = Float.NaN
-            if (rotationSensor != null) sensors?.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_GAME)
+            updateSensor()
             choreographer.postFrameCallback(this)
         }
 
         private fun stop() {
             running = false
-            sensors?.unregisterListener(this)
+            updateSensor()
             choreographer.removeFrameCallback(this)
         }
 
