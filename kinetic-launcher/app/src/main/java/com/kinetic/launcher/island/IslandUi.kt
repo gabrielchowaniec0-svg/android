@@ -48,6 +48,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.kinetic.launcher.KineticSettings
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -75,24 +89,37 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
-// Sizes follow Apple's Dynamic Island (iPhone 15 Pro: a 126 × 37 pt resting pill,
-// compact leading/trailing views either side of it, a 44 pt corner radius when
-// expanded), scaled to the S25 Ultra.
-private val RestW = 120.dp
-private val PillH = 35.dp
-// Narrower than iOS's so it covers fewer status-bar icons on the S25.
+// Sizes follow Apple's Dynamic Island (a resting pill, compact leading/trailing
+// views either side of it, a 44 pt corner radius when expanded), scaled to the S25
+// Ultra. The pill's height comes from the service: tall enough to be centred on
+// the camera hole while keeping the chosen gap above it.
 private val CompactW = 206.dp
-private val MinimalW = 160.dp
+private val MinimalW = 150.dp
 private val ChargingW = 290.dp
 private val ExpandedMediaH = 172.dp
 private val ExpandedCallH = 86.dp
+private val ExpandedTimerH = 90.dp
+private val ExpandedAlarmH = 100.dp
+private val ExpandedNavH = 112.dp
+private val PeekH = 86.dp
+private val ReplyH = 138.dp
 private val ExpandedRadius = 44.dp
+private val BubbleGap = 6.dp
 
 private val IslandBlack = Color(0xFF000000)
 private val Grey = Color(0xFF8E8E93) // iOS secondary label
 private val Green = Color(0xFF30D158) // iOS system green (dark)
 private val Red = Color(0xFFFF453A) // iOS system red (dark)
-private val Orange = Color(0xFFFF9F0A)
+private val Orange = Color(0xFFFF9F0A) // iOS system orange (timers)
+private val Blue = Color(0xFF0A84FF)
+
+/** The resting pill's height (set by the service from the camera position). */
+private val LocalPill = compositionLocalOf { 35.dp }
+
+private val Tabular = TextStyle(fontFeatureSettings = "tnum")
+
+/** Things that can live in the island, most important first. */
+private enum class Activity { Call, Nav, Timer, Media }
 
 private sealed interface IslandMode {
     data object Idle : IslandMode
@@ -102,11 +129,18 @@ private sealed interface IslandMode {
     data object MediaExpanded : IslandMode
     data object CallCompact : IslandMode
     data object CallExpanded : IslandMode
+    data object TimerCompact : IslandMode
+    data object TimerExpanded : IslandMode
+    data object AlarmExpanded : IslandMode
+    data object NavCompact : IslandMode
+    data object NavExpanded : IslandMode
+    data object Peek : IslandMode
 }
 
 /**
  * The island itself: an absolutely black pill around the camera that morphs between
- * shapes with a springy, slightly bouncy motion, like iOS.
+ * shapes with a springy, slightly bouncy motion, like iOS. A second activity (say a
+ * timer while music plays) splits off into a little bubble beside it.
  *
  * [onWindowSize] tells the host how big its overlay window must be (it's kept only
  * as big as the island so it never blocks touches elsewhere).
@@ -116,45 +150,96 @@ fun DynamicIsland(
     model: IslandModel,
     screenWidth: Dp,
     top: Dp,
+    pillH: Dp,
     onWindowSize: (width: Dp, height: Dp) -> Unit,
     onHaptic: () -> Unit,
     /** False while the island is just resting, so swipes there still pull down the shade. */
     onTouchable: (Boolean) -> Unit = {},
+    /** True while typing a reply (the window needs the keyboard then). */
+    onFocusable: (Boolean) -> Unit = {},
 ) {
+    val settings by KineticSettings.values.collectAsState()
     val media by model.media.collectAsState()
     val look by model.mediaLook.collectAsState()
     val call by model.call.collectAsState()
+    val timer by model.timer.collectAsState()
+    val nav by model.nav.collectAsState()
+    val peek by model.peek.collectAsState()
+    val replying by model.replying.collectAsState()
     val alert by model.alert.collectAsState()
     val expanded by model.expanded.collectAsState()
 
     val c = call
     val m = media
+    val t = timer
+    val n = nav
+    val p = peek
+
+    val activities = buildList {
+        if (c != null) add(Activity.Call)
+        if (n != null) add(Activity.Nav)
+        if (t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm) add(Activity.Timer)
+        if (m != null && look != IslandModel.MediaLook.Hidden) add(Activity.Media)
+    }
+    val primary = activities.firstOrNull()
+    val secondary = activities.getOrNull(1)
+
     val mode: IslandMode = when {
-        c != null && (c.incoming || expanded) -> IslandMode.CallExpanded
+        c != null && c.incoming -> IslandMode.CallExpanded
+        t != null && t.kind == NotificationHub.TimerInfo.Kind.Alarm -> IslandMode.AlarmExpanded
+        p != null -> IslandMode.Peek
         alert != null -> IslandMode.Alert(alert!!)
-        c != null -> IslandMode.CallCompact
-        m != null && expanded -> IslandMode.MediaExpanded
-        m != null && look == IslandModel.MediaLook.Compact -> IslandMode.MediaCompact
-        m != null && look == IslandModel.MediaLook.Minimal -> IslandMode.MediaMinimal
-        else -> IslandMode.Idle
+        primary == null -> IslandMode.Idle
+        expanded -> when (primary) {
+            Activity.Call -> IslandMode.CallExpanded
+            Activity.Nav -> IslandMode.NavExpanded
+            Activity.Timer -> IslandMode.TimerExpanded
+            Activity.Media -> IslandMode.MediaExpanded
+        }
+        primary == Activity.Call -> IslandMode.CallCompact
+        primary == Activity.Nav -> IslandMode.NavCompact
+        primary == Activity.Timer -> IslandMode.TimerCompact
+        look == IslandModel.MediaLook.Minimal -> IslandMode.MediaMinimal
+        else -> IslandMode.MediaCompact
     }
 
+    val restW = maxOf(pillH * 3.4f, 84.dp)
     val fullW = screenWidth - 20.dp
     val (targetW, targetH) = when (mode) {
-        IslandMode.Idle -> RestW to PillH
-        is IslandMode.Alert -> (if (mode.alert is IslandAlert.Charging) ChargingW else CompactW) to PillH
-        IslandMode.MediaCompact, IslandMode.CallCompact -> CompactW to PillH
-        IslandMode.MediaMinimal -> MinimalW to PillH
+        IslandMode.Idle -> restW to pillH
+        is IslandMode.Alert -> when (val a = mode.alert) {
+            is IslandAlert.Charging -> ChargingW to pillH
+            is IslandAlert.Lock -> (restW + 44.dp) to pillH
+            else -> CompactW to pillH
+        }
+        IslandMode.MediaCompact, IslandMode.CallCompact, IslandMode.TimerCompact -> CompactW to pillH
+        IslandMode.NavCompact -> (CompactW + 24.dp) to pillH
+        IslandMode.MediaMinimal -> MinimalW to pillH
         IslandMode.MediaExpanded -> fullW to ExpandedMediaH
         IslandMode.CallExpanded -> fullW to ExpandedCallH
+        IslandMode.TimerExpanded -> fullW to ExpandedTimerH
+        IslandMode.AlarmExpanded -> fullW to ExpandedAlarmH
+        IslandMode.NavExpanded -> fullW to ExpandedNavH
+        IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH)
     }
-    val targetR = if (targetH <= PillH) targetH / 2 else ExpandedRadius
+    val targetR = if (targetH <= pillH) targetH / 2 else ExpandedRadius
+
+    // A second activity splits off into a bubble (only next to small shapes).
+    val showBubble = secondary != null && targetH <= pillH && mode !is IslandMode.Alert
+    val hideResting = mode == IslandMode.Idle && !settings.islandRestingPill
 
     // iOS-like spring: quick, with a little overshoot when it grows.
     val morph = spring<Dp>(dampingRatio = 0.72f, stiffness = 340f)
     val w by animateDpAsState(targetW, morph, label = "w")
     val h by animateDpAsState(targetH, morph, label = "h")
     val r by animateDpAsState(targetR, morph, label = "r")
+    val restAlpha by animateFloatAsState(if (hideResting) 0f else 1f, tween(250), label = "rest")
+    // The bubble pops out of the pill like a drop of gel, and back in when it goes.
+    val bubble by animateFloatAsState(
+        if (showBubble) 1f else 0f,
+        spring(dampingRatio = 0.55f, stiffness = 320f),
+        label = "bubble",
+    )
 
     // ---- gel: drag the island and it stretches after your finger, then wobbles back --
     val density = LocalDensity.current
@@ -169,191 +254,298 @@ fun DynamicIsland(
 
     // The window grows straight away and shrinks once the spring has settled. While
     // you drag, it gets some extra room so the stretch isn't cut off.
+    val bubbleRoom = if (showBubble) (BubbleGap + pillH) * 2 else 0.dp
     var windowW by remember { mutableStateOf(targetW) }
     var windowH by remember { mutableStateOf(targetH) }
     val extraW = if (dragging) 48.dp else 0.dp
     val extraH = if (dragging) 64.dp else 0.dp
-    LaunchedEffect(targetW, targetH, dragging) {
-        windowW = maxOf(windowW, targetW)
+    LaunchedEffect(targetW, targetH, dragging, bubbleRoom) {
+        windowW = maxOf(windowW, targetW + bubbleRoom)
         windowH = maxOf(windowH, targetH)
         onWindowSize(windowW + 8.dp + extraW, top + windowH + 8.dp + extraH)
         delay(700)
-        windowW = targetW
+        windowW = targetW + bubbleRoom
         windowH = targetH
         onWindowSize(windowW + 8.dp + extraW, top + windowH + 8.dp + extraH)
     }
 
-    val touchable = mode != IslandMode.Idle
+    val touchable = mode != IslandMode.Idle || showBubble
     LaunchedEffect(touchable) { onTouchable(touchable) }
+    LaunchedEffect(replying) { onFocusable(replying) }
 
     var pressed by remember { mutableStateOf(false) }
     val squish by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "squish")
 
-    val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal
-    val isExpanded = mode == IslandMode.MediaExpanded || (mode == IslandMode.CallExpanded && c?.incoming == false)
+    val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
+        mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact
+    val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
+        (mode == IslandMode.CallExpanded && c?.incoming == false)
+    val haptic = { if (settings.haptics) onHaptic() }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Box(
-            Modifier
-                .padding(top = top)
-                .size(w, h)
-                .graphicsLayer {
-                    val nx = pullX.value / maxPull
-                    val ny = pullY.value / maxPull
-                    // Slide a little with the finger…
-                    translationX = pullX.value * 0.45f
-                    translationY = pullY.value * 0.45f
-                    // …and stretch like gel towards it (thinner the other way).
-                    scaleX = squish * (1f + 0.16f * abs(nx) - 0.07f * abs(ny))
-                    scaleY = squish * (1f + 0.26f * abs(ny) - 0.10f * abs(nx))
-                    transformOrigin = TransformOrigin(
-                        0.5f - 0.5f * (nx * 3f).coerceIn(-1f, 1f),
-                        0.5f - 0.5f * (ny * 3f).coerceIn(-1f, 1f),
-                    )
+    fun open(which: Activity?) {
+        when (which) {
+            Activity.Call -> model.openCall()
+            Activity.Nav -> model.openNav()
+            Activity.Timer -> model.openTimer()
+            Activity.Media -> {
+                model.openMediaApp()
+                model.collapse()
+            }
+            null -> Unit
+        }
+    }
+
+    CompositionLocalProvider(LocalPill provides pillH) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            // ---- the bubble for a second activity --------------------------------------
+            if (bubble > 0.01f && secondary != null) {
+                val offsetX = (w / 2 + BubbleGap + pillH / 2) * bubble
+                Box(
+                    Modifier
+                        .padding(top = top)
+                        .offset(x = offsetX)
+                        .size(pillH)
+                        .graphicsLayer {
+                            scaleX = 0.35f + 0.65f * bubble
+                            scaleY = 0.35f + 0.65f * bubble
+                            alpha = bubble.coerceIn(0f, 1f)
+                        }
+                        .clip(CircleShape)
+                        .background(IslandBlack)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { open(secondary) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BubbleContent(secondary, m, t, n)
                 }
-                .clip(RoundedCornerShape(r))
-                .background(IslandBlack)
-                .pointerInput(mode) {
-                    var rawX = 0f
-                    var rawY = 0f
-                    var fired = false
-                    fun release() {
-                        dragging = false
-                        // Low damping = a jelly wobble as it settles.
-                        scope.launch { pullX.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
-                        scope.launch { pullY.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+            }
+
+            // ---- the island ----------------------------------------------------------
+            Box(
+                Modifier
+                    .padding(top = top)
+                    .size(w, h)
+                    .graphicsLayer {
+                        val nx = pullX.value / maxPull
+                        val ny = pullY.value / maxPull
+                        // Slide a little with the finger…
+                        translationX = pullX.value * 0.45f
+                        translationY = pullY.value * 0.45f
+                        // …and stretch like gel towards it (thinner the other way).
+                        scaleX = squish * (1f + 0.16f * abs(nx) - 0.07f * abs(ny))
+                        scaleY = squish * (1f + 0.26f * abs(ny) - 0.10f * abs(nx))
+                        transformOrigin = TransformOrigin(
+                            0.5f - 0.5f * (nx * 3f).coerceIn(-1f, 1f),
+                            0.5f - 0.5f * (ny * 3f).coerceIn(-1f, 1f),
+                        )
+                        alpha = restAlpha
                     }
-                    detectDragGestures(
-                        onDragStart = {
-                            rawX = 0f
-                            rawY = 0f
-                            fired = false
-                            dragging = true
-                            model.touched()
-                        },
-                        onDragEnd = { release() },
-                        onDragCancel = { release() },
-                    ) { change, delta ->
-                        change.consume()
-                        rawX += delta.x
-                        rawY += delta.y
-                        scope.launch { pullX.snapTo(band(rawX)) }
-                        scope.launch { pullY.snapTo(band(rawY)) }
-                        if (!fired && compactish && rawY > expandPull) {
-                            // Pull down to open it up.
-                            fired = true
-                            onHaptic()
-                            model.expand()
-                        } else if (!fired && isExpanded && rawY < -expandPull * 0.8f) {
-                            // Push up to fold it away.
-                            fired = true
-                            model.collapse()
+                    .clip(RoundedCornerShape(r))
+                    .background(IslandBlack)
+                    .pointerInput(mode) {
+                        var rawX = 0f
+                        var rawY = 0f
+                        var fired = false
+                        fun release() {
+                            dragging = false
+                            // Low damping = a jelly wobble as it settles.
+                            scope.launch { pullX.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+                            scope.launch { pullY.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+                        }
+                        detectDragGestures(
+                            onDragStart = {
+                                rawX = 0f
+                                rawY = 0f
+                                fired = false
+                                dragging = true
+                                model.touched()
+                                model.touchPeek()
+                            },
+                            onDragEnd = { release() },
+                            onDragCancel = { release() },
+                        ) { change, delta ->
+                            change.consume()
+                            rawX += delta.x
+                            rawY += delta.y
+                            scope.launch { pullX.snapTo(band(rawX)) }
+                            scope.launch { pullY.snapTo(band(rawY)) }
+                            if (!fired && compactish && rawY > expandPull) {
+                                // Pull down to open it up.
+                                fired = true
+                                haptic()
+                                model.expand()
+                            } else if (!fired && isExpanded && rawY < -expandPull * 0.8f) {
+                                // Push up to fold it away.
+                                fired = true
+                                model.collapse()
+                            } else if (!fired && mode == IslandMode.Peek && !replying && rawY < -expandPull * 0.6f) {
+                                // Flick a message away.
+                                fired = true
+                                model.dismissPeek()
+                            }
                         }
                     }
-                }
-                .pointerInput(mode) {
-                    detectTapGestures(
-                        onPress = {
-                            if (mode != IslandMode.Idle) {
-                                pressed = true
-                                tryAwaitRelease()
-                                pressed = false
-                            }
-                        },
-                        onTap = {
-                            when (mode) {
-                                IslandMode.MediaCompact, IslandMode.MediaMinimal, IslandMode.MediaExpanded -> {
-                                    model.openMediaApp()
-                                    model.collapse()
+                    .pointerInput(mode) {
+                        detectTapGestures(
+                            onPress = {
+                                if (mode != IslandMode.Idle) {
+                                    pressed = true
+                                    model.touchPeek()
+                                    tryAwaitRelease()
+                                    pressed = false
                                 }
-                                IslandMode.CallCompact, IslandMode.CallExpanded -> model.openCall()
-                                else -> Unit
-                            }
-                        },
-                        onLongPress = {
-                            if (compactish) {
-                                onHaptic()
-                                model.expand()
-                            }
-                        },
-                    )
-                },
-        ) {
-            AnimatedContent(
-                targetState = mode,
-                contentKey = { it::class },
-                transitionSpec = {
-                    (fadeIn(tween(220, delayMillis = 90)) + scaleIn(tween(320, delayMillis = 60), initialScale = 0.88f)) togetherWith
-                        (fadeOut(tween(110)) + scaleOut(tween(160), targetScale = 0.92f))
-                },
-                label = "island",
-            ) { shown ->
-                when (shown) {
-                    IslandMode.Idle -> Box(Modifier.fillMaxSize())
-                    is IslandMode.Alert -> AlertContent(shown.alert)
-                    IslandMode.MediaCompact -> media?.let { MediaCompact(it) }
-                    IslandMode.MediaMinimal -> media?.let { MediaMinimal(it) }
-                    IslandMode.MediaExpanded -> media?.let { MediaExpanded(it, model) }
-                    IslandMode.CallCompact -> c?.let { CallCompact(it) }
-                    IslandMode.CallExpanded -> c?.let { CallExpanded(it, model) }
+                            },
+                            onTap = {
+                                when (mode) {
+                                    IslandMode.Peek -> if (!replying) model.openPeek()
+                                    IslandMode.AlarmExpanded -> model.openTimer()
+                                    IslandMode.MediaCompact, IslandMode.MediaMinimal, IslandMode.MediaExpanded -> open(Activity.Media)
+                                    IslandMode.CallCompact, IslandMode.CallExpanded -> open(Activity.Call)
+                                    IslandMode.TimerCompact, IslandMode.TimerExpanded -> open(Activity.Timer)
+                                    IslandMode.NavCompact, IslandMode.NavExpanded -> open(Activity.Nav)
+                                    else -> Unit
+                                }
+                            },
+                            onLongPress = {
+                                if (compactish) {
+                                    haptic()
+                                    model.expand()
+                                }
+                            },
+                        )
+                    },
+            ) {
+                AnimatedContent(
+                    targetState = mode,
+                    contentKey = { it::class },
+                    transitionSpec = {
+                        (fadeIn(tween(220, delayMillis = 90)) + scaleIn(tween(320, delayMillis = 60), initialScale = 0.88f)) togetherWith
+                            (fadeOut(tween(110)) + scaleOut(tween(160), targetScale = 0.92f))
+                    },
+                    label = "island",
+                ) { shown ->
+                    when (shown) {
+                        IslandMode.Idle -> Box(Modifier.fillMaxSize())
+                        is IslandMode.Alert -> AlertContent(shown.alert)
+                        IslandMode.MediaCompact -> media?.let { MediaCompact(it) }
+                        IslandMode.MediaMinimal -> media?.let { MediaMinimal(it) }
+                        IslandMode.MediaExpanded -> media?.let { MediaExpanded(it, model) }
+                        IslandMode.CallCompact -> c?.let { CallCompact(it) }
+                        IslandMode.CallExpanded -> c?.let { CallExpanded(it, model) }
+                        IslandMode.TimerCompact -> t?.let { TimerCompact(it) }
+                        IslandMode.TimerExpanded -> t?.let { TimerExpanded(it, model) }
+                        IslandMode.AlarmExpanded -> t?.let { AlarmExpanded(it, model) }
+                        IslandMode.NavCompact -> n?.let { NavCompact(it) }
+                        IslandMode.NavExpanded -> n?.let { NavExpanded(it) }
+                        IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
+                    }
                 }
             }
         }
     }
 }
 
+/** What the little side bubble shows for the second activity. */
+@Composable
+private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.TimerInfo?, n: NotificationHub.NavInfo?) {
+    val s = LocalPill.current
+    when (which) {
+        Activity.Media -> {
+            val icon = m?.art ?: m?.appIcon
+            if (icon != null) Image(icon, null, contentScale = ContentScale.Crop, modifier = Modifier.size(s - 8.dp).clip(CircleShape))
+            else Waveform(m?.playing == true, m?.accent ?: Color.White, Modifier.size(s * 0.5f, s * 0.36f))
+        }
+        Activity.Timer -> TimerGlyph(Orange, Modifier.size(s * 0.55f))
+        Activity.Nav -> NavArrow(n, Modifier.size(s * 0.6f))
+        Activity.Call -> PhoneGlyph(Green, Modifier.size(s * 0.5f))
+    }
+}
+
 /** Paused for a while: just the app's little logo beside the camera. */
 @Composable
 private fun MediaMinimal(m: MediaInfo) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val s = LocalPill.current
+    Row(Modifier.fillMaxSize().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         val icon = m.appIcon
         if (icon != null) {
-            Image(icon, contentDescription = null, modifier = Modifier.size(21.dp).clip(CircleShape))
+            Image(icon, contentDescription = null, modifier = Modifier.size(s - 8.dp).clip(CircleShape))
         } else {
-            Art(m, 21.dp, 11.dp)
+            Art(m, s - 8.dp, (s - 8.dp) / 2)
         }
     }
 }
 
 // ---- compact & alerts -----------------------------------------------------------------
 
+/** Compact text size that fits the pill. */
+@Composable
+private fun compactSp() = if (LocalPill.current < 30.dp) 12.sp else 13.sp
+
 @Composable
 private fun MediaCompact(m: MediaInfo) {
+    val s = LocalPill.current
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 7.dp),
+        Modifier.fillMaxSize().padding(horizontal = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Art(m, 23.dp, 7.dp)
+        Art(m, s - 9.dp, (s - 9.dp) * 0.3f)
         Spacer(Modifier.weight(1f))
-        Waveform(m.playing, m.accent, Modifier.padding(end = 6.dp).size(22.dp, 14.dp))
+        Waveform(m.playing, m.accent, Modifier.padding(end = 6.dp).size(s * 0.62f, s * 0.4f))
     }
 }
 
 @Composable
 private fun CallCompact(call: NotificationHub.CallInfo) {
+    val s = LocalPill.current
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        Modifier.fillMaxSize().padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PhoneGlyph(Green, Modifier.size(15.dp))
+        PhoneGlyph(Green, Modifier.size(s * 0.45f))
         Spacer(Modifier.width(6.dp))
-        Text(callTime(call), color = Green, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(callTime(call), color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular)
         Spacer(Modifier.weight(1f))
-        Waveform(true, Green, Modifier.size(22.dp, 14.dp))
+        Waveform(true, Green, Modifier.size(s * 0.62f, s * 0.4f))
+    }
+}
+
+@Composable
+private fun TimerCompact(t: NotificationHub.TimerInfo) {
+    val s = LocalPill.current
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TimerGlyph(Orange, Modifier.size(s * 0.5f))
+        Spacer(Modifier.weight(1f))
+        Text(timerText(t), color = Orange, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular)
+    }
+}
+
+@Composable
+private fun NavCompact(n: NotificationHub.NavInfo) {
+    val s = LocalPill.current
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NavArrow(n, Modifier.size(s * 0.62f))
+        Spacer(Modifier.weight(1f))
+        Text(n.distance, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
 private fun AlertContent(alert: IslandAlert) {
+    val s = LocalPill.current
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 13.dp),
+        Modifier.fillMaxSize().padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (alert) {
             is IslandAlert.Ringer -> {
                 val silent = alert.mode != AudioManager.RINGER_MODE_NORMAL
                 val color = if (silent) Red else Color.White
-                BellGlyph(color, slashed = silent, modifier = Modifier.size(17.dp))
+                BellGlyph(color, slashed = silent, modifier = Modifier.size(s * 0.5f))
                 Spacer(Modifier.weight(1f))
                 Text(
                     when (alert.mode) {
@@ -362,19 +554,298 @@ private fun AlertContent(alert: IslandAlert) {
                         else -> "Ring"
                     },
                     color = if (silent) Orange else Color.White,
-                    fontSize = 14.sp,
+                    fontSize = compactSp(),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             is IslandAlert.Charging -> {
-                Text("Charging", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Charging", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                Text("${alert.level}%", color = Green, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("${alert.level}%", color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(6.dp))
-                BatteryGlyph(alert.level / 100f, Green, Modifier.size(27.dp, 13.dp))
+                BatteryGlyph(alert.level / 100f, Green, Modifier.size(s * 0.78f, s * 0.38f))
+            }
+            is IslandAlert.Lock -> {
+                LockGlyph(open = alert.open, modifier = Modifier.size(s * 0.55f))
+                Spacer(Modifier.weight(1f))
             }
         }
     }
+}
+
+// ---- timers, alarms, directions, messages (expanded) ----------------------------------
+
+@Composable
+private fun TimerExpanded(t: NotificationHub.TimerInfo, model: IslandModel) {
+    Row(
+        Modifier.fillMaxSize().padding(start = 22.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TimerGlyph(Orange, Modifier.size(30.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(t.label, color = Grey, fontSize = 13.sp, maxLines = 1)
+            Text(timerText(t), color = Orange, fontSize = 32.sp, fontWeight = FontWeight.Light, style = Tabular)
+        }
+        t.actions.take(2).forEach { action ->
+            val title = action.title?.toString().orEmpty()
+            val lower = title.lowercase()
+            Spacer(Modifier.width(10.dp))
+            RoundAction(
+                background = if ("pause" in lower || "resume" in lower || "start" in lower) Orange.copy(alpha = 0.25f) else Color(0xFF3A3A3C),
+                onClick = { model.sendAction(action) },
+            ) {
+                when {
+                    "pause" in lower -> PauseGlyph(Modifier.size(16.dp))
+                    "resume" in lower || "start" in lower -> PlayGlyph(Modifier.size(16.dp))
+                    "cancel" in lower || "stop" in lower || "reset" in lower || "dismiss" in lower -> CrossGlyph(Modifier.size(14.dp))
+                    else -> Text(title.take(1).uppercase(), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlarmExpanded(t: NotificationHub.TimerInfo, model: IslandModel) {
+    Row(
+        Modifier.fillMaxSize().padding(start = 22.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Alarm", color = Orange, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(t.label, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        // iOS style: an orange "Snooze" capsule and a grey "Stop".
+        t.actions.take(2).forEach { action ->
+            val title = action.title?.toString().orEmpty()
+            val snooze = "snooze" in title.lowercase()
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(if (snooze) Orange else Color(0xFF3A3A3C))
+                    .clickable { model.sendAction(action) }
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(title, color = if (snooze) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavExpanded(n: NotificationHub.NavInfo) {
+    Column(Modifier.fillMaxSize().padding(start = 22.dp, end = 22.dp, top = 16.dp, bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            NavArrow(n, Modifier.size(44.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(n.distance, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(n.instruction, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        n.eta?.let { Text(it, color = Green, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+/** A message dropping down from the island, with an inline reply box. */
+@Composable
+private fun PeekContent(p: NotificationHub.MessagePeek, replying: Boolean, model: IslandModel) {
+    val icon = remember(p.icon) { p.icon?.asImageBitmap() }
+    Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Image(icon, null, contentScale = ContentScale.Crop, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)))
+            } else {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF2C2C2E)))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(p.appName, color = Grey, fontSize = 11.sp, maxLines = 1)
+                Text(p.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (p.text.isNotBlank()) {
+                    Text(p.text, color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (p.reply != null && !replying) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(Color(0xFF2C2C2E))
+                        .clickable { model.startReply() }
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Reply", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+        if (replying) {
+            Spacer(Modifier.height(12.dp))
+            ReplyBox(onSend = model::sendReply, onCancel = model::dismissPeek)
+        }
+    }
+}
+
+@Composable
+private fun ReplyBox(onSend: (String) -> Unit, onCancel: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        delay(120) // let the window become focusable first
+        focus.requestFocus()
+        keyboard?.show()
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .weight(1f)
+                .height(40.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xFF1C1C1E))
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (text.isEmpty()) Text("Message", color = Grey, fontSize = 15.sp)
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                cursorBrush = SolidColor(Blue),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend(text.trim()) }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (text.isNotBlank()) Blue else Color(0xFF3A3A3C))
+                .clickable { if (text.isNotBlank()) onSend(text.trim()) else onCancel() },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (text.isNotBlank()) SendGlyph(Modifier.size(16.dp)) else CrossGlyph(Modifier.size(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun RoundAction(background: Color, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+@Composable
+private fun NavArrow(n: NotificationHub.NavInfo?, modifier: Modifier) {
+    val arrow = remember(n?.arrow) { n?.arrow?.asImageBitmap() }
+    if (arrow != null) {
+        Image(arrow, null, modifier = modifier)
+    } else {
+        // A plain "go ahead" arrow when Maps gives no picture.
+        Canvas(modifier) {
+            val path = Path().apply {
+                moveTo(size.width / 2, 0f)
+                lineTo(size.width, size.height * 0.55f)
+                lineTo(size.width * 0.62f, size.height * 0.55f)
+                lineTo(size.width * 0.62f, size.height)
+                lineTo(size.width * 0.38f, size.height)
+                lineTo(size.width * 0.38f, size.height * 0.55f)
+                lineTo(0f, size.height * 0.55f)
+                close()
+            }
+            drawPath(path, Color.White)
+        }
+    }
+}
+
+@Composable
+private fun timerText(t: NotificationHub.TimerInfo): String {
+    val now by produceState(System.currentTimeMillis(), t) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(250)
+        }
+    }
+    return when {
+        t.endsAt != null -> clock((t.endsAt - now + 999).coerceAtLeast(0))
+        t.startedAt != null -> clock((now - t.startedAt).coerceAtLeast(0))
+        else -> t.text ?: t.label
+    }
+}
+
+@Composable
+private fun TimerGlyph(color: Color, modifier: Modifier) = Canvas(modifier) {
+    val s = size.minDimension
+    val stroke = s * 0.13f
+    drawCircle(color, radius = s / 2 - stroke / 2, style = Stroke(stroke))
+    drawLine(color, center, Offset(center.x, s * 0.22f), strokeWidth = stroke, cap = StrokeCap.Round)
+    drawLine(color, center, Offset(s * 0.72f, center.y), strokeWidth = stroke, cap = StrokeCap.Round)
+}
+
+/** A padlock; when [open] the shackle lifts and swings open, like iOS after Face ID. */
+@Composable
+private fun LockGlyph(open: Boolean, modifier: Modifier) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(open) {
+        if (open) {
+            delay(120)
+            progress.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 300f))
+        } else {
+            progress.snapTo(0f)
+        }
+    }
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val p = progress.value
+        val bodyTop = h * 0.45f
+        drawRoundRect(Color.White, Offset(0f, bodyTop), Size(w, h - bodyTop), CornerRadius(w * 0.16f))
+        // Shackle: lifts up and swings to the right as it opens.
+        val stroke = w * 0.16f
+        val lift = h * 0.12f * p
+        rotate(degrees = 28f * p, pivot = Offset(w * 0.78f, bodyTop - lift)) {
+            drawArc(
+                color = Color.White,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = false,
+                topLeft = Offset(w * 0.2f, h * 0.06f - lift),
+                size = Size(w * 0.6f, h * 0.6f),
+                style = Stroke(stroke),
+            )
+            drawLine(Color.White, Offset(w * 0.2f + stroke / 2 - stroke / 2, h * 0.36f - lift), Offset(w * 0.2f, bodyTop - lift * 0.2f), strokeWidth = stroke)
+            drawLine(Color.White, Offset(w * 0.8f, h * 0.36f - lift), Offset(w * 0.8f, bodyTop), strokeWidth = stroke)
+        }
+    }
+}
+
+@Composable
+private fun CrossGlyph(modifier: Modifier) = Canvas(modifier) {
+    val st = size.minDimension * 0.18f
+    drawLine(Color.White, Offset.Zero, Offset(size.width, size.height), strokeWidth = st, cap = StrokeCap.Round)
+    drawLine(Color.White, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = st, cap = StrokeCap.Round)
+}
+
+@Composable
+private fun SendGlyph(modifier: Modifier) = Canvas(modifier) {
+    val st = size.minDimension * 0.16f
+    drawLine(Color.White, Offset(size.width / 2, size.height), Offset(size.width / 2, 0f), strokeWidth = st, cap = StrokeCap.Round)
+    drawLine(Color.White, Offset(size.width / 2, 0f), Offset(size.width * 0.12f, size.height * 0.4f), strokeWidth = st, cap = StrokeCap.Round)
+    drawLine(Color.White, Offset(size.width / 2, 0f), Offset(size.width * 0.88f, size.height * 0.4f), strokeWidth = st, cap = StrokeCap.Round)
 }
 
 // ---- expanded -------------------------------------------------------------------------

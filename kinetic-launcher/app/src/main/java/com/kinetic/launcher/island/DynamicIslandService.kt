@@ -26,6 +26,9 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.kinetic.launcher.KineticSettings
 import com.kinetic.launcher.NotificationHub
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +71,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        KineticSettings.init(this)
         model = IslandModel(this, scope)
         model.start()
         // When Notification access is switched on later, start showing music too.
@@ -141,10 +145,6 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         measureHole()
         val density = resources.displayMetrics.density
         val screenWidth = (wm.currentWindowMetrics.bounds.width() / density).dp
-        // Keep the resting pill centred on the camera hole; bigger shapes grow downwards.
-        // 5dp lower than centring it on the camera, for a taller gap above it like
-        // iOS. The pill is 35dp tall, so the small S25 camera hole stays well inside.
-        val top = (holeY / density - 35 / 2f + TOP_NUDGE_DP).coerceAtLeast(6f).dp
 
         val p = WindowManager.LayoutParams(
             1, 1,
@@ -169,17 +169,30 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             // A tap anywhere outside the island folds it back up.
             setOnTouchListener { _, e ->
-                if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) model.collapse()
+                if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    model.collapse()
+                    if (!model.replying.value) model.dismissPeek()
+                }
                 false
             }
             setContent {
+                val settings by KineticSettings.values.collectAsState()
+                // The top edge sits [islandGapDp] below where a 35dp pill centred on the
+                // camera would start; the pill is then exactly tall enough to stay
+                // centred on the camera, so it gets slimmer as the gap grows.
+                val holeCentre = holeY / density
+                val gap = settings.islandGapDp.coerceIn(0, 7)
+                val top = (holeCentre - 35f / 2f + gap).coerceAtLeast(2f)
+                val pillH = (2f * (holeCentre - top)).coerceAtLeast(18f)
                 DynamicIsland(
                     model = model,
                     screenWidth = screenWidth,
-                    top = top,
+                    top = top.dp,
+                    pillH = pillH.dp,
                     onWindowSize = { w, h -> resizeWindow(w, h) },
                     onHaptic = { performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) },
                     onTouchable = { on -> setTouchable(on) },
+                    onFocusable = { on -> setFocusable(on) },
                 )
             }
         }
@@ -210,6 +223,16 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         runCatching { windowManager?.updateViewLayout(v, p) }
     }
 
+    /** Lets the keyboard in while you type a reply, then gives focus back to the app. */
+    private fun setFocusable(on: Boolean) {
+        val p = params ?: return
+        val v = view ?: return
+        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        runCatching { windowManager?.updateViewLayout(v, p) }
+    }
+
     private fun removeIsland() {
         val v = view ?: return
         runCatching { windowManager?.removeView(v) }
@@ -217,8 +240,6 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     companion object {
-        /** How far below "centred on the camera" the island sits. Raise for a bigger gap. */
-        const val TOP_NUDGE_DP = 5f
 
         /** True once the user has switched the island on in Accessibility settings. */
         fun isEnabled(context: Context): Boolean {
