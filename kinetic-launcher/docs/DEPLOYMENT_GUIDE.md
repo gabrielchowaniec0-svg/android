@@ -230,6 +230,47 @@ Phone and computer must be on the **same network**. For Android 13+:
   hides in landscape. While resting it lets touches through, so pulling down the
   shade from the middle still works.
 
+**More in the Dynamic Island**
+- The pill is now slimmer: its top stays where it was, and its height is set so
+  it's centred exactly on the camera. Change the gap in Settings ▸ Dynamic
+  Island ▸ *Gap above the island* (the pill gets slimmer as the gap grows).
+- **Timers / stopwatch** (Clock app): an orange timer icon and the countdown.
+  Hold or pull down for Pause/Resume and Cancel. **Alarms** ring in the island
+  with an orange *Snooze* and a grey *Stop*.
+- **Directions** (Google Maps / Waze): the next turn arrow and distance; expand
+  for the street and arrival time.
+- **Chowaniec messages** drop down from the island with the sender and message.
+  Tap to open, flick up to dismiss, or tap **Reply** to type an answer right there
+  (when the notification offers a reply). Other messaging apps can do the same
+  (Settings ▸ *Messages from all apps*).
+- **Two things at once**: the second activity (e.g. a timer while music plays)
+  pops out of the pill as a little bubble on the right; tap it to open that app.
+- **Lock animation**: a padlock on the lock screen that swings open when you
+  unlock.
+
+**Smart stacks**
+- In edit mode, tap a widget ▸ **Add widget to stack…** and pick another widget:
+  both now share that spot. Swipe up/down on it to flip (it loops; dots show
+  where you are).
+- **Smart rotate** (on by default, per stack in the same menu) flips to what fits:
+  the playing app's widget while music plays, calendar/weather in the morning,
+  notes/reminders in the day, weather/battery in the evening. It leaves it alone
+  for 3 minutes after you flip it yourself.
+- The same menu can remove one widget from the stack or the whole stack.
+
+**Wallpaper reactions** (each can be turned off in Settings)
+- Unlock ripple from the middle, a ripple from any app icon you open, a soft
+  pulse from the top for notifications, a green wave from the bottom when you
+  plug in, and ribbons tinted with the album colours while music plays.
+- Below 20% battery (or in Battery Saver) the wallpaper slows down and dims.
+- **Apps react too:** home icons hop as each ripple passes them.
+
+**Settings**
+- App list ▸ **⋮** ▸ **Kinetic settings**, or **Settings** on the edit-mode bar.
+- Setup status (default Home, Notification access, Dynamic Island) with shortcuts,
+  every island feature, notification rings, haptics, icon size, and every
+  wallpaper reaction.
+
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the
   home screen, the icons glide in along the wallpaper's flow lines.

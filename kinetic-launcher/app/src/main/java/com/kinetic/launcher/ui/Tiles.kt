@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kinetic.core.apps.SquircleShape
+import com.kinetic.launcher.KineticSettings
 
 /** White label with a soft shadow so it reads over any wallpaper. */
 val TileLabelStyle = TextStyle(
@@ -68,7 +69,8 @@ val TileLabelStyle = TextStyle(
 )
 
 /** Every icon-sized thing (apps, folders) uses this size so the grid stays even. */
-val IconSize = 60.dp
+/** Home/drawer icon size (Settings ▸ Home screen ▸ Icon size). */
+val IconSize: Dp get() = KineticSettings.current.iconSizeDp.coerceIn(48, 72).dp
 
 /** Default folder tile tint (One UI's dark folders). */
 val DefaultFolderColor = Color(0xCC1C1B21)
@@ -137,6 +139,7 @@ fun AppTile(
         val iconModifier = Modifier
             .size(iconSize)
             .onGloballyPositioned { iconBounds = it.boundsInWindow() }
+            .iconWave { iconBounds }
             .graphicsLayer {
                 val s = scale * landing.value
                 scaleX = s
@@ -195,6 +198,7 @@ fun FolderTile(
             Modifier
                 .size(tileSize)
                 .onGloballyPositioned { tileBounds = it.boundsInWindow() }
+                .iconWave { tileBounds }
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale

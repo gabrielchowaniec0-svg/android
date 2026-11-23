@@ -26,6 +26,17 @@ import com.kinetic.core.apps.AppRepository
 import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.system.SystemGestures
 import com.kinetic.core.widgets.WidgetHostManager
+import com.kinetic.wallpaper.WallpaperSignals
+import com.kinetic.launcher.ui.LocalIconWave
+import com.kinetic.launcher.ui.IconWave
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import com.kinetic.launcher.ui.HomeDeps
 import com.kinetic.launcher.ui.KineticHome
 import com.kinetic.launcher.ui.UnlockPhase
@@ -55,6 +66,8 @@ class MainActivity : FragmentActivity() {
     /** x/y < 0 means "wherever there's room". */
     private data class PendingWidget(val id: Int, val page: Int, val spanX: Int, val spanY: Int, val x: Int = -1, val y: Int = -1)
     private var pendingWidget: PendingWidget? = null
+    /** When set, the widget being added goes into this widget's smart stack instead. */
+    private var pendingStackTarget: String? = null
 
     /** Widgets still to add for "my phone" layout, one at a time (each may show a system prompt). */
     private val widgetQueue = ArrayDeque<Pair<AppWidgetProviderInfo, MyPhoneLayout.WidgetSlot>>()
@@ -80,7 +93,13 @@ class MainActivity : FragmentActivity() {
                     deps.customization.lockToPrimary()
                     unlockPhase.value = UnlockPhase.ARMED
                 }
+                Intent.ACTION_POWER_CONNECTED -> {
+                    // A green wave rises from the bottom when you plug in.
+                    WallpaperSignals.ripple(context, WallpaperSignals.Kind.Charging, y = -2f, color = 0xFF30D158.toInt(), strength = 1.2f)
+                }
                 Intent.ACTION_USER_PRESENT -> {
+                    // Unlocking sends a ripple out from the middle of the screen (icons ride it too).
+                    WallpaperSignals.ripple(context, WallpaperSignals.Kind.Unlock, y = -3f, color = 0xFFB8C8F0.toInt(), strength = 1.1f)
                     lastUserPresentAt = SystemClock.elapsedRealtime()
                     if (isResumedNow && unlockPhase.value == UnlockPhase.ARMED) {
                         handler.removeCallbacks(disarmUnlock)
@@ -93,6 +112,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        KineticSettings.init(this)
 
         // 4 columns like One UI Home; the 7th row doubles as the dock.
         // Same geometry as One UI on the S25 Ultra: 14dp side margins, 4 equal columns, no gaps.
@@ -116,26 +136,53 @@ class MainActivity : FragmentActivity() {
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_POWER_CONNECTED)
             },
             RECEIVER_NOT_EXPORTED,
         )
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                KineticHome(
-                    deps = deps,
-                    activity = this,
-                    homePressSignal = homePressSignal.intValue,
-                    unlockPhase = unlockPhase.value,
-                    onUnlockFinished = { unlockPhase.value = UnlockPhase.NONE },
-                    onRequestWidget = ::requestWidget,
-                    onOpenWallpaperPicker = ::openWallpaperPicker,
-                    onExpandNotifications = ::expandNotifications,
-                    onWallpaperFocus = ::setWallpaperFocus,
-                    autoApplyMyLayout = myLayoutPending.value,
-                    onApplyMyLayout = ::applyMyPhoneLayout,
-                    isResumed = resumedState.value,
-                )
+                val settings by KineticSettings.values.collectAsState()
+                val wave = remember { IconWave() }
+                // Ripples (unlock, launches, charging, notifications) make the icons hop.
+                DisposableEffect(Unit) {
+                    val listener = WallpaperSignals.Listener { r ->
+                        handler.post {
+                            if (KineticSettings.current.wpIconWave) {
+                                val root = window.decorView
+                                wave.start(r, root.width.toFloat(), root.height.toFloat())
+                            }
+                        }
+                    }
+                    WallpaperSignals.addListener(listener)
+                    onDispose { WallpaperSignals.removeListener(listener) }
+                }
+                LaunchedEffect(wave.startedAt) {
+                    if (wave.startedAt == 0L) return@LaunchedEffect
+                    while (SystemClock.uptimeMillis() - wave.startedAt < 2600) {
+                        withFrameMillis { wave.now = SystemClock.uptimeMillis() }
+                    }
+                }
+                // A new icon size rebuilds the home screen so every icon picks it up.
+                CompositionLocalProvider(LocalIconWave provides wave) {
+                    key(settings.iconSizeDp) {
+                        KineticHome(
+                            deps = deps,
+                            activity = this,
+                            homePressSignal = homePressSignal.intValue,
+                            unlockPhase = unlockPhase.value,
+                            onUnlockFinished = { unlockPhase.value = UnlockPhase.NONE },
+                            onRequestWidget = ::requestWidget,
+                            onOpenWallpaperPicker = ::openWallpaperPicker,
+                            onExpandNotifications = ::expandNotifications,
+                            onWallpaperFocus = ::setWallpaperFocus,
+                            autoApplyMyLayout = myLayoutPending.value,
+                            onApplyMyLayout = ::applyMyPhoneLayout,
+                            isResumed = resumedState.value,
+                        )
+                    }
+                }
             }
         }
     }
@@ -226,7 +273,10 @@ class MainActivity : FragmentActivity() {
 
     // ---- widgets: allocate id -> bind permission -> optional configure -> place ----
 
-    private fun requestWidget(info: AppWidgetProviderInfo, page: Int) = requestWidgetAt(info, page, -1, -1, 0, 0)
+    private fun requestWidget(info: AppWidgetProviderInfo, page: Int, stackOnto: String?) {
+        pendingStackTarget = stackOnto
+        requestWidgetAt(info, page, -1, -1, 0, 0)
+    }
 
     /** Adds a widget at a cell ([x]/[y] < 0 = anywhere) with a given size (0 = the widget's default). */
     private fun requestWidgetAt(info: AppWidgetProviderInfo, page: Int, x: Int, y: Int, spanX: Int, spanY: Int) {
@@ -267,13 +317,18 @@ class MainActivity : FragmentActivity() {
 
     private fun placeWidget(p: PendingWidget) {
         pendingWidget = null
-        if (p.x >= 0 && p.y >= 0) deps.layout.addWidgetAt(p.page, p.id, p.x, p.y, p.spanX, p.spanY)
+        val stackOnto = pendingStackTarget
+        pendingStackTarget = null
+        if (stackOnto != null && deps.layout.addToStack(p.page, stackOnto, p.id)) {
+            Toast.makeText(this, "Added to the stack — swipe up or down on it", Toast.LENGTH_SHORT).show()
+        } else if (p.x >= 0 && p.y >= 0) deps.layout.addWidgetAt(p.page, p.id, p.x, p.y, p.spanX, p.spanY)
         else deps.layout.addWidget(p.page, p.id, p.spanX, p.spanY)
         processWidgetQueue()
     }
 
     private fun cancelWidget(p: PendingWidget) {
         pendingWidget = null
+        pendingStackTarget = null
         deps.widgets.deleteId(p.id)
         Toast.makeText(this, "Widget wasn't added", Toast.LENGTH_SHORT).show()
         processWidgetQueue()

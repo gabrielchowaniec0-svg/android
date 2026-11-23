@@ -42,6 +42,11 @@ sealed interface HomeItem {
         override fun movedTo(x: Float, y: Float) = copy(cellX = x, cellY = y)
     }
 
+    /**
+     * A widget. With more than one id in [allIds] it's a **smart stack**: several
+     * widgets in one spot that you swipe between (and that can switch by themselves
+     * when [smart] is on).
+     */
     data class Widget(
         override val id: String,
         val appWidgetId: Int,
@@ -49,7 +54,12 @@ sealed interface HomeItem {
         override val cellY: Float,
         override val spanX: Int,
         override val spanY: Int,
+        /** Extra widgets stacked under [appWidgetId]. */
+        val stack: List<Int> = emptyList(),
+        val smart: Boolean = true,
     ) : HomeItem {
+        val allIds: List<Int> get() = listOf(appWidgetId) + stack
+        val isStack: Boolean get() = stack.isNotEmpty()
         override fun movedTo(x: Float, y: Float) = copy(cellX = x, cellY = y)
     }
 }
@@ -184,6 +194,34 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
         l.copy(pages = pages)
     }
 
+    /** Adds another widget to a widget's spot, turning it into a smart stack. */
+    fun addToStack(page: Int, itemId: String, appWidgetId: Int): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val w = p.items.firstOrNull { it.id == itemId } as? HomeItem.Widget ?: return@update l
+        l.replacePage(page, p.copy(items = p.items.map { if (it.id == itemId) w.copy(stack = w.stack + appWidgetId) else it }))
+    }
+
+    /**
+     * Takes one widget out of a stack (the last one left stays as a plain widget).
+     * Returns false if [appWidgetId] wasn't in a stack — remove the whole item instead.
+     */
+    fun removeFromStack(page: Int, itemId: String, appWidgetId: Int): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val w = p.items.firstOrNull { it.id == itemId } as? HomeItem.Widget ?: return@update l
+        if (!w.isStack || appWidgetId !in w.allIds) return@update l
+        val rest = w.allIds - appWidgetId
+        l.replacePage(page, p.copy(items = p.items.map {
+            if (it.id == itemId) w.copy(appWidgetId = rest.first(), stack = rest.drop(1)) else it
+        }))
+    }
+
+    /** Turns a stack's automatic switching on or off. */
+    fun setStackSmart(page: Int, itemId: String, smart: Boolean): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val w = p.items.firstOrNull { it.id == itemId } as? HomeItem.Widget ?: return@update l
+        l.replacePage(page, p.copy(items = p.items.map { if (it.id == itemId) w.copy(smart = smart) else it }))
+    }
+
     /** Grows/shrinks a widget by [dx]/[dy] cells. False if there's no room. */
     fun resizeWidget(page: Int, itemId: String, dx: Int, dy: Int): Boolean = update { l ->
         val p = l.pages.getOrNull(page) ?: return@update l
@@ -290,9 +328,9 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
      * the app-widget ids that are no longer used, so the caller can free them.
      */
     fun replaceLayout(newLayout: HomeLayout): List<Int> {
-        val keep = newLayout.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>().mapTo(HashSet()) { it.appWidgetId }
+        val keep = newLayout.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>().flatMapTo(HashSet()) { it.allIds }
         val dropped = _layout.value.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>()
-            .map { it.appWidgetId }.filter { it !in keep }
+            .flatMap { it.allIds }.filter { it !in keep }
         val l = normalize(newLayout.copy(pages = newLayout.pages.ifEmpty { listOf(HomePage(newId(), emptyList())) }))
         isFresh = false
         _layout.value = l
@@ -509,6 +547,8 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                 put("wid", item.appWidgetId)
                 put("sx", item.spanX)
                 put("sy", item.spanY)
+                if (item.stack.isNotEmpty()) put("stack", JSONArray(item.stack))
+                put("smart", item.smart)
             }
         }
     }
@@ -553,7 +593,11 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                 id, o.optString("name", "Folder"), o.optJSONArray("keys").toStringList(), x, y,
                 o.optInt("sx", 1), o.optInt("sy", 1),
             )
-            "widget" -> HomeItem.Widget(id, o.getInt("wid"), x, y, o.optInt("sx", 1), o.optInt("sy", 1))
+            "widget" -> HomeItem.Widget(
+                id, o.getInt("wid"), x, y, o.optInt("sx", 1), o.optInt("sy", 1),
+                stack = o.optJSONArray("stack")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty(),
+                smart = o.optBoolean("smart", true),
+            )
             else -> null
         }
     }

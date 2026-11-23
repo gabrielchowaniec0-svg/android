@@ -64,6 +64,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Kinetic settings (app list ▸ ⋮ ▸ Kinetic settings, or Settings in edit mode). -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Kinetic settings"
+            android:theme="@style/Theme.Kinetic" />
+
         <!--
             Notification rings: lets Kinetic see WHICH apps have notifications (nothing
             else is read or stored). You switch it on in Settings ▸ Notification access.

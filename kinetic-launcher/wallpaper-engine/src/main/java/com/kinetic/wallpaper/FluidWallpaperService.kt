@@ -19,6 +19,8 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
+import android.os.BatteryManager
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * Live wallpaper that renders [fluid_wallpaper.agsl] through a hardware canvas,
@@ -67,6 +69,23 @@ class FluidWallpaperService : WallpaperService() {
         private var tiltY = 0f
         private var sensorOn = false
 
+        // ---- reactions (see WallpaperSignals) ----------------------------------------
+        private val pendingRipples = ConcurrentLinkedQueue<WallpaperSignals.Ripple>()
+        private val rippleListener = WallpaperSignals.Listener { pendingRipples.add(it) }
+        /** Three ripple slots: x, y (shader space), start time, strength; plus colours. */
+        private val rippleSlots = Array(3) { FloatArray(4) }
+        private val rippleColors = Array(3) { FloatArray(3) }
+        private var nextSlot = 0
+        private var glow = 0f
+        private val glowRgb = FloatArray(3)
+        private var calm = 0f
+        private var calmTarget = 0f
+        private var lastBatteryCheck = 0L
+        private var lastFrameNanos = 0L
+        /** Wallpaper time; runs slower when it's calming down for a low battery. */
+        private var time = 0f
+        private val battery = getSystemService(BatteryManager::class.java)
+
         // Pause the tilt sensor in Battery Saver (it keeps the sensor and CPU awake).
         private val power = getSystemService(PowerManager::class.java)
         private val powerSaveReceiver = object : BroadcastReceiver() {
@@ -76,6 +95,7 @@ class FluidWallpaperService : WallpaperService() {
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(true)
+            WallpaperSignals.addListener(rippleListener)
             registerReceiver(
                 powerSaveReceiver,
                 IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
@@ -85,6 +105,7 @@ class FluidWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             runCatching { unregisterReceiver(powerSaveReceiver) }
+            WallpaperSignals.removeListener(rippleListener)
             stop()
             super.onDestroy()
         }
@@ -202,7 +223,58 @@ class FluidWallpaperService : WallpaperService() {
             tiltX += (tiltTargetX - tiltX) * 0.12f
             tiltY += (tiltTargetY - tiltY) * 0.12f
 
-            val t = (frameTimeNanos - startNanos) / 1_000_000_000f
+            // Calm down (slower, a touch darker) when the battery is low or Battery Saver is on.
+            val nowMs = System.currentTimeMillis()
+            if (nowMs - lastBatteryCheck > 5_000) {
+                lastBatteryCheck = nowMs
+                val enabled = WallpaperSignals.enabled(this@FluidWallpaperService, WallpaperSignals.KEY_BATTERY_CALM)
+                val level = battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
+                val charging = battery?.isCharging == true
+                calmTarget = if (enabled && ((level in 1..20 && !charging) || power?.isPowerSaveMode == true)) 1f else 0f
+            }
+            calm += (calmTarget - calm) * 0.02f
+            val dt = if (lastFrameNanos == 0L) 0f else ((frameTimeNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.1f)
+            lastFrameNanos = frameTimeNanos
+            time += dt * (1f - 0.65f * calm)
+            val t = time
+
+            // New ripples take the oldest slot.
+            while (true) {
+                val r = pendingRipples.poll() ?: break
+                val px = if (r.x < 0f) surfaceWidth / 2f else r.x
+                val py = when {
+                    r.y >= 0f -> r.y
+                    r.y == -1f -> 0f
+                    r.y == -2f -> surfaceHeight.toFloat()
+                    else -> surfaceHeight / 2f
+                }
+                val slot = rippleSlots[nextSlot]
+                slot[0] = (px - 0.5f * surfaceWidth) / surfaceHeight
+                slot[1] = (py - 0.5f * surfaceHeight) / surfaceHeight
+                slot[2] = t
+                slot[3] = r.strength
+                val c = rippleColors[nextSlot]
+                c[0] = ((r.color shr 16) and 0xFF) / 255f
+                c[1] = ((r.color shr 8) and 0xFF) / 255f
+                c[2] = (r.color and 0xFF) / 255f
+                nextSlot = (nextSlot + 1) % 3
+            }
+            for (i in 0 until 3) {
+                val s = rippleSlots[i]
+                shader.setFloatUniform("iR$i", s[0], s[1], s[2], s[3])
+                val c = rippleColors[i]
+                shader.setFloatUniform("iRC$i", c[0], c[1], c[2])
+            }
+
+            // Music glow, eased in and out.
+            glow += (WallpaperSignals.glowAmount - glow) * 0.03f
+            val gc = WallpaperSignals.glowColor
+            glowRgb[0] += (((gc shr 16) and 0xFF) / 255f - glowRgb[0]) * 0.05f
+            glowRgb[1] += (((gc shr 8) and 0xFF) / 255f - glowRgb[1]) * 0.05f
+            glowRgb[2] += ((gc and 0xFF) / 255f - glowRgb[2]) * 0.05f
+            shader.setFloatUniform("iGlow", glowRgb[0], glowRgb[1], glowRgb[2], glow)
+            shader.setFloatUniform("iCalm", calm)
+
             shader.setFloatUniform("iTime", t)
             shader.setFloatUniform("iFocus", focus)
             shader.setFloatUniform("iTilt", tiltX, tiltY)
@@ -241,6 +313,14 @@ class FluidWallpaperService : WallpaperService() {
             uniform float2 iTouch;
             uniform float  iFocus;
             uniform float2 iTilt;
+            uniform float4 iR0;
+            uniform float4 iR1;
+            uniform float4 iR2;
+            uniform float3 iRC0;
+            uniform float3 iRC1;
+            uniform float3 iRC2;
+            uniform float4 iGlow;
+            uniform float  iCalm;
 
             const float PI = 3.14159265;
 
@@ -281,8 +361,27 @@ class FluidWallpaperService : WallpaperService() {
                 return smoothstep(thick, 0.0, d);
             }
 
+            // A ring spreading out from r.xy since time r.z, fading as it grows.
+            float ring(float2 uv, float4 r) {
+                float age = iTime - r.z;
+                if (r.w <= 0.0 || age < 0.0 || age > 2.4) return 0.0;
+                float rad = age * 0.75;
+                float d = length(uv - r.xy);
+                float band = exp(-((d - rad) * 11.0) * ((d - rad) * 11.0));
+                return band * r.w * (1.0 - age / 2.4);
+            }
+
+            float2 push(float2 uv, float4 r, float w) {
+                float2 dir = uv - r.xy;
+                float len = max(length(dir), 0.001);
+                return dir / len * w * 0.035;
+            }
+
             half4 main(float2 fragCoord) {
                 float2 uv = (fragCoord - 0.5 * iResolution) / iResolution.y;
+                float w0 = ring(uv, iR0);
+                float w1 = ring(uv, iR1);
+                float w2 = ring(uv, iR2);
 
                 float2 warp = float2(
                     fbm(uv * 1.5 + iTime * 0.03),
@@ -291,6 +390,8 @@ class FluidWallpaperService : WallpaperService() {
                 // parallax: each ribbon layer shifts by a different amount with tilt
                 float2 par = iTilt * 0.05;
                 float2 p = uv + (warp - 0.5) * 0.35 + par;
+                // ripples push the ribbons outwards as they pass
+                p += push(uv, iR0, w0) + push(uv, iR1, w1) + push(uv, iR2, w2);
 
                 half3 topCol    = half3(0.015, 0.020, 0.035);
                 half3 bottomCol = half3(0.040, 0.060, 0.110);
@@ -305,6 +406,14 @@ class FluidWallpaperService : WallpaperService() {
                 col += half3(0.18, 0.26, 0.42) * half(r2);
                 col += half3(0.08, 0.12, 0.22) * half(r3);
 
+                // music glow: the ribbons pick up the album's colour
+                col += half3(iGlow.rgb) * half(iGlow.a * (0.06 + 0.30 * (r1 + r2) + 0.15 * r3));
+
+                // ripple light
+                col += half3(iRC0) * half(w0 * 0.42);
+                col += half3(iRC1) * half(w1 * 0.42);
+                col += half3(iRC2) * half(w2 * 0.42);
+
                 float rim = (r1 * r2 + r2 * r3) * (1.0 - iFocus);
                 col += half3(0.35, 0.42, 0.60) * half(pow(rim, 2.0) * 0.9);
 
@@ -318,7 +427,7 @@ class FluidWallpaperService : WallpaperService() {
                 col += half3(half((g - 0.5) * 0.025 * (1.0 - iFocus)));
 
                 float vig = smoothstep(1.2, 0.2, length(uv));
-                col *= half(mix(0.70, 1.0, vig) * (1.0 - 0.35 * iFocus));
+                col *= half(mix(0.70, 1.0, vig) * (1.0 - 0.35 * iFocus) * (1.0 - 0.18 * iCalm));
 
                 return half4(clamp(col, 0.0, 1.0), 1.0);
             }

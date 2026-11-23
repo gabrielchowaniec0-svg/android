@@ -86,7 +86,10 @@ import com.kinetic.core.home.HomeItem
 import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.home.HomeLayout
 import com.kinetic.core.widgets.WidgetHostManager
+import com.kinetic.launcher.KineticSettings
 import com.kinetic.launcher.NotificationHub
+import com.kinetic.launcher.SettingsActivity
+import com.kinetic.wallpaper.WallpaperSignals
 import com.kinetic.launcher.island.DynamicIslandService
 import com.kinetic.launcher.defaultHomeKeys
 import com.kinetic.lockscreen.BiometricUnlockBridge
@@ -138,7 +141,8 @@ fun KineticHome(
     homePressSignal: Int,
     unlockPhase: UnlockPhase,
     onUnlockFinished: () -> Unit,
-    onRequestWidget: (AppWidgetProviderInfo, Int) -> Unit,
+    /** (widget, page, stack onto this widget item id or null). */
+    onRequestWidget: (AppWidgetProviderInfo, Int, String?) -> Unit,
     onOpenWallpaperPicker: () -> Unit,
     onExpandNotifications: () -> Unit,
     onWallpaperFocus: (Boolean) -> Unit,
@@ -166,6 +170,8 @@ fun KineticHome(
     var privateRevealed by remember { mutableStateOf(false) }
     var openFolder by remember { mutableStateOf<FolderRef?>(null) }
     var widgetPickerOpen by remember { mutableStateOf(false) }
+    /** Set while picking a widget to add to an existing widget's smart stack. */
+    var stackTarget by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<MenuSpec?>(null) }
     var prompt by remember { mutableStateOf<PromptSpec?>(null) }
     var quickMenu by remember { mutableStateOf<QuickMenuState?>(null) }
@@ -173,6 +179,7 @@ fun KineticHome(
     var lastLaunchedKey by remember { mutableStateOf<String?>(null) }
     var popKey by remember { mutableStateOf<String?>(null) }
     val notifying by NotificationHub.packages.collectAsState()
+    val playingPackage by NotificationHub.playingPackage.collectAsState()
 
     val pagerState = rememberPagerState(pageCount = { layout.pages.size })
     val controller = rememberUnlockController()
@@ -207,7 +214,12 @@ fun KineticHome(
     fun isHidden(e: AppEntry): Boolean = e.packageName in privateApps
     fun toast(msg: String) = Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
 
-    fun hasNotification(e: AppEntry): Boolean = e.packageName in notifying
+    val kineticSettings by KineticSettings.values.collectAsState()
+    fun hasNotification(e: AppEntry): Boolean = kineticSettings.notificationRings && e.packageName in notifying
+
+    fun openSettings() {
+        activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
+    }
 
     /** Launch options that make the app zoom out of the tapped icon. */
     fun launchOrigin(): Pair<android.graphics.Rect?, android.os.Bundle?> {
@@ -223,7 +235,16 @@ fun KineticHome(
 
     fun launchApp(e: AppEntry) {
         val (bounds, options) = launchOrigin()
-        if (deps.apps.launch(e, bounds, options)) lastLaunchedKey = e.key
+        if (deps.apps.launch(e, bounds, options)) {
+            lastLaunchedKey = e.key
+            // The wallpaper ripples out from the icon you tapped.
+            if (bounds != null) {
+                WallpaperSignals.ripple(
+                    activity, WallpaperSignals.Kind.App, bounds.exactCenterX(), bounds.exactCenterY(),
+                    color = 0xFF8FA6D8.toInt(), strength = 0.8f,
+                )
+            }
+        }
     }
 
     fun openHomeFolder(pageIndex: Int, folderId: String) {
@@ -296,22 +317,36 @@ fun KineticHome(
         return MenuSpec(folder.name.ifBlank { "Folder" }, actions)
     }
 
-    fun widgetMenu(pageIndex: Int, item: HomeItem.Widget): MenuSpec {
+    fun widgetMenu(pageIndex: Int, item: HomeItem.Widget, shownId: Int = item.appWidgetId): MenuSpec {
         fun resize(dx: Int, dy: Int): () -> Unit = fun() {
             if (!deps.layout.resizeWidget(pageIndex, item.id, dx, dy)) toast("Can't resize — no space")
         }
-        val name = deps.widgets.infoFor(item.appWidgetId)?.let { deps.widgets.label(it) } ?: "Widget"
+        val name = deps.widgets.infoFor(shownId)?.let { deps.widgets.label(it) } ?: "Widget"
         val actions = mutableListOf<Pair<String, () -> Unit>>()
         actions += "Wider" to resize(1, 0)
         actions += "Narrower" to resize(-1, 0)
         actions += "Taller" to resize(0, 1)
         actions += "Shorter" to resize(0, -1)
         actions += movePageActions(pageIndex, item.id)
-        actions += "Remove widget" to fun() {
-            deps.layout.removeItem(pageIndex, item.id)
-            deps.widgets.deleteId(item.appWidgetId)
+        // Smart stacks: several widgets in this one spot.
+        actions += "Add widget to stack…" to fun() {
+            stackTarget = item.id
+            widgetPickerOpen = true
         }
-        return MenuSpec("$name (${item.spanX} × ${item.spanY})", actions)
+        if (item.isStack) {
+            actions += (if (item.smart) "Smart rotate: on (turn off)" else "Smart rotate: off (turn on)") to fun() {
+                deps.layout.setStackSmart(pageIndex, item.id, !item.smart)
+            }
+            actions += "Remove $name from stack" to fun() {
+                if (deps.layout.removeFromStack(pageIndex, item.id, shownId)) deps.widgets.deleteId(shownId)
+            }
+        }
+        actions += (if (item.isStack) "Remove whole stack" else "Remove widget") to fun() {
+            deps.layout.removeItem(pageIndex, item.id)
+            item.allIds.forEach { deps.widgets.deleteId(it) }
+        }
+        val title = if (item.isStack) "$name · stack of ${item.allIds.size}" else name
+        return MenuSpec("$title (${item.spanX} × ${item.spanY})", actions)
     }
 
     fun drawerAppMenu(e: AppEntry, inFolder: DrawerFolder?): MenuSpec {
@@ -469,6 +504,32 @@ fun KineticHome(
         }
         is HomeItem.Widget -> {
             val content: @Composable () -> Unit = {
+                if (item.isStack) {
+                    WidgetStack(
+                        item = item,
+                        widgets = deps.widgets,
+                        editMode = interactive && editMode,
+                        isResumed = isResumed,
+                        playingPackage = playingPackage,
+                        onEditTap = { shown -> menu = widgetMenu(pageIndex, item, shown) },
+                        onResize = { dx, dy ->
+                            deps.layout.resizeWidget(pageIndex, item.id, dx, dy).also { ok ->
+                                if (ok) haptics.performHapticFeedback(HapticFeedbackType.LongPress) else toast("Not enough room")
+                            }
+                        },
+                        cell = { id, edit, onTap, resize ->
+                            WidgetCell(
+                                appWidgetId = id,
+                                widgets = deps.widgets,
+                                editMode = edit,
+                                onEditTap = onTap,
+                                spanX = item.spanX,
+                                spanY = item.spanY,
+                                onResize = resize,
+                            )
+                        },
+                    )
+                } else {
                 WidgetCell(
                     appWidgetId = item.appWidgetId,
                     widgets = deps.widgets,
@@ -482,6 +543,7 @@ fun KineticHome(
                         }
                     },
                 )
+                }
             }
             content
         }
@@ -760,6 +822,7 @@ fun KineticHome(
                         if (deps.layout.removePage(cur)) scrollToPageSoon((cur - 1).coerceAtLeast(0))
                     },
                     onDone = { editMode = false },
+                    onSettings = { openSettings() },
                 )
             }
         }
@@ -797,6 +860,7 @@ fun KineticHome(
                 },
                 hasNotification = { hasNotification(it) },
                 onNotificationRings = { NotificationHub.openSettings(activity) },
+                onSettings = { openSettings() },
                 onDynamicIsland = {
                     val on = DynamicIslandService.isEnabled(activity)
                     menu = MenuSpec(
@@ -902,9 +966,13 @@ fun KineticHome(
                 rows = config.rows,
                 onPick = { info ->
                     widgetPickerOpen = false
-                    onRequestWidget(info, pagerState.currentPage)
+                    onRequestWidget(info, pagerState.currentPage, stackTarget)
+                    stackTarget = null
                 },
-                onDismiss = { widgetPickerOpen = false },
+                onDismiss = {
+                    widgetPickerOpen = false
+                    stackTarget = null
+                },
             )
         }
 
@@ -1192,6 +1260,7 @@ private fun EditToolbar(
     onAddPage: () -> Unit,
     onDeletePage: () -> Unit,
     onDone: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Row(
         Modifier
@@ -1208,6 +1277,7 @@ private fun EditToolbar(
         TextButton(onClick = onWallpaper) { Text("Wallpaper") }
         TextButton(onClick = onAddPage) { Text("+ Page") }
         if (canDeletePage) TextButton(onClick = onDeletePage) { Text("Delete page") }
+        TextButton(onClick = onSettings) { Text("Settings") }
         TextButton(onClick = onDone) { Text("Done") }
     }
 }

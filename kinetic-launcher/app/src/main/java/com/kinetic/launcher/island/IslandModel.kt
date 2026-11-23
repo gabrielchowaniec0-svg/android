@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import android.app.KeyguardManager
+import androidx.compose.ui.graphics.toArgb
 import com.kinetic.launcher.KineticNotificationListener
+import com.kinetic.launcher.KineticSettings
 import com.kinetic.launcher.NotificationHub
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -58,6 +61,8 @@ data class MediaInfo(
 sealed interface IslandAlert {
     data class Charging(val level: Int) : IslandAlert
     data class Ringer(val mode: Int) : IslandAlert
+    /** Lock-screen padlock: [open] animates the shackle opening after you unlock. */
+    data class Lock(val open: Boolean) : IslandAlert
 }
 
 /**
@@ -78,11 +83,23 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     val expanded: StateFlow<Boolean> = _expanded.asStateFlow()
 
     val call: StateFlow<NotificationHub.CallInfo?> get() = NotificationHub.call
+    val timer: StateFlow<NotificationHub.TimerInfo?> get() = NotificationHub.timer
+    val nav: StateFlow<NotificationHub.NavInfo?> get() = NotificationHub.nav
+
+    private val _peek = MutableStateFlow<NotificationHub.MessagePeek?>(null)
+    /** A message dropping down from the island right now. */
+    val peek: StateFlow<NotificationHub.MessagePeek?> = _peek.asStateFlow()
+
+    private val _replying = MutableStateFlow(false)
+    /** True while the reply box is open (the island's window needs the keyboard then). */
+    val replying: StateFlow<Boolean> = _replying.asStateFlow()
+    private var peekJob: Job? = null
+    private var lastPeekAt = 0L
 
     /**
      * How the media should look. Like iOS: nothing while you're inside the app that's
      * playing; compact while it plays elsewhere; and after it's been paused for
-     * [MINIMAL_AFTER_MS] outside its app, it shrinks to just a little logo.
+     * a few seconds (Settings ▸ Dynamic Island) outside its app, it shrinks to just a little logo.
      */
     enum class MediaLook { Hidden, Compact, Minimal }
 
@@ -123,7 +140,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
         if (!m.playing && !inApp && _mediaLook.value == MediaLook.Compact) {
             minimalJob = scope.launch {
-                delay(MINIMAL_AFTER_MS)
+                delay(KineticSettings.current.islandMinimalSeconds * 1000L)
                 _mediaLook.value = MediaLook.Minimal
             }
         }
@@ -152,6 +169,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     val bm = c.getSystemService(BatteryManager::class.java)
                     showAlert(IslandAlert.Charging(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)))
                 }
+                Intent.ACTION_SCREEN_ON -> {
+                    val km = c.getSystemService(KeyguardManager::class.java)
+                    if (KineticSettings.current.islandUnlock && km.isKeyguardLocked) showAlert(IslandAlert.Lock(open = false))
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    if (KineticSettings.current.islandUnlock) showAlert(IslandAlert.Lock(open = true))
+                }
                 AudioManager.RINGER_MODE_CHANGED_ACTION -> {
                     // The current mode is re-sent when we register; only show real changes.
                     if (isInitialStickyBroadcast) return
@@ -166,11 +190,23 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             receiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
                 addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
         listenForSessions()
+        // New messages drop down for a few seconds (longer if you touch them).
+        scope.launch {
+            NotificationHub.message.collect { m ->
+                if (m == null || m.postedAt <= lastPeekAt) return@collect
+                lastPeekAt = m.postedAt
+                _replying.value = false
+                _peek.value = m
+                schedulePeekEnd(5000)
+            }
+        }
     }
 
     /** (Re)connects to media sessions — needs Kinetic's Notification access. */
@@ -191,8 +227,69 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         controller = null
     }
 
+    private fun schedulePeekEnd(ms: Long) {
+        peekJob?.cancel()
+        peekJob = scope.launch {
+            delay(ms)
+            if (!_replying.value) _peek.value = null
+        }
+    }
+
+    fun dismissPeek() {
+        peekJob?.cancel()
+        _replying.value = false
+        _peek.value = null
+    }
+
+    fun openPeek() {
+        _peek.value?.contentIntent?.let { sendPending(context, it) }
+        dismissPeek()
+    }
+
+    fun touchPeek() {
+        if (_peek.value != null && !_replying.value) schedulePeekEnd(6000)
+    }
+
+    fun startReply() {
+        if (_peek.value?.reply == null) return
+        peekJob?.cancel()
+        _replying.value = true
+    }
+
+    /** Sends [text] through the message's Reply action, like replying from the shade. */
+    fun sendReply(text: String) {
+        val m = _peek.value ?: return
+        val action = m.reply ?: return
+        val inputs = action.remoteInputs ?: return
+        val intent = Intent()
+        val results = android.os.Bundle()
+        inputs.forEach { results.putCharSequence(it.resultKey, text) }
+        android.app.RemoteInput.addResultsToIntent(inputs, intent, results)
+        try {
+            action.actionIntent?.send(context, 0, intent)
+        } catch (_: Exception) {
+        }
+        dismissPeek()
+    }
+
+    /** Presses one of a notification's buttons (timer Pause/Cancel, alarm Snooze/Dismiss…). */
+    fun sendAction(action: android.app.Notification.Action) {
+        action.actionIntent?.let { sendPending(context, it) }
+        touched()
+    }
+
+    fun openTimer() {
+        timer.value?.contentIntent?.let { sendPending(context, it) }
+        collapse()
+    }
+
+    fun openNav() {
+        nav.value?.contentIntent?.let { sendPending(context, it) }
+        collapse()
+    }
+
     fun expand() {
-        if (_media.value == null && call.value == null) return
+        if (_media.value == null && call.value == null && timer.value == null && nav.value == null) return
         _expanded.value = true
         scheduleCollapse()
     }
@@ -219,7 +316,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         alertJob?.cancel()
         _alert.value = alert
         alertJob = scope.launch {
-            delay(if (alert is IslandAlert.Charging) 3000 else 2200)
+            delay(
+                when (alert) {
+                    is IslandAlert.Charging -> 3000
+                    is IslandAlert.Lock -> if (alert.open) 1300 else 2500
+                    else -> 2200
+                }
+            )
             _alert.value = null
         }
     }
@@ -302,6 +405,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             state.state == PlaybackState.STATE_STOPPED || state.state == PlaybackState.STATE_ERROR
         ) {
             _media.value = null
+            com.kinetic.wallpaper.WallpaperSignals.setMusicGlow(context, 0, false)
             updateLook()
             return
         }
@@ -345,6 +449,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             }
         }
         updateLook()
+        // The wallpaper glows in the album's colours while music plays.
+        com.kinetic.wallpaper.WallpaperSignals.setMusicGlow(context, lastAccent.toArgb(), playing)
     }
 
     private val icons = HashMap<String, ImageBitmap?>()
@@ -372,8 +478,6 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     companion object {
-        /** Paused and away from its app this long → the island shrinks to a logo. */
-        const val MINIMAL_AFTER_MS = 10_000L
 
         /** Sends a PendingIntent, allowing it to open its screen from the island. */
         fun sendPending(context: Context, intent: android.app.PendingIntent) {

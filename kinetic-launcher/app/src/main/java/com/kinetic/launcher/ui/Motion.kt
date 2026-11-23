@@ -8,6 +8,17 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import android.os.SystemClock
+import com.kinetic.wallpaper.WallpaperSignals
+import kotlin.math.PI
+import kotlin.math.hypot
+import kotlin.math.sin
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -84,6 +95,63 @@ fun Modifier.notificationRing(
         sweep.setLocalMatrix(Matrix().apply { setRotate(angle, w / 2f, h / 2f) })
         translate(-grow, -grow) {
             drawPath(path, ShaderBrush(sweep), alpha = breathe, style = Stroke(width = strokeWidth.toPx()))
+        }
+    }
+}
+
+/**
+ * "Apps react too": when a ripple crosses the screen (unlock, app launch, charging,
+ * notification), each icon hops a little as the wave front reaches it.
+ */
+class IconWave {
+    var originX by mutableFloatStateOf(0f)
+        private set
+    var originY by mutableFloatStateOf(0f)
+        private set
+    /** uptimeMillis when the wave started (0 = none yet). */
+    var startedAt by mutableLongStateOf(0L)
+        private set
+    /** Advanced every frame while a wave is running. */
+    var now by mutableLongStateOf(0L)
+    var speedPxPerMs = 1f
+        private set
+    var strength = 1f
+        private set
+
+    fun start(ripple: WallpaperSignals.Ripple, screenW: Float, screenH: Float) {
+        originX = if (ripple.x < 0f) screenW / 2f else ripple.x
+        originY = when {
+            ripple.y >= 0f -> ripple.y
+            ripple.y == -1f -> 0f
+            ripple.y == -2f -> screenH
+            else -> screenH / 2f
+        }
+        // Same speed as the wallpaper's ring (0.75 screen heights per second).
+        speedPxPerMs = screenH * 0.75f / 1000f
+        strength = ripple.strength.coerceIn(0.3f, 1.3f)
+        startedAt = SystemClock.uptimeMillis()
+        now = startedAt
+    }
+}
+
+val LocalIconWave = staticCompositionLocalOf<IconWave?> { null }
+
+/** Makes an icon hop as a [IconWave] passes over it. [bounds] is the icon's window rect. */
+@Composable
+fun Modifier.iconWave(bounds: () -> Rect?): Modifier {
+    val wave = LocalIconWave.current ?: return this
+    val lift = with(LocalDensity.current) { 7.dp.toPx() }
+    return this.graphicsLayer {
+        val start = wave.startedAt
+        val b = bounds()
+        if (start == 0L || b == null) return@graphicsLayer
+        val dist = hypot(b.center.x - wave.originX, b.center.y - wave.originY)
+        val dt = (wave.now - start) - dist / wave.speedPxPerMs
+        if (dt in 0f..420f) {
+            val k = sin(PI.toFloat() * dt / 420f) * wave.strength
+            scaleX = 1f + 0.10f * k
+            scaleY = 1f + 0.10f * k
+            translationY = -lift * k
         }
     }
 }
