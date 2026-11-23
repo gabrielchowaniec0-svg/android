@@ -4,6 +4,9 @@
     <!-- Swipe down anywhere on the home screen opens the notification shade. Normal, auto-granted. -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
+    <!-- Smart search can show matching contacts. Asked for only when you first use it. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <!-- Android 11+ package visibility: see every launchable app and every widget provider. -->
     <queries>
         <intent>
@@ -18,6 +21,14 @@
         </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <!-- Smart search: open web links (chowaniec.net pages) and web searches. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.WEB_SEARCH" />
         </intent>
     </queries>
 
@@ -52,6 +63,20 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!--
+            Notification rings: lets Kinetic see WHICH apps have notifications (nothing
+            else is read or stored). You switch it on in Settings ▸ Notification access.
+        -->
+        <service
+            android:name=".KineticNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>

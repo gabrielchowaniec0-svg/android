@@ -25,6 +25,11 @@ Full steps, including USB and Wi‑Fi debugging, are in
 | Swipe up anywhere | All apps, One UI–style: follows your finger, 4 × 6 pages aligned with the home grid, Search pill, ⋮ menu (Sort A–Z, reset to my phone's layout) |
 | Swipe down anywhere | Android notification shade |
 | Hold empty wallpaper ~1 s | Edit mode: move/remove items, folders, widgets, pages, wallpaper |
+| Tap an app | Opens it, zooming out of the icon (icon bounces when you come back) |
+| Hold an app | Quick menu above the icon: the app's shortcuts + App info / Edit home / Remove |
+| Edit mode: drag onto an icon | It slides out of the way (swap); hold over its middle to make a folder |
+| Edit mode: widget corner handle | Stretch to resize, snaps to cells |
+| App list ▸ Search | Apps, maths, Chowaniec pages, contacts, Settings, web |
 
 Dependency graph: `:app` → all four libraries; the libraries don't depend on each other.
 

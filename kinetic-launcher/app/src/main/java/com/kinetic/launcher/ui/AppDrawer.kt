@@ -2,6 +2,27 @@
 
 package com.kinetic.launcher.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -113,6 +134,14 @@ fun AppDrawer(
     onSortAlphabetical: () -> Unit,
     onUseMyLayout: () -> Unit,
     onDrag: (Float) -> Unit,
+    /** True when the app has notifications (draws the spinning ring). */
+    hasNotification: (AppEntry) -> Boolean = { false },
+    /** Opens Android's Notification access page for Kinetic. */
+    onNotificationRings: () -> Unit = {},
+    /** Package of the installed Chowaniec app, if any (search opens its pages there). */
+    chowaniecPackage: String? = null,
+    /** Called after search opened something outside Kinetic (a contact, a setting…). */
+    onLeave: () -> Unit = {},
     /** Called with the release velocity (px/s, positive = downward). */
     onDragEnd: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -150,12 +179,19 @@ fun AppDrawer(
             SearchPanel(
                 query = query,
                 onQueryChange = { query = it },
-                results = searchable.filter { query.isBlank() || labelFor(it).contains(query.trim(), ignoreCase = true) },
+                results = rankApps(searchable, query, labelFor),
                 labelFor = labelFor,
                 isHidden = isHidden,
+                hasNotification = hasNotification,
                 onAppClick = onAppClick,
                 onAppLongPress = onAppLongPress,
                 horizontalMargin = horizontalMargin,
+                chowaniecPackage = chowaniecPackage,
+                onLeave = {
+                    searching = false
+                    query = ""
+                    onLeave()
+                },
                 onCancel = {
                     searching = false
                     query = ""
@@ -170,6 +206,7 @@ fun AppDrawer(
                     onTogglePrivate = onTogglePrivate,
                     onSortAlphabetical = onSortAlphabetical,
                     onUseMyLayout = onUseMyLayout,
+                    onNotificationRings = onNotificationRings,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
@@ -194,6 +231,7 @@ fun AppDrawer(
                                 onAppClick = onAppClick,
                                 onAppLongPress = onAppLongPress,
                                 onFolderClick = onFolderClick,
+                                hasNotification = hasNotification,
                             )
                         }
                         if (pages.size > 1) DrawerDots(count = pages.size, current = pagerState.currentPage)
@@ -213,6 +251,7 @@ private fun DrawerTopBar(
     onTogglePrivate: () -> Unit,
     onSortAlphabetical: () -> Unit,
     onUseMyLayout: () -> Unit,
+    onNotificationRings: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -260,6 +299,13 @@ private fun DrawerTopBar(
                     )
                 }
                 DropdownMenuItem(
+                    text = { Text("Notification rings…") },
+                    onClick = {
+                        menuOpen = false
+                        onNotificationRings()
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text("Reset to my phone's layout") },
                     onClick = {
                         menuOpen = false
@@ -282,6 +328,7 @@ private fun DrawerPage(
     onAppClick: (AppEntry) -> Unit,
     onAppLongPress: (AppEntry) -> Unit,
     onFolderClick: (DrawerFolder) -> Unit,
+    hasNotification: (AppEntry) -> Boolean,
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = horizontalMargin)) {
         entries.chunked(DRAWER_COLUMNS).forEachIndexed { rowIndex, rowEntries ->
@@ -304,6 +351,7 @@ private fun DrawerPage(
                                 label = labelFor(entry.app),
                                 iconSize = DRAWER_ICON,
                                 dimmed = isHidden(entry.app),
+                                ring = hasNotification(entry.app),
                                 onClick = { onAppClick(entry.app) },
                                 onLongClick = { onAppLongPress(entry.app) },
                             )
@@ -312,6 +360,7 @@ private fun DrawerPage(
                                 icons = entry.members.map { it.icon },
                                 tileSize = DRAWER_ICON,
                                 color = if (entry.folder.color != 0) Color(entry.folder.color) else DefaultFolderColor,
+                                ring = entry.members.any(hasNotification),
                                 onClick = { onFolderClick(entry.folder) },
                             )
                         }
@@ -387,6 +436,26 @@ private fun SearchGlyph(modifier: Modifier = Modifier) {
     }
 }
 
+/** Apps whose name starts with the query first, then word starts, then anywhere. */
+private fun rankApps(apps: List<AppEntry>, query: String, labelFor: (AppEntry) -> String): List<AppEntry> {
+    val q = query.trim()
+    if (q.isEmpty()) return apps
+    return apps.mapNotNull { e ->
+        val label = labelFor(e)
+        val score = when {
+            label.startsWith(q, ignoreCase = true) -> 0
+            label.split(' ', '-', '.').any { it.startsWith(q, ignoreCase = true) } -> 1
+            label.contains(q, ignoreCase = true) -> 2
+            else -> return@mapNotNull null
+        }
+        score to e
+    }.sortedWith(compareBy({ it.first }, { labelFor(it.second).lowercase() })).map { it.second }
+}
+
+/**
+ * Smart search: apps as icons, then quick maths, Chowaniec pages, contacts,
+ * Settings pages and a web search — all from one box.
+ */
 @Composable
 private fun SearchPanel(
     query: String,
@@ -394,13 +463,46 @@ private fun SearchPanel(
     results: List<AppEntry>,
     labelFor: (AppEntry) -> String,
     isHidden: (AppEntry) -> Boolean,
+    hasNotification: (AppEntry) -> Boolean,
     onAppClick: (AppEntry) -> Unit,
     onAppLongPress: (AppEntry) -> Unit,
     horizontalMargin: Dp,
+    chowaniecPackage: String?,
+    onLeave: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
+
+    var contactsAllowed by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val askContacts = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        contactsAllowed = granted
+    }
+
+    val q = query.trim()
+    val calc = remember(q) { SmartSearch.calculate(q) }
+    val chowPages = remember(q, chowaniecPackage) {
+        if (chowaniecPackage == null) emptyList() else SmartSearch.matchChowaniec(q)
+    }
+    val settings = remember(q) { SmartSearch.matchSettings(q) }
+    val contacts by produceState(initialValue = emptyList<SmartSearch.Contact>(), q, contactsAllowed) {
+        value = emptyList()
+        if (!contactsAllowed || q.length < 2) return@produceState
+        delay(120) // wait for typing to settle
+        value = withContext(Dispatchers.IO) { SmartSearch.contacts(context, q) }
+    }
+    val apps = if (q.isEmpty()) results else results.take(12)
+
+    fun leaveIf(ok: Boolean) {
+        if (ok) onLeave()
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -411,7 +513,7 @@ private fun SearchPanel(
             TextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Search") },
+                placeholder = { Text("Apps, contacts, settings, maths…") },
                 singleLine = true,
                 shape = RoundedCornerShape(26.dp),
                 colors = TextFieldDefaults.colors(
@@ -421,32 +523,163 @@ private fun SearchPanel(
                     unfocusedIndicatorColor = Color.Transparent,
                 ),
                 leadingIcon = { SearchGlyph(Modifier.size(20.dp)) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    // Enter opens the best match: the top app, otherwise a web search.
+                    val top = apps.firstOrNull()
+                    when {
+                        q.isEmpty() -> Unit
+                        top != null -> onAppClick(top)
+                        else -> leaveIf(SmartSearch.webSearch(context, q))
+                    }
+                }),
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focus),
             )
             TextButton(onClick = onCancel) { Text("Cancel") }
         }
-        if (results.isEmpty()) {
-            Text("No apps found", color = DrawerSubtle, modifier = Modifier.padding(24.dp))
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(DRAWER_COLUMNS),
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = horizontalMargin),
-            ) {
-                items(results, key = { it.key }) { e ->
-                    Box(Modifier.height(DRAWER_CELL_HEIGHT)) {
-                        AppTile(
-                            icon = e.icon,
-                            label = labelFor(e),
-                            iconSize = DRAWER_ICON,
-                            dimmed = isHidden(e),
-                            onClick = { onAppClick(e) },
-                            onLongClick = { onAppLongPress(e) },
-                        )
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(DRAWER_COLUMNS),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = horizontalMargin, end = horizontalMargin, bottom = 24.dp),
+        ) {
+            if (calc != null) {
+                item(key = "calc", span = { GridItemSpan(maxLineSpan) }) {
+                    SearchRow(
+                        badge = "=",
+                        title = calc,
+                        subtitle = "Tap to copy",
+                        large = true,
+                        onClick = {
+                            clipboard.setText(AnnotatedString(calc.replace(",", "")))
+                            Toast.makeText(context, "Copied $calc", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                }
+            }
+
+            items(apps, key = { it.key }) { e ->
+                Box(Modifier.height(DRAWER_CELL_HEIGHT)) {
+                    AppTile(
+                        icon = e.icon,
+                        label = labelFor(e),
+                        iconSize = DRAWER_ICON,
+                        dimmed = isHidden(e),
+                        ring = hasNotification(e),
+                        onClick = { onAppClick(e) },
+                        onLongClick = { onAppLongPress(e) },
+                    )
+                }
+            }
+
+            if (q.isNotEmpty()) {
+                if (chowPages.isNotEmpty()) {
+                    header("chow-h", "Chowaniec")
+                    items(chowPages, key = { "chow:" + it.path }, span = { GridItemSpan(maxLineSpan) }) { page ->
+                        SearchRow(badge = "CH", title = page.title, subtitle = "chowaniec.net" + page.path) {
+                            leaveIf(SmartSearch.openChowaniec(context, page.path, chowaniecPackage))
+                        }
                     }
                 }
+
+                if (contacts.isNotEmpty()) {
+                    header("contacts-h", "Contacts")
+                    items(contacts, key = { "contact:" + it.lookupUri }, span = { GridItemSpan(maxLineSpan) }) { c ->
+                        SearchRow(badge = c.name.take(1).uppercase(), title = c.name, round = true) {
+                            leaveIf(SmartSearch.openContact(context, c))
+                        }
+                    }
+                } else if (!contactsAllowed && q.length >= 2) {
+                    item(key = "contacts-ask", span = { GridItemSpan(maxLineSpan) }) {
+                        SearchRow(badge = "＋", title = "Search contacts too", subtitle = "Allow access to your contacts", round = true) {
+                            askContacts.launch(Manifest.permission.READ_CONTACTS)
+                        }
+                    }
+                }
+
+                if (settings.isNotEmpty()) {
+                    header("settings-h", "Settings")
+                    items(settings, key = { "setting:" + it.title }, span = { GridItemSpan(maxLineSpan) }) { page ->
+                        SearchRow(badge = "⚙", title = page.title, subtitle = "Settings") {
+                            leaveIf(SmartSearch.openSettings(context, page))
+                        }
+                    }
+                }
+
+                header("more-h", "Search")
+                if (chowaniecPackage != null) {
+                    item(key = "chow-search", span = { GridItemSpan(maxLineSpan) }) {
+                        SearchRow(badge = "CH", title = "Search Chowaniec for “$q”") {
+                            leaveIf(SmartSearch.openChowaniec(context, SmartSearch.chowaniecSearchPath(q), chowaniecPackage))
+                        }
+                    }
+                }
+                item(key = "web", span = { GridItemSpan(maxLineSpan) }) {
+                    SearchRow(badge = "G", title = "Search the web for “$q”", round = true) {
+                        leaveIf(SmartSearch.webSearch(context, q))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun LazyGridScope.header(key: String, title: String) {
+    item(key = key, span = { GridItemSpan(maxLineSpan) }) {
+        Text(
+            title,
+            color = DrawerSubtle,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 8.dp, top = 18.dp, bottom = 6.dp),
+        )
+    }
+}
+
+/** One full-width result row with a small wallpaper-tinted badge. */
+@Composable
+private fun SearchRow(
+    badge: String,
+    title: String,
+    subtitle: String? = null,
+    round: Boolean = false,
+    large: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(PillColor.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = if (large) 14.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(if (round) CircleShape else SquircleShape)
+                .background(
+                    Brush.linearGradient(listOf(WallpaperPalette.Light, WallpaperPalette.Deep))
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(badge, color = WallpaperPalette.Glint, fontSize = if (badge.length > 1) 12.sp else 16.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = DrawerText,
+                fontSize = if (large) 24.sp else 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(subtitle, color = DrawerSubtle, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

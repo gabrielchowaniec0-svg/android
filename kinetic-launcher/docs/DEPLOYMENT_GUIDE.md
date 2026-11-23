@@ -158,6 +158,49 @@ Phone and computer must be on the **same network**. For Android 13+:
 - Icons squish when pressed, pages shrink/fade as you swipe, and app-list rows
   rise into place one after another when it opens.
 
+**Opening apps, rings, menus and search**
+- Apps **zoom open out of the icon** you tapped. Android doesn't let a
+  third‑party launcher animate an app back *into* its icon when it closes, so
+  instead the icon gives a little **landing bounce** when you come home.
+- **Notification rings**: a thin ring in the wallpaper's blues spins around any
+  app (or folder) with notifications. Turn it on once: Kinetic asks on first
+  launch, or use app list ▸ **⋮** ▸ **Notification rings…** ▸ switch **Kinetic** on
+  under **Notification access**. Kinetic only checks *which* apps have
+  notifications; it doesn't read or store their contents.
+- **Long‑press an app** for a One UI‑style pop‑up above the icon. It shows the
+  app's own shortcuts (e.g. "New message"), plus **App info**, **Edit home**,
+  **Remove** / **Add to home** / **More…**. App shortcuts only appear while
+  Kinetic is the default Home app — that's an Android rule.
+- **Folders** grow out of the folder you tapped and shrink back into it; the apps
+  inside pop in one after another. Back or tapping outside closes it.
+- **Smart search** (Search pill in the app list) finds: apps (best match first —
+  press Enter on the keyboard to open it), quick maths (`15% of 80`, `12*(3+4)`,
+  `2^10`, `sqrt 2` — tap to copy), Chowaniec pages, contacts (Kinetic asks for
+  contacts access the first time; you can say no), Settings pages (Wi‑Fi,
+  Bluetooth, Battery, Display…), **Search Chowaniec for …** and **Search the web
+  for …**.
+
+**Edit‑mode juice**
+- Drag an icon onto another icon's spot: that icon **slides out of the way** into
+  the spot you came from. Let go and they swap.
+- Hold an app over the **middle** of another app for about half a second: the
+  target swells and glows. Let go to **make a folder** (or drop it into an
+  existing folder the same way).
+- Widgets get a round **stretch handle** at the bottom‑right. Drag it and the
+  widget stretches live; let go and it snaps to whole cells with a springy
+  settle ("Not enough room" if something's in the way).
+
+**Chowaniec integration**
+- Kinetic recognises your **Chowaniec** app (the CH icon Chrome installed from
+  chowaniec.net) by its name.
+- **Long‑press Chowaniec**: shows Group Chat, Messages, Chowaniec AI, Notes and
+  Settings. These come from the site's own app shortcuts when Chrome published
+  them, otherwise Kinetic adds them itself.
+- **Notification rings** work for Chowaniec's push notifications too.
+- **Search**: type a page name (`notes`, `calendar`, `watch`, `games`…) or just
+  `chow` to jump straight into that page inside the Chowaniec app, or use
+  **Search Chowaniec for …** (opens chowaniec.net/search).
+
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the
   home screen, the icons glide in along the wallpaper's flow lines.
