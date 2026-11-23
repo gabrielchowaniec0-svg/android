@@ -219,6 +219,13 @@ Phone and computer must be on the **same network**. For Android 13+:
     the call's own Answer / Decline buttons.
   - **Charging** (with %), and **Silent / Vibrate / Ring** when you change the
     ringer.
+- **Drag it** and it stretches after your finger like gel, then wobbles back.
+  **Pull down** on it to expand (same as holding); **push up** to fold it away.
+- Like iOS, a song doesn't show while you're inside the app playing it. If it's
+  paused and you've been out of that app for 10 seconds, the island shrinks to
+  just the app's little logo (`MINIMAL_AFTER_MS` in `IslandModel.kt`); tap the
+  logo to go back, or pull it down for controls.
+- The gap above the island is set by `TOP_NUDGE_DP` in `DynamicIslandService.kt`.
 - Tap outside to fold it back; it also folds itself after a few seconds. It
   hides in landscape. While resting it lets touches through, so pulling down the
   shade from the middle still works.

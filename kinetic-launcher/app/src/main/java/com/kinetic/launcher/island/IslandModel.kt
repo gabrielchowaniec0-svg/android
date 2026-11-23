@@ -19,6 +19,7 @@ import android.os.SystemClock
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import com.kinetic.launcher.KineticNotificationListener
 import com.kinetic.launcher.NotificationHub
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,8 @@ data class MediaInfo(
     val art: ImageBitmap?,
     /** A bright colour taken from the album art, for the waveform (like iOS). */
     val accent: Color,
+    /** The playing app's own icon (shown when the island shrinks to a little logo). */
+    val appIcon: ImageBitmap?,
     val playing: Boolean,
     val durationMs: Long,
     val positionMs: Long,
@@ -75,6 +78,56 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     val expanded: StateFlow<Boolean> = _expanded.asStateFlow()
 
     val call: StateFlow<NotificationHub.CallInfo?> get() = NotificationHub.call
+
+    /**
+     * How the media should look. Like iOS: nothing while you're inside the app that's
+     * playing; compact while it plays elsewhere; and after it's been paused for
+     * [MINIMAL_AFTER_MS] outside its app, it shrinks to just a little logo.
+     */
+    enum class MediaLook { Hidden, Compact, Minimal }
+
+    private val _mediaLook = MutableStateFlow(MediaLook.Hidden)
+    val mediaLook: StateFlow<MediaLook> = _mediaLook.asStateFlow()
+
+    private var foreground: String? = null
+    private var minimalJob: Job? = null
+    private var lookKey: Pair<Boolean, Boolean>? = null
+
+    /** Called by the service whenever another app comes to the front. */
+    fun setForeground(packageName: String?) {
+        if (packageName == null || packageName == foreground) return
+        // The notification shade and keyboards aren't really "leaving" the app.
+        if (packageName == "com.android.systemui" || packageName.contains("inputmethod") ||
+            packageName.contains("honeyboard")
+        ) return
+        foreground = packageName
+        updateLook()
+    }
+
+    private fun updateLook() {
+        val m = _media.value
+        if (m == null) {
+            lookKey = null
+            minimalJob?.cancel()
+            _mediaLook.value = MediaLook.Hidden
+            return
+        }
+        val inApp = m.packageName == foreground
+        val key = m.playing to inApp
+        if (key == lookKey) return
+        lookKey = key
+        minimalJob?.cancel()
+        _mediaLook.value = when {
+            inApp -> MediaLook.Hidden
+            else -> if (_mediaLook.value == MediaLook.Minimal && !m.playing) MediaLook.Minimal else MediaLook.Compact
+        }
+        if (!m.playing && !inApp && _mediaLook.value == MediaLook.Compact) {
+            minimalJob = scope.launch {
+                delay(MINIMAL_AFTER_MS)
+                _mediaLook.value = MediaLook.Minimal
+            }
+        }
+    }
 
     private val main = Handler(Looper.getMainLooper())
     private val sessions = context.getSystemService(MediaSessionManager::class.java)
@@ -249,6 +302,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             state.state == PlaybackState.STATE_STOPPED || state.state == PlaybackState.STATE_ERROR
         ) {
             _media.value = null
+            updateLook()
             return
         }
         val title = meta.getString(MediaMetadata.METADATA_KEY_TITLE)
@@ -271,6 +325,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             artist = artist,
             art = lastArtImage,
             accent = lastAccent,
+            appIcon = iconFor(c.packageName),
             playing = playing,
             durationMs = meta.getLong(MediaMetadata.METADATA_KEY_DURATION),
             positionMs = state.position.coerceAtLeast(0),
@@ -281,12 +336,25 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         pausedHideJob?.cancel()
         if (!playing) {
             pausedHideJob = scope.launch {
-                delay(90_000)
+                delay(10 * 60_000L)
                 if (_media.value?.playing == false) {
                     _media.value = null
                     _expanded.value = false
+                    updateLook()
                 }
             }
+        }
+        updateLook()
+    }
+
+    private val icons = HashMap<String, ImageBitmap?>()
+
+    private fun iconFor(pkg: String): ImageBitmap? = icons.getOrPut(pkg) {
+        try {
+            val size = (context.resources.displayMetrics.density * 48).toInt()
+            context.packageManager.getApplicationIcon(pkg).toBitmap(size, size).asImageBitmap()
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -304,6 +372,9 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     companion object {
+        /** Paused and away from its app this long → the island shrinks to a logo. */
+        const val MINIMAL_AFTER_MS = 10_000L
+
         /** Sends a PendingIntent, allowing it to open its screen from the island. */
         fun sendPending(context: Context, intent: android.app.PendingIntent) {
             try {
