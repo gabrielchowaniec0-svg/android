@@ -1,5 +1,7 @@
 package com.kinetic.launcher
 
+import android.app.Notification
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
@@ -17,6 +19,34 @@ object NotificationHub {
 
     internal fun set(packages: Set<String>) {
         _packages.value = packages
+    }
+
+    /** A phone call in progress or ringing (shown in the Dynamic Island). */
+    data class CallInfo(
+        val key: String,
+        val name: String,
+        /** When the call connected (System.currentTimeMillis), or null while it's ringing. */
+        val startedAt: Long?,
+        val incoming: Boolean,
+        val packageName: String,
+        val contentIntent: PendingIntent?,
+        /** The call notification's own buttons (Answer, Decline, Hang up…). */
+        val actions: List<Notification.Action>,
+    )
+
+    private val _connected = MutableStateFlow(false)
+    /** True while Kinetic's notification listener is running (Notification access is on). */
+    val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
+    internal fun setConnected(on: Boolean) {
+        _connected.value = on
+    }
+
+    private val _call = MutableStateFlow<CallInfo?>(null)
+    val call: StateFlow<CallInfo?> = _call.asStateFlow()
+
+    internal fun setCall(call: CallInfo?) {
+        _call.value = call
     }
 
     /** True once the user has allowed Kinetic to see notifications. */
@@ -46,9 +76,16 @@ object NotificationHub {
  */
 class KineticNotificationListener : NotificationListenerService() {
 
-    override fun onListenerConnected() = refresh()
+    override fun onListenerConnected() {
+        NotificationHub.setConnected(true)
+        refresh()
+    }
 
-    override fun onListenerDisconnected() = NotificationHub.set(emptySet())
+    override fun onListenerDisconnected() {
+        NotificationHub.set(emptySet())
+        NotificationHub.setCall(null)
+        NotificationHub.setConnected(false)
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) = refresh()
 
@@ -58,5 +95,24 @@ class KineticNotificationListener : NotificationListenerService() {
         val active = runCatching { activeNotifications }.getOrNull() ?: return
         // Only things the user can clear: skips "music playing", "charging" and similar.
         NotificationHub.set(active.filter { it.isClearable }.mapTo(HashSet()) { it.packageName })
+        NotificationHub.setCall(active.firstOrNull { it.notification.category == Notification.CATEGORY_CALL }?.let(::callInfo))
+    }
+
+    private fun callInfo(sbn: StatusBarNotification): NotificationHub.CallInfo {
+        val n = sbn.notification
+        val extras = n.extras
+        val name = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() } ?: "Call"
+        val callType = extras.getInt(Notification.EXTRA_CALL_TYPE, 0)
+        val timing = extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false)
+        val incoming = callType == Notification.CallStyle.CALL_TYPE_INCOMING || (callType == 0 && !timing)
+        return NotificationHub.CallInfo(
+            key = sbn.key,
+            name = name,
+            startedAt = if (timing && !incoming) n.`when` else null,
+            incoming = incoming,
+            packageName = sbn.packageName,
+            contentIntent = n.contentIntent,
+            actions = n.actions?.toList().orEmpty(),
+        )
     }
 }

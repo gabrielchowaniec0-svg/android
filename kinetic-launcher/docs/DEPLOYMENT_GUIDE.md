@@ -201,6 +201,28 @@ Phone and computer must be on the **same network**. For Android 13+:
   `chow` to jump straight into that page inside the Chowaniec app, or use
   **Search Chowaniec for …** (opens chowaniec.net/search).
 
+**Dynamic Island**
+- A pure‑black, iPhone‑style island sits around the front camera, above every
+  app, the status bar and the notification shade.
+- Turn it on: app list ▸ **⋮** ▸ **Dynamic Island…** ▸ **Turn on in Settings**,
+  then switch on **Kinetic Dynamic Island** and allow it. (Android only lets
+  accessibility services draw above the status bar; it doesn't read the screen.)
+  If the switch is greyed out, go to Settings ▸ Apps ▸ Kinetic ▸ ⋮ ▸ **Allow
+  restricted settings** first.
+- Music and calls need **Notification access** too (the same switch as the
+  notification rings).
+- What it shows, like iOS:
+  - **Music/video:** album art on the left, a waveform tinted from the art on
+    the right. Tap to open the app; hold to expand with title, progress (tap the
+    bar to seek), and previous / play‑pause / next.
+  - **Calls:** green phone and timer; incoming calls expand with the caller and
+    the call's own Answer / Decline buttons.
+  - **Charging** (with %), and **Silent / Vibrate / Ring** when you change the
+    ringer.
+- Tap outside to fold it back; it also folds itself after a few seconds. It
+  hides in landscape. While resting it lets touches through, so pulling down the
+  shade from the middle still works.
+
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the
   home screen, the icons glide in along the wallpaper's flow lines.

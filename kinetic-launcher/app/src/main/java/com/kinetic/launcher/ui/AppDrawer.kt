@@ -139,6 +139,8 @@ fun AppDrawer(
     hasNotification: (AppEntry) -> Boolean = { false },
     /** Opens Android's Notification access page for Kinetic. */
     onNotificationRings: () -> Unit = {},
+    /** Explains and switches on the Dynamic Island. */
+    onDynamicIsland: () -> Unit = {},
     /** Package of the installed Chowaniec app, if any (search opens its pages there). */
     chowaniecPackage: String? = null,
     /** Called after search opened something outside Kinetic (a contact, a setting…). */
@@ -208,6 +210,7 @@ fun AppDrawer(
                     onSortAlphabetical = onSortAlphabetical,
                     onUseMyLayout = onUseMyLayout,
                     onNotificationRings = onNotificationRings,
+                    onDynamicIsland = onDynamicIsland,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
@@ -253,6 +256,7 @@ private fun DrawerTopBar(
     onSortAlphabetical: () -> Unit,
     onUseMyLayout: () -> Unit,
     onNotificationRings: () -> Unit,
+    onDynamicIsland: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -304,6 +308,13 @@ private fun DrawerTopBar(
                     onClick = {
                         menuOpen = false
                         onNotificationRings()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Dynamic Island…") },
+                    onClick = {
+                        menuOpen = false
+                        onDynamicIsland()
                     },
                 )
                 DropdownMenuItem(
