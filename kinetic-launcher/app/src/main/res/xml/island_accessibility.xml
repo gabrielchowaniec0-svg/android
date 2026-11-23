@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Draws the island only: listens to no events and can't read window contents. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAnnouncement"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/island_description"
+    android:summary="@string/island_summary"
+    android:notificationTimeout="1000"
+    android:isAccessibilityTool="false" />

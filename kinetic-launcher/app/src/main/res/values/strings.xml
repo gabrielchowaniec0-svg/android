@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Kinetic</string>
+    <string name="island_label">Kinetic Dynamic Island</string>
+    <string name="island_summary">An iPhone-style Dynamic Island around the camera</string>
+    <string name="island_description">Draws a black, iPhone-style Dynamic Island around the front camera that shows music, calls, charging and the ringer switch, above every app. Android only lets accessibility services draw above the status bar, which is why this is one. It does not read your screen, what you type, or anything in other apps.</string>
 </resources>

@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kinetic.core.apps.Squircle
 
@@ -46,7 +47,12 @@ object WallpaperPalette {
  * travelling around it.
  */
 @Composable
-fun Modifier.notificationRing(active: Boolean): Modifier {
+fun Modifier.notificationRing(
+    active: Boolean,
+    /** How far outside the icon the ring sits. Keep it small where icons are packed tightly. */
+    grow: Dp = 4.dp,
+    strokeWidth: Dp = 2.5.dp,
+): Modifier {
     if (!active) return this
     val transition = rememberInfiniteTransition(label = "ring")
     val angle by transition.animateFloat(
@@ -62,7 +68,7 @@ fun Modifier.notificationRing(active: Boolean): Modifier {
         label = "breathe",
     )
     return this.drawBehind {
-        val grow = 4.dp.toPx()
+        val grow = grow.toPx()
         val w = size.width + grow * 2
         val h = size.height + grow * 2
         val path = Squircle.androidPath(w, h).asComposePath()
@@ -77,7 +83,7 @@ fun Modifier.notificationRing(active: Boolean): Modifier {
         )
         sweep.setLocalMatrix(Matrix().apply { setRotate(angle, w / 2f, h / 2f) })
         translate(-grow, -grow) {
-            drawPath(path, ShaderBrush(sweep), alpha = breathe, style = Stroke(width = 2.5.dp.toPx()))
+            drawPath(path, ShaderBrush(sweep), alpha = breathe, style = Stroke(width = strokeWidth.toPx()))
         }
     }
 }

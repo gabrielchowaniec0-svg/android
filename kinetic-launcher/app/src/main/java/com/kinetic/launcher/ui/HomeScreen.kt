@@ -87,6 +87,7 @@ import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.home.HomeLayout
 import com.kinetic.core.widgets.WidgetHostManager
 import com.kinetic.launcher.NotificationHub
+import com.kinetic.launcher.island.DynamicIslandService
 import com.kinetic.launcher.defaultHomeKeys
 import com.kinetic.lockscreen.BiometricUnlockBridge
 import com.kinetic.lockscreen.CinematicUnlock
@@ -796,6 +797,24 @@ fun KineticHome(
                 },
                 hasNotification = { hasNotification(it) },
                 onNotificationRings = { NotificationHub.openSettings(activity) },
+                onDynamicIsland = {
+                    val on = DynamicIslandService.isEnabled(activity)
+                    menu = MenuSpec(
+                        title = "Dynamic Island",
+                        actions = listOf(
+                            (if (on) "Turn off in Settings" else "Turn on in Settings") to fun() { DynamicIslandService.openSettings(activity) },
+                        ) + if (!NotificationHub.isEnabled(activity)) {
+                            listOf("Allow music & calls (Notification access)" to fun() { NotificationHub.openSettings(activity) })
+                        } else {
+                            emptyList()
+                        },
+                        message = (if (on) "The island is on. " else "") +
+                            "A black iPhone-style island around the camera that shows music, calls, charging and the " +
+                            "ringer, above every app. Tap it to open the app, hold it to expand. Android only lets " +
+                            "accessibility services draw above the status bar, so you switch it on under " +
+                            "Accessibility ▸ Installed apps ▸ Kinetic Dynamic Island. It doesn't read your screen.",
+                    )
+                },
                 chowaniecPackage = chowaniecPackage,
                 onLeave = { closeDrawer() },
                 onTogglePrivate = { if (privateRevealed) privateRevealed = false else revealPrivate() },

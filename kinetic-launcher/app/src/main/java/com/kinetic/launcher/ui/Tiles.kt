@@ -20,6 +20,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -229,19 +233,36 @@ fun LargeFolderTile(
     onClick: (() -> Unit)? = null,
 ) {
     var tileBounds by remember { mutableStateOf<Rect?>(null) }
-    Column(
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelHeight = remember(measurer, density) {
+        with(density) { measurer.measure("Ag", TileLabelStyle).size.height.toDp() }
+    }
+    BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .jiggle(jiggle)
-            .padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .jiggle(jiggle),
     ) {
+        // Line the panel up with the app icons around it: it runs from the left edge of
+        // the first column's icon to the right edge of the second column's icon, and from
+        // the top of the first row's icon to the bottom of the second row's icon. The
+        // name then sits exactly where the second row's labels are.
+        val cellW = maxWidth / 2
+        val cellH = maxHeight / 2
+        val iconTop = ((cellH - (IconSize + LabelGap + labelHeight)) / 2).coerceAtLeast(0.dp)
+        val side = ((cellW - IconSize) / 2).coerceAtLeast(0.dp)
+        val panelW = maxWidth - side * 2
+        val panelH = (cellH + IconSize).coerceAtMost(maxHeight - iconTop)
+        val pad = 10.dp
+        val gap = 8.dp
+        val mini = minOf((panelW - pad * 2 - gap * 2) / 3, (panelH - pad * 2 - gap * 2) / 3)
+
         Box(
             Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .offset(x = side, y = iconTop)
+                .size(panelW, panelH)
                 .onGloballyPositioned { tileBounds = it.boundsInWindow() }
-                .depth3D(RoundedCornerShape(28.dp), elevation = 6.dp, gloss = 0.6f)
+                .depth3D(RoundedCornerShape(26.dp), elevation = 6.dp, gloss = 0.6f)
                 .background(Color.White.copy(alpha = 0.14f))
                 .then(
                     if (onClick != null) {
@@ -253,7 +274,7 @@ fun LargeFolderTile(
                         Modifier
                     }
                 )
-                .padding(8.dp),
+                .padding(pad),
         ) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
                 icons.take(9).withIndex().chunked(3).forEach { row ->
@@ -261,22 +282,34 @@ fun LargeFolderTile(
                         row.forEach { (index, icon) ->
                             LargeFolderIcon(
                                 icon = icon,
+                                size = mini,
                                 ring = rings.getOrElse(index) { false },
                                 onClick = if (onIconClick != null) ({ onIconClick(index) }) else null,
                             )
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.size(44.dp)) }
+                        repeat(3 - row.size) { Spacer(Modifier.size(mini)) }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(5.dp))
-        Text(name, style = TileLabelStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            name,
+            style = TileLabelStyle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .offset(y = iconTop + panelH + LabelGap)
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+        )
     }
 }
 
+/** Space between an icon and its label (same as [AppTile]). */
+private val LabelGap = 5.dp
+
 @Composable
-private fun LargeFolderIcon(icon: ImageBitmap, ring: Boolean, onClick: (() -> Unit)?) {
+private fun LargeFolderIcon(icon: ImageBitmap, size: Dp, ring: Boolean, onClick: (() -> Unit)?) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
     var bounds by remember { mutableStateOf<Rect?>(null) }
@@ -284,13 +317,15 @@ private fun LargeFolderIcon(icon: ImageBitmap, ring: Boolean, onClick: (() -> Un
         bitmap = icon,
         contentDescription = null,
         modifier = Modifier
-            .size(44.dp)
+            .size(size)
             .onGloballyPositioned { bounds = it.boundsInWindow() }
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .notificationRing(ring)
+            // Icons are packed tightly here, so the ring hugs the icon instead of
+            // spilling onto its neighbours.
+            .notificationRing(ring, grow = 1.5.dp, strokeWidth = 1.75.dp)
             .depth3D(SquircleShape, elevation = 3.dp)
             .then(
                 if (onClick != null) {
