@@ -192,9 +192,38 @@ class AppRepository(context: Context) {
      * plus the work-profile briefcase where relevant. Rendered once and cached.
      */
     private fun renderIcon(info: LauncherActivityInfo): ImageBitmap {
+        // Fast path: the finished icon saved on disk last time (re-made when the app updates).
+        val diskKey = diskKey(info)
+        val file = java.io.File(diskDir, "$diskKey.png")
+        if (file.exists()) {
+            android.graphics.BitmapFactory.decodeFile(file.absolutePath)?.let { return it.asImageBitmap() }
+        }
+        val bmp = renderUncached(info)
+        runCatching {
+            diskDir.mkdirs()
+            file.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        return bmp.asImageBitmap()
+    }
+
+    /** Where finished icons are kept between launches (cleared automatically when stale). */
+    private val diskDir = java.io.File(appContext.cacheDir, "icons-v$ICON_CACHE_VERSION-$iconPx")
+
+    private fun diskKey(info: LauncherActivityInfo): String {
+        val stamp = runCatching { java.io.File(info.applicationInfo.sourceDir).lastModified() }.getOrDefault(0L)
+        val raw = "${info.componentName.flattenToShortString()}#${userManager.getSerialNumberForUser(info.user)}#$stamp"
+        return Integer.toHexString(raw.hashCode()) + raw.length
+    }
+
+    private fun renderUncached(info: LauncherActivityInfo): android.graphics.Bitmap {
         val shaped = renderer.render(info.getIcon(densityDpi))
-        if (info.user == me) return shaped.asImageBitmap()
+        if (info.user == me) return shaped
         val badged = appContext.packageManager.getUserBadgedIcon(BitmapDrawable(appContext.resources, shaped), info.user)
-        return badged.toBitmap(iconPx, iconPx).asImageBitmap()
+        return badged.toBitmap(iconPx, iconPx)
+    }
+
+    private companion object {
+        /** Bump when the icon look changes, so old cached icons are re-made. */
+        const val ICON_CACHE_VERSION = 1
     }
 }

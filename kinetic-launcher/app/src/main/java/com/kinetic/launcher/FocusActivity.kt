@@ -231,6 +231,116 @@ class FocusActivity : ComponentActivity() {
                 }
             }
 
+            // ---- place trigger ----
+            Text("Place", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
+            val pl = m.place
+            var locating by remember { mutableStateOf(false) }
+            val askBackground = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+            fun setHere() {
+                locating = true
+                FocusTriggers.currentLocation(
+                    this@FocusActivity,
+                    onResult = { lat, lng ->
+                        locating = false
+                        save(m.copy(place = FocusModes.Place(lat, lng, pl?.radiusM ?: 200f, "Here")))
+                        // Arrive/leave alerts need location "Allow all the time".
+                        if (!FocusTriggers.hasBackgroundLocation(this@FocusActivity)) {
+                            askBackground.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                        }
+                    },
+                    onFail = { locating = false },
+                )
+            }
+            val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) setHere() }
+            Text(
+                when {
+                    locating -> "Finding you…"
+                    pl != null -> "Turns on within ${pl.radiusM.toInt()} m of the place you set (%.4f, %.4f)".format(pl.lat, pl.lng)
+                    else -> "Turn on automatically when you arrive somewhere"
+                },
+                color = Subtle,
+                fontSize = 12.sp,
+            )
+            if (pl != null && !FocusTriggers.hasBackgroundLocation(this@FocusActivity)) {
+                Text(
+                    "Needs location \u201CAllow all the time\u201D ›",
+                    color = Color(0xFFFF9F0A),
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { askBackground.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }.padding(vertical = 4.dp),
+                )
+            }
+            Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (pl == null) "Use my current location" else "Move here",
+                    color = Color.Black,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(m.color))
+                        .clickable {
+                            if (FocusTriggers.hasLocation(this@FocusActivity)) setHere()
+                            else askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+                if (pl != null) {
+                    listOf(100f, 200f, 500f).forEach { r ->
+                        Text(
+                            "${r.toInt()} m",
+                            color = if (pl.radiusM == r) Color.Black else Color.White,
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (pl.radiusM == r) Color.White else Tile)
+                                .clickable { save(m.copy(place = pl.copy(radiusM = r))) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                    Text(
+                        "Remove",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Tile).clickable { save(m.copy(place = null)) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
+            // ---- app trigger ----
+            var showTriggerApps by remember { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().clickable { showTriggerApps = !showTriggerApps }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Turn on when I open…", color = Color.White, fontSize = 15.sp)
+                    Text(
+                        if (m.triggerApps.isEmpty()) "No apps" else "${m.triggerApps.size} app(s) — off again when you leave them",
+                        color = Subtle,
+                        fontSize = 12.sp,
+                    )
+                }
+                Text(if (showTriggerApps) "▲" else "▼", color = Subtle)
+            }
+            if (showTriggerApps) {
+                apps.forEach { (pkg, label) ->
+                    val checked = pkg in m.triggerApps
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            save(m.copy(triggerApps = if (checked) m.triggerApps - pkg else m.triggerApps + pkg))
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { save(m.copy(triggerApps = if (it) m.triggerApps + pkg else m.triggerApps - pkg)) },
+                            colors = CheckboxDefaults.colors(checkedColor = Color(m.color)),
+                        )
+                        Text(label, color = Color.White, fontSize = 15.sp)
+                    }
+                }
+            }
+
             Text("Dim wallpaper", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
             var dim by remember(m.wallpaperDim) { mutableFloatStateOf(m.wallpaperDim) }
             Slider(

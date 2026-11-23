@@ -55,6 +55,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.BlurEffect
@@ -92,6 +96,7 @@ import com.kinetic.launcher.KineticSettings
 import com.kinetic.launcher.WallpaperStudioActivity
 import com.kinetic.launcher.NotificationHub
 import com.kinetic.launcher.SettingsActivity
+import com.kinetic.launcher.Updater
 import com.kinetic.wallpaper.WallpaperSignals
 import com.kinetic.launcher.island.DynamicIslandService
 import com.kinetic.launcher.defaultHomeKeys
@@ -143,6 +148,7 @@ fun KineticHome(
     deps: HomeDeps,
     activity: FragmentActivity,
     homePressSignal: Int,
+    openSearchSignal: Int = 0,
     unlockPhase: UnlockPhase,
     onUnlockFinished: () -> Unit,
     /** (widget, page, stack onto this widget item id or null). */
@@ -174,6 +180,8 @@ fun KineticHome(
     var privateRevealed by remember { mutableStateOf(false) }
     var openFolder by remember { mutableStateOf<FolderRef?>(null) }
     var widgetPickerOpen by remember { mutableStateOf(false) }
+    /** Bumped by the three-finger tap to open search. */
+    var searchSignal by remember { mutableIntStateOf(0) }
     /** Set while picking a widget to add to an existing widget's smart stack. */
     var stackTarget by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<MenuSpec?>(null) }
@@ -635,6 +643,13 @@ fun KineticHome(
     }
 
     // Home button while already home: close everything and go to the first page.
+    LaunchedEffect(openSearchSignal) {
+        if (openSearchSignal > 0) {
+            searchSignal++
+            openDrawer()
+        }
+    }
+
     LaunchedEffect(homePressSignal) {
         if (homePressSignal == 0) return@LaunchedEffect
         prompt = null
@@ -654,6 +669,26 @@ fun KineticHome(
             popKey = key
             delay(900)
             popKey = null
+        }
+    }
+
+    // A new Kinetic build on GitHub? Offer it once (checked at most every few hours).
+    LaunchedEffect(isResumed) {
+        if (!isResumed) return@LaunchedEffect
+        delay(1200) // after the home screen has settled
+        val st = Updater.check(activity)
+        if (st is Updater.State.Available) {
+            val prefs = activity.getSharedPreferences("kinetic_updater", android.content.Context.MODE_PRIVATE)
+            if (prefs.getLong("prompted", 0L) != st.release.code) {
+                prefs.edit().putLong("prompted", st.release.code).apply()
+                menu = MenuSpec(
+                    title = "Kinetic update ready",
+                    actions = listOf(
+                        "Update now" to fun() { scope.launch { Updater.downloadAndInstall(activity, st.release) } },
+                    ),
+                    message = "Build ${st.release.code} is on GitHub. " + st.release.notes.lineSequence().firstOrNull().orEmpty(),
+                )
+            }
         }
     }
 
@@ -712,6 +747,53 @@ fun KineticHome(
     Box(
         Modifier
             .fillMaxSize()
+            // Two fingers down: Focus. Three-finger tap: search / Commands.
+            .pointerInput(gesturesEnabled, kineticSettings.multiFinger) {
+                if (!gesturesEnabled || !kineticSettings.multiFinger) return@pointerInput
+                val swipe = 70.dp.toPx()
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val t0 = System.currentTimeMillis()
+                    var maxFingers = 1
+                    var startY = 0f
+                    var moved = 0f
+                    var fired = false
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        val down = ev.changes.filter { it.pressed }
+                        if (down.isEmpty()) break
+                        val avgY = down.map { it.position.y }.average().toFloat()
+                        if (down.size > maxFingers) {
+                            maxFingers = down.size
+                            startY = avgY
+                        }
+                        if (maxFingers >= 2) {
+                            // Keep one-finger swipes (drawer, shade, pages) out of it.
+                            ev.changes.forEach { it.consume() }
+                            moved = maxOf(moved, kotlin.math.abs(avgY - startY))
+                            if (!fired && maxFingers == 2 && avgY - startY > swipe) {
+                                fired = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                openFocus()
+                            }
+                        }
+                    }
+                    if (!fired && maxFingers == 3 && moved < swipe / 2 && System.currentTimeMillis() - t0 < 500) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        searchSignal++
+                        openDrawer()
+                    }
+                }
+            }
+            // Double-tap empty wallpaper: lock the phone.
+            .pointerInput(gesturesEnabled, kineticSettings.doubleTapLock) {
+                if (!gesturesEnabled || !kineticSettings.doubleTapLock) return@pointerInput
+                detectTapGestures(onDoubleTap = {
+                    if (!com.kinetic.launcher.island.DynamicIslandService.lockScreen()) {
+                        toast("Turn on Kinetic Dynamic Island (Accessibility) to double-tap to lock")
+                    }
+                })
+            }
             // Swipe up anywhere: app drawer. Swipe down anywhere: notification shade.
             .pointerInput(gesturesEnabled) {
                 if (!gesturesEnabled) return@pointerInput
@@ -798,14 +880,35 @@ fun KineticHome(
                         val page = layout.pages.getOrNull(pageIndex)
                         if (page != null) {
                             LauncherGrid(
-                                // Pages shrink and fade a little as they slide away, for depth.
+                                // Page transition (Settings ▸ Home screen ▸ Page transition).
                                 modifier = Modifier.graphicsLayer {
-                                    val off = ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
-                                        .absoluteValue.coerceIn(0f, 1f)
-                                    val s = 1f - 0.1f * off
-                                    scaleX = s
-                                    scaleY = s
-                                    alpha = 1f - 0.5f * off
+                                    val raw = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+                                    val off = raw.absoluteValue.coerceIn(0f, 1f)
+                                    when (kineticSettings.pageTransition) {
+                                        "flat" -> Unit
+                                        "fade" -> alpha = 1f - off
+                                        "cube" -> {
+                                            // Pages turn like the faces of a cube.
+                                            cameraDistance = 14f * this.density
+                                            transformOrigin = TransformOrigin(if (raw > 0) 1f else 0f, 0.5f)
+                                            rotationY = -raw.coerceIn(-1f, 1f) * 70f
+                                        }
+                                        "carousel" -> {
+                                            val s = 1f - 0.18f * off
+                                            scaleX = s
+                                            scaleY = s
+                                            translationX = raw * size.width * 0.25f
+                                            rotationY = -raw.coerceIn(-1f, 1f) * 18f
+                                            cameraDistance = 14f * this.density
+                                        }
+                                        else -> {
+                                            // depth: pages shrink and fade a little as they slide away.
+                                            val s = 1f - 0.1f * off
+                                            scaleX = s
+                                            scaleY = s
+                                            alpha = 1f - 0.5f * off
+                                        }
+                                    }
                                 },
                                 config = config,
                                 items = page.items.mapNotNull { item ->
@@ -923,6 +1026,7 @@ fun KineticHome(
                 onSortAlphabetical = { deps.layout.clearDrawerOrder() },
                 onUseMyLayout = { menu = useMyLayoutMenu() },
                 onDrag = { dy -> dragDrawerBy(dy) },
+                searchSignal = searchSignal,
                 onDragEnd = { vy ->
                     when {
                         vy > flingVelocityPx -> closeDrawer(vy)          // quick flick down

@@ -30,3 +30,7 @@ include(":launcher-core")
 include(":wallpaper-engine")
 include(":lockscreen-transition")
 include(":security-engine")
+
+// Records Kinetic's start-up, drawer and page swipes so Android can pre-compile
+// them (see docs/SPEED.md). Only used when you run "Generate Baseline Profile".
+include(":baselineprofile")

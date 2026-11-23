@@ -367,6 +367,54 @@ times and the days; overnight schedules like 10:30 PM–7:00 AM work.
 **Driving** can also turn on when your car's Bluetooth connects. Kinetic asks for
 Bluetooth permission the first time.
 
+## More island activities
+
+- **Deliveries and rides** (Uber, Uber Eats, DoorDash, Lyft, Grubhub, Instacart and
+  others): the app's icon plus the ETA in green. Expanded, it shows the status and a
+  progress track.
+- **Live scores** from ESPN, theScore, Yahoo Sports, the league apps, FotMob or Google:
+  for example `CHI 21 · 17 GRE`. Expanded, it shows full team names, a big score and the
+  game clock.
+- **Privacy dots** next to the island, like iOS: orange when an app uses the mic,
+  green when one uses the camera, red while the screen is being recorded.
+- **Low battery:** at 15% (the same moment One UI warns), "Low Battery 15%" appears
+  in red. Tap it to open Battery Saver.
+
+## Gestures
+
+- **Double-tap empty wallpaper** to lock the phone. This needs the Dynamic Island
+  switch on.
+- **Two fingers down** opens Focus. **A three-finger tap** opens search and Commands.
+- **Shake to…** (Settings ▸ Gestures): flashlight, camera, search, Focus or any app,
+  from anywhere. Two firm shakes trigger it. Only the flashlight works while the phone
+  is locked.
+
+## Icons & pages
+
+Settings ▸ Icons & pages:
+- **Icon style:** Normal, *Tinted* (one colour from your wallpaper), *Glass*
+  (pale, see-through, with a frosted rim) or *Mono*.
+- **Page transition:** Depth, Flat, Cube, Carousel or Fade.
+
+## Smarter search
+
+Typos are forgiven: "spotfy" finds Spotify, "ytm" finds YouTube Music, "rout to
+ohare" still routes, and "call mon" finds Mom.
+
+## Focus triggers
+
+When you hold a Focus to edit it, you can also set:
+- **Place:** *Use my current location*, then choose 100, 200 or 500 m. The Focus
+  turns on when you arrive and off when you leave. It needs location
+  "Allow all the time".
+- **Turn on when I open…:** pick apps (for example your games for Gaming). The
+  Focus turns off again when you leave them.
+
+## Updates
+
+See **UPDATES.md** for the one-time setup. After that, every merge becomes an update
+you can install from Kinetic.
+
 ## Unlock animation
 
 When the screen wakes on the lock screen, the island becomes a small Face ID–style

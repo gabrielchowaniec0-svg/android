@@ -78,7 +78,7 @@ object FocusScheduler {
     internal fun fire(context: Context, modeId: String?, on: Boolean) {
         FocusModes.init(context)
         if (modeId != null) {
-            if (on) FocusModes.turnOn(context, modeId)
+            if (on) FocusModes.turnOnAuto(context, modeId, "schedule")
             else if (FocusModes.active.value?.id == modeId) FocusModes.turnOff(context)
         }
         scheduleNext(context)
@@ -100,7 +100,7 @@ object FocusScheduler {
         }
         if (!isCar) return
         val mode = FocusModes.modes.value.firstOrNull { it.carTrigger } ?: return
-        if (connected) FocusModes.turnOn(context, mode.id)
+        if (connected) FocusModes.turnOnAuto(context, mode.id, "car")
         else if (FocusModes.active.value?.id == mode.id) FocusModes.turnOff(context)
     }
 }
@@ -111,7 +111,10 @@ class FocusScheduleReceiver : BroadcastReceiver() {
         when (intent.action) {
             "com.kinetic.launcher.FOCUS_SCHEDULE" ->
                 FocusScheduler.fire(context, intent.getStringExtra("mode"), intent.getBooleanExtra("on", false))
-            else -> FocusScheduler.scheduleNext(context)
+            else -> {
+                FocusScheduler.scheduleNext(context)
+                FocusTriggers.registerPlaces(context)
+            }
         }
     }
 }
