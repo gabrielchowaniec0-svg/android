@@ -5,7 +5,10 @@ package com.kinetic.launcher.ui
 import android.appwidget.AppWidgetProviderInfo
 import android.os.Bundle
 import android.util.SizeF
+import android.graphics.Outline
+import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -88,6 +91,7 @@ import com.kinetic.lockscreen.rememberUnlockController
 import com.kinetic.security.StealthCustomizationManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 /** How long you hold empty wallpaper before the home screen unlocks for editing. */
@@ -123,6 +127,8 @@ fun KineticHome(
     /** True until the built-in "my phone" layout has been applied once. */
     autoApplyMyLayout: Boolean,
     onApplyMyLayout: (List<AppEntry>) -> Unit,
+    /** True while the launcher is on screen (drives the tilt sensor). */
+    isResumed: Boolean,
 ) {
     val config = deps.config
     val scope = rememberCoroutineScope()
@@ -154,6 +160,9 @@ fun KineticHome(
     val drawerMostlyOpen by remember { derivedStateOf { drawerProgress.value > 0.15f } }
     val drawerSpring = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow) }
     val dragRangePx = with(density) { 360.dp.toPx() }
+
+    // 3D parallax: the home screen leans slightly as you tilt the phone.
+    val tilt = rememberDeviceTilt(active = isResumed && !drawerShowing && !editMode)
 
     fun openDrawer() {
         drawerOpen = true
@@ -516,6 +525,13 @@ fun KineticHome(
                     scaleY = s
                     val r = 24.dp.toPx() * p
                     renderEffect = if (r > 0.5f) BlurEffect(r, r) else null
+                    // Tilt parallax (also read in the draw phase).
+                    val t = tilt.value
+                    rotationY = t.x * 5f
+                    rotationX = -t.y * 5f
+                    translationX = t.x * 8.dp.toPx()
+                    translationY = t.y * 8.dp.toPx()
+                    cameraDistance = 16f * density
                 }
                 .systemBarsPadding()
         ) {
@@ -540,6 +556,15 @@ fun KineticHome(
                         val page = layout.pages.getOrNull(pageIndex)
                         if (page != null) {
                             LauncherGrid(
+                                // Pages shrink and fade a little as they slide away, for depth.
+                                modifier = Modifier.graphicsLayer {
+                                    val off = ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
+                                        .absoluteValue.coerceIn(0f, 1f)
+                                    val s = 1f - 0.1f * off
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = 1f - 0.5f * off
+                                },
                                 config = config,
                                 items = page.items.mapNotNull { item ->
                                     itemContent(item, pageIndex, interactive = true)?.let { c ->
@@ -593,6 +618,7 @@ fun KineticHome(
             )
             AppDrawer(
                 sections = drawerSections(),
+                progress = { drawerProgress.value },
                 horizontalMargin = config.marginDp.dp,
                 searchable = allApps.orEmpty().filter { privateRevealed || !isHidden(it) },
                 labelFor = { labelFor(it) },
@@ -722,7 +748,16 @@ private fun WidgetCell(
     onEditTap: () -> Unit,
 ) {
     val view = remember(appWidgetId) { widgets.viewFor(appWidgetId) }
-    BoxWithConstraints(Modifier.fillMaxSize().jiggle(editMode).padding(6.dp)) {
+    val corner = 24.dp
+    val cornerPx = with(LocalDensity.current) { corner.toPx() }
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .jiggle(editMode)
+            .padding(6.dp)
+            // Rounded, bevelled and lifted off the wallpaper, like the icons.
+            .depth3D(RoundedCornerShape(corner), elevation = 8.dp, gloss = 0.5f)
+    ) {
         if (view == null) {
             Box(
                 Modifier
@@ -744,6 +779,13 @@ private fun WidgetCell(
                 factory = { _ ->
                     // The same view object is reused across screens, so detach it first.
                     (view.parent as? ViewGroup)?.removeView(view)
+                    // Also round the view itself, for widgets that draw outside Compose's clip.
+                    view.outlineProvider = object : ViewOutlineProvider() {
+                        override fun getOutline(v: View, outline: Outline) {
+                            outline.setRoundRect(0, 0, v.width, v.height, cornerPx)
+                        }
+                    }
+                    view.clipToOutline = true
                     view
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -753,7 +795,7 @@ private fun WidgetCell(
             Box(
                 Modifier
                     .matchParentSize()
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
                     .clickable(onClick = onEditTap)
             )
         }

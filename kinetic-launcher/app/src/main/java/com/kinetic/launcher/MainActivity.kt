@@ -48,6 +48,7 @@ class MainActivity : FragmentActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isResumedNow = false
+    private val resumedState = mutableStateOf(false)
     private var lastScreenOffAt = 0L
     private var lastUserPresentAt = 0L
 
@@ -133,6 +134,7 @@ class MainActivity : FragmentActivity() {
                     onWallpaperFocus = ::setWallpaperFocus,
                     autoApplyMyLayout = myLayoutPending.value,
                     onApplyMyLayout = ::applyMyPhoneLayout,
+                    isResumed = resumedState.value,
                 )
             }
         }
@@ -146,6 +148,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         isResumedNow = true
+        resumedState.value = true
         if (unlockPhase.value == UnlockPhase.ARMED) {
             val now = SystemClock.elapsedRealtime()
             val unlockedSinceScreenOff = lastUserPresentAt > lastScreenOffAt
@@ -163,6 +166,7 @@ class MainActivity : FragmentActivity() {
     override fun onPause() {
         super.onPause()
         isResumedNow = false
+        resumedState.value = false
         handler.removeCallbacks(disarmUnlock)
     }
 

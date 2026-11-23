@@ -3,6 +3,10 @@ package com.kinetic.wallpaper
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RuntimeShader
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
 import android.service.wallpaper.WallpaperService
@@ -23,7 +27,7 @@ class FluidWallpaperService : WallpaperService() {
 
     override fun onCreateEngine(): Engine = FluidEngine()
 
-    private inner class FluidEngine : Engine(), Choreographer.FrameCallback {
+    private inner class FluidEngine : Engine(), Choreographer.FrameCallback, SensorEventListener {
 
         private val shader = RuntimeShader(SHADER_SRC)
         private val paint = Paint()
@@ -44,6 +48,18 @@ class FluidWallpaperService : WallpaperService() {
         // Softening while the launcher's app drawer / folders are open (eased each frame).
         private var focus = 0f
         private var focusTarget = 0f
+
+        // Tilt parallax from the game rotation vector, self-centring.
+        private val sensors = getSystemService(SensorManager::class.java)
+        private val rotationSensor = sensors?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        private val rotation = FloatArray(9)
+        private val orientation = FloatArray(3)
+        private var basePitch = Float.NaN
+        private var baseRoll = 0f
+        private var tiltTargetX = 0f
+        private var tiltTargetY = 0f
+        private var tiltX = 0f
+        private var tiltY = 0f
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -97,13 +113,33 @@ class FluidWallpaperService : WallpaperService() {
         private fun start() {
             if (running) return
             running = true
+            basePitch = Float.NaN
+            if (rotationSensor != null) sensors?.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_GAME)
             choreographer.postFrameCallback(this)
         }
 
         private fun stop() {
             running = false
+            sensors?.unregisterListener(this)
             choreographer.removeFrameCallback(this)
         }
+
+        override fun onSensorChanged(event: SensorEvent) {
+            SensorManager.getRotationMatrixFromVector(rotation, event.values)
+            SensorManager.getOrientation(rotation, orientation)
+            val pitch = orientation[1]
+            val roll = orientation[2]
+            if (basePitch.isNaN()) {
+                basePitch = pitch
+                baseRoll = roll
+            }
+            basePitch += (pitch - basePitch) * 0.02f
+            baseRoll += (roll - baseRoll) * 0.02f
+            tiltTargetX = ((roll - baseRoll) / 0.35f).coerceIn(-1f, 1f)
+            tiltTargetY = ((pitch - basePitch) / 0.35f).coerceIn(-1f, 1f)
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
         override fun doFrame(frameTimeNanos: Long) {
             if (!running) return
@@ -125,10 +161,13 @@ class FluidWallpaperService : WallpaperService() {
             }
 
             focus += (focusTarget - focus) * 0.16f
+            tiltX += (tiltTargetX - tiltX) * 0.12f
+            tiltY += (tiltTargetY - tiltY) * 0.12f
 
             val t = (frameTimeNanos - startNanos) / 1_000_000_000f
             shader.setFloatUniform("iTime", t)
             shader.setFloatUniform("iFocus", focus)
+            shader.setFloatUniform("iTilt", tiltX, tiltY)
             shader.setFloatUniform("iTouch", touchX, touchY)
             paint.shader = shader
 
@@ -163,6 +202,7 @@ class FluidWallpaperService : WallpaperService() {
             uniform float  iTime;
             uniform float2 iTouch;
             uniform float  iFocus;
+            uniform float2 iTilt;
 
             const float PI = 3.14159265;
 
@@ -210,7 +250,9 @@ class FluidWallpaperService : WallpaperService() {
                     fbm(uv * 1.5 + iTime * 0.03),
                     fbm(uv * 1.5 - iTime * 0.025 + 5.2)
                 );
-                float2 p = uv + (warp - 0.5) * 0.35;
+                // parallax: each ribbon layer shifts by a different amount with tilt
+                float2 par = iTilt * 0.05;
+                float2 p = uv + (warp - 0.5) * 0.35 + par;
 
                 half3 topCol    = half3(0.015, 0.020, 0.035);
                 half3 bottomCol = half3(0.040, 0.060, 0.110);
@@ -218,8 +260,8 @@ class FluidWallpaperService : WallpaperService() {
 
                 float soft = 1.0 + iFocus * 1.6;              // wider, blurrier ribbons
                 float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16 * soft);
-                float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11 * soft);
-                float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20 * soft);
+                float r2 = ribbon(p * 1.15 + par * 0.8, 1.7, 3.1, 0.28, 0.11 * soft);
+                float r3 = ribbon(p * 0.85 - par * 0.6, 4.0, 1.7, 0.45, 0.20 * soft);
 
                 col += half3(0.12, 0.17, 0.33) * half(r1);
                 col += half3(0.18, 0.26, 0.42) * half(r2);
