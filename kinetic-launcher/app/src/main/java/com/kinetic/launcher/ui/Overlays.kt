@@ -56,12 +56,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private val PanelColor = Color(0xFF141B2D)
 private val TextColor = Color(0xFFE3E8F4)
 private val SubtleText = Color(0xFF9AA6C2)
 
-/** A titled list of actions shown as a dialog. */
-data class MenuSpec(val title: String, val actions: List<Pair<String, () -> Unit>>)
+/** A titled list of actions (with an optional explanation) shown as a dialog. */
+data class MenuSpec(
+    val title: String,
+    val actions: List<Pair<String, () -> Unit>>,
+    val message: String? = null,
+)
 
 /** A single-line text prompt (folder names, renaming apps). */
 data class PromptSpec(val title: String, val initial: String, val onConfirm: (String) -> Unit)
@@ -70,10 +73,11 @@ data class PromptSpec(val title: String, val initial: String, val onConfirm: (St
 fun ActionMenu(spec: MenuSpec, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (spec.actions.isEmpty()) "OK" else "Cancel") } },
         title = { Text(spec.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                spec.message?.let { Text(it, modifier = Modifier.padding(bottom = 8.dp)) }
                 spec.actions.forEach { (label, action) ->
                     TextButton(
                         onClick = {
@@ -121,53 +125,50 @@ fun FolderOverlay(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(Color.Black.copy(alpha = 0.4f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
-            Modifier
-                .padding(24.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(PanelColor)
-                // swallow taps so tapping inside the panel doesn't close it
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-                .padding(16.dp),
-        ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // One UI shows the folder name large, above the panel. Tap it to rename.
             Text(
                 name,
-                color = TextColor,
-                fontSize = 18.sp,
+                color = Color.White,
+                fontSize = 30.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable(onClick = onRename)
-                    .padding(8.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             )
-            if (apps.isEmpty()) {
-                Text("This folder is empty", color = SubtleText, modifier = Modifier.padding(16.dp))
-            } else {
-                LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.heightIn(max = 440.dp)) {
-                    items(apps, key = { it.key }) { e ->
-                        Box(Modifier.height(96.dp)) {
-                            AppTile(
-                                icon = e.icon,
-                                label = labelFor(e),
-                                onClick = { onAppClick(e) },
-                                onLongClick = { onAppLongPress(e) },
-                            )
+            Spacer(Modifier.height(20.dp))
+            Column(
+                Modifier
+                    .padding(horizontal = 36.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(Color(0xB3222838))
+                    // swallow taps so tapping inside the panel doesn't close it
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .padding(vertical = 20.dp, horizontal = 12.dp),
+            ) {
+                if (apps.isEmpty()) {
+                    Text("This folder is empty", color = SubtleText, modifier = Modifier.padding(16.dp))
+                } else {
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.heightIn(max = 460.dp)) {
+                        items(apps, key = { it.key }) { e ->
+                            Box(Modifier.height(96.dp)) {
+                                AppTile(
+                                    icon = e.icon,
+                                    label = labelFor(e),
+                                    onClick = { onAppClick(e) },
+                                    onLongClick = { onAppLongPress(e) },
+                                )
+                            }
                         }
                     }
                 }
             }
-            Text(
-                "Tap the name to rename · long-press an app for options",
-                color = SubtleText,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
         }
     }
 }

@@ -4,6 +4,16 @@
     <!-- Swipe down anywhere on the home screen opens the notification shade. Normal, auto-granted. -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
+    <!--
+        "Import layout from One UI Home": read the previous launcher's layout provider.
+        These are only granted if the launcher's maker allows it; otherwise the import
+        explains that it's blocked.
+    -->
+    <uses-permission android:name="com.sec.android.app.launcher.permission.READ_SETTINGS" />
+    <uses-permission android:name="com.samsung.android.launcher.permission.READ_SETTINGS" />
+    <uses-permission android:name="com.android.launcher3.permission.READ_SETTINGS" />
+    <uses-permission android:name="com.google.android.apps.nexuslauncher.permission.READ_SETTINGS" />
+
     <!-- Android 11+ package visibility: see every launchable app and every widget provider. -->
     <queries>
         <intent>
@@ -19,6 +29,9 @@
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
+        <package android:name="com.sec.android.app.launcher" />
+        <package android:name="com.google.android.apps.nexuslauncher" />
+        <package android:name="com.android.launcher3" />
     </queries>
 
     <application

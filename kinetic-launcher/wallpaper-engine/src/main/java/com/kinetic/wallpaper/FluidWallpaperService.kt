@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RuntimeShader
 import android.os.Build
+import android.os.Bundle
 import android.service.wallpaper.WallpaperService
 import android.view.Choreographer
 import android.view.MotionEvent
@@ -40,6 +41,10 @@ class FluidWallpaperService : WallpaperService() {
         private var targetY = 0f
         private var touchActive = false
 
+        // Softening while the launcher's app drawer / folders are open (eased each frame).
+        private var focus = 0f
+        private var focusTarget = 0f
+
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(true)
@@ -50,6 +55,22 @@ class FluidWallpaperService : WallpaperService() {
             surfaceWidth = width
             surfaceHeight = height
             shader.setFloatUniform("iResolution", width.toFloat(), height.toFloat())
+        }
+
+        /** The launcher asks the wallpaper to soften behind its app drawer, like One UI's blur. */
+        override fun onCommand(
+            action: String?,
+            x: Int,
+            y: Int,
+            z: Int,
+            extras: Bundle?,
+            resultRequested: Boolean,
+        ): Bundle? {
+            when (action) {
+                ACTION_FOCUS_ON -> focusTarget = 1f
+                ACTION_FOCUS_OFF -> focusTarget = 0f
+            }
+            return null
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
@@ -103,8 +124,11 @@ class FluidWallpaperService : WallpaperService() {
                 touchY += (0f - touchY) * 0.08f
             }
 
+            focus += (focusTarget - focus) * 0.16f
+
             val t = (frameTimeNanos - startNanos) / 1_000_000_000f
             shader.setFloatUniform("iTime", t)
+            shader.setFloatUniform("iFocus", focus)
             shader.setFloatUniform("iTouch", touchX, touchY)
             paint.shader = shader
 
@@ -125,6 +149,10 @@ class FluidWallpaperService : WallpaperService() {
     }
 
     companion object {
+        /** Sent by the launcher via WallpaperManager.sendWallpaperCommand. */
+        const val ACTION_FOCUS_ON = "com.kinetic.wallpaper.FOCUS_ON"
+        const val ACTION_FOCUS_OFF = "com.kinetic.wallpaper.FOCUS_OFF"
+
         /**
          * Kept in sync with fluid_wallpaper.agsl. If you prefer a single source
          * of truth, drop the .agsl into res/raw and load it with
@@ -134,6 +162,7 @@ class FluidWallpaperService : WallpaperService() {
             uniform float2 iResolution;
             uniform float  iTime;
             uniform float2 iTouch;
+            uniform float  iFocus;
 
             const float PI = 3.14159265;
 
@@ -187,15 +216,16 @@ class FluidWallpaperService : WallpaperService() {
                 half3 bottomCol = half3(0.040, 0.060, 0.110);
                 half3 col = mix(topCol, bottomCol, half(smoothstep(-0.55, 0.55, uv.y)));
 
-                float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16);
-                float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11);
-                float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20);
+                float soft = 1.0 + iFocus * 1.6;              // wider, blurrier ribbons
+                float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16 * soft);
+                float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11 * soft);
+                float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20 * soft);
 
                 col += half3(0.12, 0.17, 0.33) * half(r1);
                 col += half3(0.18, 0.26, 0.42) * half(r2);
                 col += half3(0.08, 0.12, 0.22) * half(r3);
 
-                float rim = r1 * r2 + r2 * r3;
+                float rim = (r1 * r2 + r2 * r3) * (1.0 - iFocus);
                 col += half3(0.35, 0.42, 0.60) * half(pow(rim, 2.0) * 0.9);
 
                 if (iTouch.x > 0.5 || iTouch.y > 0.5) {
@@ -205,10 +235,10 @@ class FluidWallpaperService : WallpaperService() {
                 }
 
                 float g = fbm(fragCoord * 0.9 + iTime * 15.0);
-                col += half3(half((g - 0.5) * 0.025));
+                col += half3(half((g - 0.5) * 0.025 * (1.0 - iFocus)));
 
                 float vig = smoothstep(1.2, 0.2, length(uv));
-                col *= half(mix(0.70, 1.0, vig));
+                col *= half(mix(0.70, 1.0, vig) * (1.0 - 0.35 * iFocus));
 
                 return half4(clamp(col, 0.0, 1.0), 1.0);
             }

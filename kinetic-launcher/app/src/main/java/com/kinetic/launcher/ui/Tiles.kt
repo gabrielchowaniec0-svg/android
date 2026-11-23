@@ -57,7 +57,7 @@ fun AppTile(
     icon: ImageBitmap?,
     label: String,
     modifier: Modifier = Modifier,
-    iconSize: Dp = 54.dp,
+    iconSize: Dp = 56.dp,
     dimmed: Boolean = false,
     jiggle: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -88,15 +88,19 @@ fun AppTile(
     }
 }
 
-/** A folder: up to four mini icons in a frosted tile, with the folder name. */
+/** A folder: up to nine mini icons (3 × 3, like One UI) in a frosted tile, with the folder name. */
 @Composable
 fun FolderTile(
     name: String,
     icons: List<ImageBitmap>,
     modifier: Modifier = Modifier,
+    tileSize: Dp = 56.dp,
     jiggle: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
+    val pad = tileSize * 0.1f
+    val gap = tileSize * 0.05f
+    val mini = (tileSize - pad * 2 - gap * 2) / 3
     Column(
         modifier
             .fillMaxSize()
@@ -108,15 +112,15 @@ fun FolderTile(
     ) {
         Box(
             Modifier
-                .size(54.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.18f))
-                .padding(7.dp),
+                .size(tileSize)
+                .clip(RoundedCornerShape(tileSize * 0.3f))
+                .background(Color.White.copy(alpha = 0.2f))
+                .padding(pad),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                icons.take(4).chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        row.forEach { Image(bitmap = it, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                icons.take(9).chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        row.forEach { Image(bitmap = it, contentDescription = null, modifier = Modifier.size(mini)) }
                     }
                 }
             }
