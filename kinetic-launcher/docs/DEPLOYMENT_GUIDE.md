@@ -101,27 +101,39 @@ Phone and computer must be on the **same network**. For Android 13+:
 
 ## 5. Activate the pieces on the phone
 
-**Live wallpaper**
-1. Tap the **Wallpaper** button at the bottom of Kinetic's home screen — it
-   opens the system preview for **Kinetic Fluid** directly.
-2. Tap **Set wallpaper**. Touch the screen to see the bloom react.
-
 **Default launcher**
 1. **Settings ▸ Apps ▸ Choose default apps ▸ Home app** (wording varies on
    One UI) ▸ select **Kinetic**.
 2. Press Home. To go back to One UI Home while developing, repeat and pick
    Samsung's launcher.
 
-**Cinematic unlock + private space**
-- `MainActivity` starts on a "Tap to unlock" overlay. Tapping runs
-  `BiometricPrompt` (fingerprint, or your PIN as a fallback); on success the
-  icons glide into their grid spots and the draggable grid takes over. It
-  re-arms when the screen turns off. If no biometric or screen lock is set up,
-  the tap just plays the animation. This is a launcher‑level animation, not a
-  replacement for the system keyguard.
-- In your settings UI, call `bindPrivateCredential(tag)` to let one of the
-  owner's credentials open the private workspace; `workspaceForCredential(tag)`
-  then returns `PRIMARY` or `PRIVATE` after each unlock.
+**Using the home screen**
+- Your real installed apps and icons are loaded automatically. On first run,
+  your default phone, messages, browser, camera and gallery apps go along the
+  bottom row.
+- **Swipe left/right** to move between home pages.
+- **Swipe up anywhere** to open all apps (search at the top). Long‑press an app
+  there for: Add to home screen, folders, Rename, Hide, App info.
+- **Swipe down anywhere** to pull down the normal Android notification shade.
+- Icons are **frozen**. To edit, **press and hold empty wallpaper for about a
+  second** (`EDIT_HOLD_MS` in `HomeScreen.kt`). In edit mode:
+  - drag icons, folders and widgets to move them (they snap to half‑cells)
+  - tap an item for options: remove, make or add to a folder, move to
+    another page, resize (widgets)
+  - the bottom bar has **Add apps**, **Widgets**, **Wallpaper**, **+ Page**,
+    **Delete page** (empty pages only) and **Done**. Back also exits.
+- The first time you add a widget, Android asks you to allow Kinetic to create
+  widgets. Tap **Allow**, and tick "always" if offered.
+
+**Lock screen + live wallpaper**
+- Kinetic uses the phone's normal lock screen. When you unlock straight to the
+  home screen, the icons glide in along the wallpaper's flow lines.
+- To set the wallpaper, enter edit mode and tap **Wallpaper**, then tap **Set
+  wallpaper**. If One UI asks where to apply it, choose **Home and lock
+  screens** so it animates on the lock screen too.
+- If One UI only offers the home screen, Samsung is keeping the lock screen for
+  its own wallpapers on that software version. A third‑party app can't override
+  that setting.
 
 ---
 
@@ -143,11 +155,8 @@ Phone and computer must be on the **same network**. For Android 13+:
 
 ## 7. What's deliberately left to you
 
-- Loading real installed apps (`LauncherApps` / `PackageManager`) and mapping
-  each to a `DisplayEntry` — the sample uses a fixed package list.
-- An icon‑pack renderer that turns `iconKey` into a themed drawable.
-- A settings surface to edit masks, assign a private‑space credential, and pick
-  the unlock flow direction.
-- Persisting the grid layout (drag positions currently last for the session).
-- Widget hosting (`AppWidgetHost`) for Phase C — the controller animates
-  arbitrary composables, so wrap your hosted widgets as `UnlockWidget` content.
+- An icon‑pack renderer that turns `iconKey` into a themed drawable (icons
+  currently come straight from the system, including One UI theming).
+- A settings screen (grid size, edit hold time, unlock flow direction).
+- Dragging items between pages (use "Move to next/previous page" for now) and
+  drag‑onto‑icon to create folders (use the edit menu for now).

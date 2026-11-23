@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// Home-grid engine (library module).
+// Launcher core (library module): home grid, installed apps, home layout,
+// widget hosting and system gestures.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -23,8 +24,11 @@ kotlin {
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
+    api(platform(libs.androidx.compose.bom))
+    // AppEntry exposes ImageBitmap; HomeLayoutStore exposes StateFlow
+    api(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
-    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.core.ktx)
+    api(libs.kotlinx.coroutines.android)
 }
