@@ -1,0 +1,100 @@
+// fluid_wallpaper.agsl
+// Dark abstract fluid-ribbon live wallpaper tuned for a 120Hz AMOLED panel.
+// AGSL contract: the entry point must be  half4 main(float2 fragCoord).
+// Requires Android 13 (API 33)+ via android.graphics.RuntimeShader.
+
+uniform float2 iResolution;   // surface size in pixels
+uniform float  iTime;         // seconds since the engine started
+uniform float2 iTouch;        // smoothed touch point in pixels (drifts to 0,0 when idle)
+
+const float PI = 3.14159265;
+
+// ---------------------------------------------------------------------------
+// value noise + fbm  -> fine micro-texture grain and slow domain warp
+// ---------------------------------------------------------------------------
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+
+float valueNoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);           // smoothstep weights
+    float a = hash21(i + float2(0.0, 0.0));
+    float b = hash21(i + float2(1.0, 0.0));
+    float c = hash21(i + float2(0.0, 1.0));
+    float d = hash21(i + float2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(float2 p) {
+    float sum = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 5; i++) {
+        sum += amp * valueNoise(p);
+        p = p * 2.02 + float2(37.1, 11.7);
+        amp *= 0.5;
+    }
+    return sum;
+}
+
+// ---------------------------------------------------------------------------
+// one flowing ribbon: a stacked sine/cosine curve, returned as a soft mask
+// ---------------------------------------------------------------------------
+float ribbon(float2 uv, float phase, float freq, float speed, float thick) {
+    float y = 0.0;
+    y += 0.22 * sin(uv.x * freq + iTime * speed + phase);
+    y += 0.12 * cos(uv.x * freq * 1.9 - iTime * speed * 0.7 + phase * 1.3);
+    y += 0.06 * sin(uv.x * freq * 3.3 + iTime * speed * 1.3 + phase * 2.1);
+    float d = abs(uv.y - y);
+    return smoothstep(thick, 0.0, d);
+}
+
+half4 main(float2 fragCoord) {
+    // centered, aspect-correct coords; y spans roughly [-0.5, 0.5]
+    float2 uv = (fragCoord - 0.5 * iResolution) / iResolution.y;
+
+    // slow domain warp so the whole field breathes
+    float2 warp = float2(
+        fbm(uv * 1.5 + iTime * 0.03),
+        fbm(uv * 1.5 - iTime * 0.025 + 5.2)
+    );
+    float2 p = uv + (warp - 0.5) * 0.35;
+
+    // deep base gradient: near-black slate at the top, navy toward the bottom
+    half3 topCol    = half3(0.015, 0.020, 0.035);
+    half3 bottomCol = half3(0.040, 0.060, 0.110);
+    half3 col = mix(topCol, bottomCol, half(smoothstep(-0.55, 0.55, uv.y)));
+
+    // layered ribbons, each a cool slate/indigo ink
+    float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16);
+    float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11);
+    float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20);
+
+    col += half3(0.12, 0.17, 0.33) * half(r1);
+    col += half3(0.18, 0.26, 0.42) * half(r2);
+    col += half3(0.08, 0.12, 0.22) * half(r3);
+
+    // specular rim: a thin bright edge where ribbons cross
+    float rim = r1 * r2 + r2 * r3;
+    col += half3(0.35, 0.42, 0.60) * half(pow(rim, 2.0) * 0.9);
+
+    // touch bloom — soft cool highlight that falls off with distance
+    if (iTouch.x > 0.5 || iTouch.y > 0.5) {
+        float2 t = (iTouch - 0.5 * iResolution) / iResolution.y;
+        float d = length(uv - t);
+        col += half3(0.20, 0.30, 0.50) * half(exp(-d * 6.0) * 0.6);
+    }
+
+    // fine film grain to suppress AMOLED banding in the dark gradient
+    float g = fbm(fragCoord * 0.9 + iTime * 15.0);
+    col += half3(half((g - 0.5) * 0.025));
+
+    // gentle vignette to seat the composition
+    float vig = smoothstep(1.2, 0.2, length(uv));
+    col *= half(mix(0.70, 1.0, vig));
+
+    return half4(clamp(col, 0.0, 1.0), 1.0);
+}
