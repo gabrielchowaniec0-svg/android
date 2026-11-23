@@ -72,7 +72,7 @@ import com.kinetic.core.apps.AppRepository
 import com.kinetic.core.home.DrawerFolder
 import com.kinetic.core.home.HomeItem
 import com.kinetic.core.home.HomeLayoutStore
-import com.kinetic.core.home.LauncherImporter
+import com.kinetic.core.home.HomeLayout
 import com.kinetic.core.widgets.WidgetHostManager
 import com.kinetic.launcher.defaultHomeKeys
 import com.kinetic.lockscreen.BiometricUnlockBridge
@@ -83,10 +83,8 @@ import com.kinetic.lockscreen.UnlockTransitionController
 import com.kinetic.lockscreen.UnlockWidget
 import com.kinetic.lockscreen.rememberUnlockController
 import com.kinetic.security.StealthCustomizationManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /** How long you hold empty wallpaper before the home screen unlocks for editing. */
@@ -119,6 +117,9 @@ fun KineticHome(
     onOpenWallpaperPicker: () -> Unit,
     onExpandNotifications: () -> Unit,
     onWallpaperFocus: (Boolean) -> Unit,
+    /** True until the built-in "my phone" layout has been applied once. */
+    autoApplyMyLayout: Boolean,
+    onApplyMyLayout: (List<AppEntry>) -> Unit,
 ) {
     val config = deps.config
     val scope = rememberCoroutineScope()
@@ -226,9 +227,12 @@ fun KineticHome(
                 deps.layout.renameFolder(folder.id, name.ifBlank { folder.name })
             }
         }
+        actions += (if (folder.isLarge) "Make small" else "Make large (2 × 2)") to fun() {
+            if (!deps.layout.setFolderLarge(pageIndex, folder.id, !folder.isLarge)) toast("No space to make it large here")
+        }
         actions += "Remove folder" to fun() { deps.layout.removeItem(pageIndex, folder.id) }
         actions += movePageActions(pageIndex, folder.id)
-        return MenuSpec(folder.name, actions)
+        return MenuSpec(folder.name.ifBlank { "Folder" }, actions)
     }
 
     fun widgetMenu(pageIndex: Int, item: HomeItem.Widget): MenuSpec {
@@ -310,17 +314,35 @@ fun KineticHome(
         }
         is HomeItem.Folder -> {
             val content: @Composable () -> Unit = {
-                val icons = item.appKeys.mapNotNull { appsByKey[it] }.filterNot { isHidden(it) }.map { it.icon }
-                FolderTile(
-                    name = item.name,
-                    icons = icons,
-                    jiggle = interactive && editMode,
-                    onClick = when {
-                        !interactive -> null
-                        editMode -> fun() { menu = folderMenu(pageIndex, item) }
-                        else -> fun() { openFolder = FolderRef.Home(pageIndex, item.id) }
-                    },
-                )
+                val members = item.appKeys.mapNotNull { appsByKey[it] }.filterNot { isHidden(it) }
+                val onTap: (() -> Unit)? = when {
+                    !interactive -> null
+                    editMode -> fun() { menu = folderMenu(pageIndex, item) }
+                    else -> fun() { openFolder = FolderRef.Home(pageIndex, item.id) }
+                }
+                if (item.isLarge) {
+                    LargeFolderTile(
+                        name = item.name,
+                        icons = members.map { it.icon },
+                        jiggle = interactive && editMode,
+                        // Like One UI: the visible icons launch directly.
+                        onIconClick = if (interactive && !editMode) {
+                            fun(i: Int) {
+                                members.getOrNull(i)?.let { deps.apps.launch(it) }
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = onTap,
+                    )
+                } else {
+                    FolderTile(
+                        name = item.name,
+                        icons = members.map { it.icon },
+                        jiggle = interactive && editMode,
+                        onClick = onTap,
+                    )
+                }
             }
             content
         }
@@ -339,8 +361,11 @@ fun KineticHome(
 
     // ---- app drawer contents -------------------------------------------------------
 
-    /** Drawer slots in the user's custom order (if any), else folders first then A–Z. */
-    fun drawerEntries(): List<DrawerEntry> {
+    /**
+     * Drawer contents as sections (each starts a new page), in the user's custom
+     * order if there is one, else folders first then A–Z.
+     */
+    fun drawerSections(): List<List<DrawerEntry>> {
         val visibleApps = allApps.orEmpty().filter { privateRevealed || !isHidden(it) }
         val foldered = layout.drawerFolders.flatMapTo(HashSet()) { it.appKeys }
         val folderEntries = LinkedHashMap<String, DrawerEntry.Folder>()
@@ -349,56 +374,38 @@ fun KineticHome(
             if (members.isNotEmpty()) folderEntries[f.id] = DrawerEntry.Folder(f, members)
         }
         val loose = visibleApps.filter { it.key !in foldered }
-        if (layout.drawerOrder.isEmpty()) return folderEntries.values.toList() + loose.map { DrawerEntry.App(it) }
+        if (layout.drawerOrder.isEmpty()) return listOf(folderEntries.values.toList() + loose.map { DrawerEntry.App(it) })
 
         val looseByKey = loose.associateBy { it.key }
         val placed = HashSet<String>()
-        val out = mutableListOf<DrawerEntry>()
+        val sections = mutableListOf(mutableListOf<DrawerEntry>())
         layout.drawerOrder.forEach { token ->
+            if (token == HomeLayout.PAGE_BREAK) {
+                if (sections.last().isNotEmpty()) sections += mutableListOf<DrawerEntry>()
+                return@forEach
+            }
             val entry: DrawerEntry? = when {
                 token.startsWith("app:") -> looseByKey[token.removePrefix("app:")]?.let { DrawerEntry.App(it) }
                 token.startsWith("folder:") -> folderEntries[token.removePrefix("folder:")]
                 else -> null
             }
-            if (entry != null && placed.add(entry.key)) out += entry
+            if (entry != null && placed.add(entry.key)) sections.last() += entry
         }
         // Anything not in the saved order (e.g. newly installed apps) goes at the end, like One UI.
-        folderEntries.values.forEach { if (placed.add(it.key)) out += it }
-        loose.forEach { val e = DrawerEntry.App(it); if (placed.add(e.key)) out += e }
-        return out
+        val tail = sections.last()
+        folderEntries.values.forEach { if (placed.add(it.key)) tail += it }
+        loose.forEach { val e = DrawerEntry.App(it); if (placed.add(e.key)) tail += e }
+        return sections.filter { it.isNotEmpty() }.ifEmpty { listOf(emptyList()) }
     }
 
-    fun startImport() {
-        val apps = allApps
-        if (apps == null) {
-            toast("Apps are still loading — try again in a moment")
-            return
-        }
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { LauncherImporter.read(activity, apps) }
-            menu = when (result) {
-                is LauncherImporter.Result.Success -> {
-                    deps.layout.importLayout(result.home, result.dock, result.drawer)
-                    pagerState.scrollToPage(0)
-                    val notes = buildList {
-                        add("Imported ${result.appsImported} apps from ${result.source}, in the same order.")
-                        if (result.widgetsSkipped > 0) {
-                            add("${result.widgetsSkipped} widget(s) can't be copied between launchers — add them again from edit mode ▸ Widgets.")
-                        }
-                        if (result.unmatched > 0) add("${result.unmatched} shortcut(s) didn't match an installed app and were skipped.")
-                    }
-                    MenuSpec("Layout imported", emptyList(), notes.joinToString("\n\n"))
-                }
-                is LauncherImporter.Result.Failed -> MenuSpec("Couldn't import layout", emptyList(), result.reason)
-            }
-        }
-    }
-
-    fun importConfirmMenu() = MenuSpec(
-        title = "Import from One UI Home?",
-        actions = listOf("Import" to fun() { startImport() }),
-        message = "Replaces Kinetic's home screen and app-drawer order with your One UI Home layout. " +
-            "Widgets you've added in Kinetic are kept.",
+    fun useMyLayoutMenu() = MenuSpec(
+        title = "Use my phone's layout?",
+        actions = listOf("Reset layout" to fun() {
+            val apps = allApps
+            if (apps == null) toast("Apps are still loading — try again in a moment") else onApplyMyLayout(apps)
+        }),
+        message = "Puts your home screen, dock, folders and app-list pages back the way they are on One UI. " +
+            "Changes you've made in Kinetic will be replaced.",
     )
 
     // ---- effects ---------------------------------------------------------------
@@ -410,7 +417,8 @@ fun KineticHome(
     LaunchedEffect(allApps) {
         val list = allApps ?: return@LaunchedEffect
         deps.layout.prune(list.mapTo(HashSet()) { it.key })
-        if (deps.layout.isFresh) deps.layout.seed(defaultHomeKeys(activity, list))
+        if (autoApplyMyLayout) onApplyMyLayout(list)
+        else if (deps.layout.isFresh) deps.layout.seed(defaultHomeKeys(activity, list))
     }
 
     // Home button while already home: close everything and go to the first page.
@@ -572,7 +580,8 @@ fun KineticHome(
                     .drawBehind { drawRect(Color.Black.copy(alpha = 0.3f * drawerProgress.value)) }
             )
             AppDrawer(
-                entries = drawerEntries(),
+                sections = drawerSections(),
+                horizontalMargin = config.marginDp.dp,
                 searchable = allApps.orEmpty().filter { privateRevealed || !isHidden(it) },
                 labelFor = { labelFor(it) },
                 isHidden = { isHidden(it) },
@@ -592,7 +601,7 @@ fun KineticHome(
                 onFolderClick = { f -> openFolder = FolderRef.Drawer(f.id) },
                 onTogglePrivate = { if (privateRevealed) privateRevealed = false else revealPrivate() },
                 onSortAlphabetical = { deps.layout.clearDrawerOrder() },
-                onImportLayout = { menu = importConfirmMenu() },
+                onUseMyLayout = { menu = useMyLayoutMenu() },
                 onDrag = { dy -> dragDrawerBy(dy) },
                 onDragEnd = { if (drawerProgress.value < 0.75f) closeDrawer() else openDrawer() },
                 modifier = Modifier.graphicsLayer {
@@ -694,7 +703,7 @@ private fun WidgetCell(
     onEditTap: () -> Unit,
 ) {
     val view = remember(appWidgetId) { widgets.viewFor(appWidgetId) }
-    BoxWithConstraints(Modifier.fillMaxSize().jiggle(editMode)) {
+    BoxWithConstraints(Modifier.fillMaxSize().jiggle(editMode).padding(6.dp)) {
         if (view == null) {
             Box(
                 Modifier
@@ -744,7 +753,7 @@ private fun UnlockGlide(
         val density = LocalDensity.current
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val geometry = GridGeometry.of(config, w, h, with(density) { config.gutterDp.dp.toPx() })
+        val geometry = GridGeometry.of(config, w, h, density)
         val icons = mutableListOf<UnlockIcon>()
         val widgets = mutableListOf<UnlockWidget>()
         items.forEach { item ->

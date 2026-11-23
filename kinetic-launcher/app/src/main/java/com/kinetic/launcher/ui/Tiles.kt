@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,7 +58,7 @@ fun AppTile(
     icon: ImageBitmap?,
     label: String,
     modifier: Modifier = Modifier,
-    iconSize: Dp = 56.dp,
+    iconSize: Dp = 60.dp,
     dimmed: Boolean = false,
     jiggle: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -94,7 +95,7 @@ fun FolderTile(
     name: String,
     icons: List<ImageBitmap>,
     modifier: Modifier = Modifier,
-    tileSize: Dp = 56.dp,
+    tileSize: Dp = 60.dp,
     jiggle: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
@@ -121,6 +122,58 @@ fun FolderTile(
                 icons.take(9).chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                         row.forEach { Image(bitmap = it, contentDescription = null, modifier = Modifier.size(mini)) }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(name, style = TileLabelStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * One UI–style large (2 × 2) folder: up to nine icons you can tap directly to
+ * launch, with the folder name underneath. Tapping the rest of the tile opens it.
+ */
+@Composable
+fun LargeFolderTile(
+    name: String,
+    icons: List<ImageBitmap>,
+    modifier: Modifier = Modifier,
+    jiggle: Boolean = false,
+    onIconClick: ((index: Int) -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .jiggle(jiggle)
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color.White.copy(alpha = 0.06f))
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(6.dp),
+        ) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
+                icons.take(9).withIndex().chunked(3).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        row.forEach { (index, icon) ->
+                            Image(
+                                bitmap = icon,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .then(if (onIconClick != null) Modifier.clickable { onIconClick(index) } else Modifier),
+                            )
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.size(44.dp)) }
                     }
                 }
             }

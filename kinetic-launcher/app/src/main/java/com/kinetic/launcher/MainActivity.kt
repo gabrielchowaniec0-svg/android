@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.fragment.app.FragmentActivity
 import com.kinetic.core.GridConfig
+import com.kinetic.core.apps.AppEntry
 import com.kinetic.core.apps.AppRepository
 import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.system.SystemGestures
@@ -50,8 +51,15 @@ class MainActivity : FragmentActivity() {
     private var lastScreenOffAt = 0L
     private var lastUserPresentAt = 0L
 
-    private data class PendingWidget(val id: Int, val page: Int, val spanX: Int, val spanY: Int)
+    /** x/y < 0 means "wherever there's room". */
+    private data class PendingWidget(val id: Int, val page: Int, val spanX: Int, val spanY: Int, val x: Int = -1, val y: Int = -1)
     private var pendingWidget: PendingWidget? = null
+
+    /** Widgets still to add for "my phone" layout, one at a time (each may show a system prompt). */
+    private val widgetQueue = ArrayDeque<Pair<AppWidgetProviderInfo, MyPhoneLayout.WidgetSlot>>()
+
+    private val prefs by lazy { getSharedPreferences("kinetic_activity", MODE_PRIVATE) }
+    private val myLayoutPending = mutableStateOf(false)
 
     private val bindWidget = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val p = pendingWidget ?: return@registerForActivityResult
@@ -86,7 +94,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
 
         // 4 columns like One UI Home; the 7th row doubles as the dock.
-        val config = GridConfig(columns = 4, rows = 7, halfSnap = true)
+        // Same geometry as One UI on the S25 Ultra: 14dp side margins, 4 equal columns, no gaps.
+        val config = GridConfig(columns = 4, rows = 7, gutterDp = 0, marginDp = 14, halfSnap = true)
         deps = HomeDeps(
             apps = AppRepository(this),
             layout = HomeLayoutStore(this, config.columns, config.rows),
@@ -95,8 +104,9 @@ class MainActivity : FragmentActivity() {
             config = config,
         )
         savedInstanceState?.getIntArray(STATE_PENDING_WIDGET)?.let { a ->
-            if (a.size == 4) pendingWidget = PendingWidget(a[0], a[1], a[2], a[3])
+            if (a.size == 6) pendingWidget = PendingWidget(a[0], a[1], a[2], a[3], a[4], a[5])
         }
+        myLayoutPending.value = prefs.getInt(KEY_MY_LAYOUT_VERSION, 0) < MyPhoneLayout.VERSION
         deps.apps.start()
 
         // Both are protected system broadcasts, so they still arrive with NOT_EXPORTED.
@@ -121,6 +131,8 @@ class MainActivity : FragmentActivity() {
                     onOpenWallpaperPicker = ::openWallpaperPicker,
                     onExpandNotifications = ::expandNotifications,
                     onWallpaperFocus = ::setWallpaperFocus,
+                    autoApplyMyLayout = myLayoutPending.value,
+                    onApplyMyLayout = ::applyMyPhoneLayout,
                 )
             }
         }
@@ -177,15 +189,53 @@ class MainActivity : FragmentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        pendingWidget?.let { outState.putIntArray(STATE_PENDING_WIDGET, intArrayOf(it.id, it.page, it.spanX, it.spanY)) }
+        pendingWidget?.let { outState.putIntArray(STATE_PENDING_WIDGET, intArrayOf(it.id, it.page, it.spanX, it.spanY, it.x, it.y)) }
+    }
+
+    // ---- "my phone" layout -----------------------------------------------------------
+
+    private fun applyMyPhoneLayout(apps: List<AppEntry>) {
+        val result = MyPhoneLayout.build(apps, deps.config.columns, deps.config.rows)
+        deps.layout.replaceLayout(result.layout).forEach { deps.widgets.deleteId(it) }
+        prefs.edit().putInt(KEY_MY_LAYOUT_VERSION, MyPhoneLayout.VERSION).apply()
+        myLayoutPending.value = false
+
+        val providers = deps.widgets.providers()
+        val missingWidgets = mutableListOf<String>()
+        widgetQueue.clear()
+        result.widgets.forEach { slot ->
+            val info = MyPhoneLayout.pickProvider(slot, providers) { deps.widgets.label(it) }
+            if (info != null) widgetQueue.addLast(info to slot) else missingWidgets += slot.description
+        }
+
+        val notes = (result.missing + missingWidgets.map { "$it widget" }).take(6)
+        val message = if (notes.isEmpty()) "Your phone's layout is set up" else "Layout set up. Not found: ${notes.joinToString()}"
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+        if (pendingWidget == null) processWidgetQueue()
+    }
+
+    private fun processWidgetQueue() {
+        val (info, slot) = widgetQueue.removeFirstOrNull() ?: return
+        requestWidgetAt(info, slot.page, slot.x, slot.y, slot.spanX, slot.spanY)
     }
 
     // ---- widgets: allocate id -> bind permission -> optional configure -> place ----
 
-    private fun requestWidget(info: AppWidgetProviderInfo, page: Int) {
+    private fun requestWidget(info: AppWidgetProviderInfo, page: Int) = requestWidgetAt(info, page, -1, -1, 0, 0)
+
+    /** Adds a widget at a cell ([x]/[y] < 0 = anywhere) with a given size (0 = the widget's default). */
+    private fun requestWidgetAt(info: AppWidgetProviderInfo, page: Int, x: Int, y: Int, spanX: Int, spanY: Int) {
         val id = deps.widgets.allocateId()
-        val (spanX, spanY) = deps.widgets.defaultSpan(info, deps.config.columns, deps.config.rows)
-        val p = PendingWidget(id, page, spanX, spanY)
+        val (defaultX, defaultY) = deps.widgets.defaultSpan(info, deps.config.columns, deps.config.rows)
+        val p = PendingWidget(
+            id = id,
+            page = page,
+            spanX = if (spanX > 0) spanX else defaultX,
+            spanY = if (spanY > 0) spanY else defaultY,
+            x = x,
+            y = y,
+        )
         pendingWidget = p
         if (deps.widgets.bindIfAllowed(id, info)) {
             configureOrPlace(p)
@@ -213,13 +263,16 @@ class MainActivity : FragmentActivity() {
 
     private fun placeWidget(p: PendingWidget) {
         pendingWidget = null
-        deps.layout.addWidget(p.page, p.id, p.spanX, p.spanY)
+        if (p.x >= 0 && p.y >= 0) deps.layout.addWidgetAt(p.page, p.id, p.x, p.y, p.spanX, p.spanY)
+        else deps.layout.addWidget(p.page, p.id, p.spanX, p.spanY)
+        processWidgetQueue()
     }
 
     private fun cancelWidget(p: PendingWidget) {
         pendingWidget = null
         deps.widgets.deleteId(p.id)
         Toast.makeText(this, "Widget wasn't added", Toast.LENGTH_SHORT).show()
+        processWidgetQueue()
     }
 
     /** Widget configuration screens still report back through onActivityResult. */
@@ -267,6 +320,7 @@ class MainActivity : FragmentActivity() {
     private companion object {
         const val REQUEST_CONFIGURE_WIDGET = 1001
         const val STATE_PENDING_WIDGET = "pending_widget"
+        const val KEY_MY_LAYOUT_VERSION = "my_phone_layout_version"
         const val UNLOCK_WINDOW_MS = 2000L
         const val UNLOCK_WAIT_MS = 800L
     }

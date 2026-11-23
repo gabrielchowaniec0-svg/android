@@ -22,7 +22,7 @@ Full steps, including USB and Wi‑Fi debugging, are in
 | Gesture | Does |
 |---|---|
 | Swipe left / right | Switch home page |
-| Swipe up anywhere | All apps, One UI–style: follows your finger, paged 4-column grid, Search pill, ⋮ menu (Sort A–Z, import One UI Home layout) |
+| Swipe up anywhere | All apps, One UI–style: follows your finger, 4 × 6 pages aligned with the home grid, Search pill, ⋮ menu (Sort A–Z, reset to my phone's layout) |
 | Swipe down anywhere | Android notification shade |
 | Hold empty wallpaper ~1 s | Edit mode: move/remove items, folders, widgets, pages, wallpaper |
 

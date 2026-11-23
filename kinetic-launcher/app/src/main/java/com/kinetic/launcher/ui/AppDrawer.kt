@@ -54,13 +54,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kinetic.core.apps.AppEntry
 import com.kinetic.core.home.DrawerFolder
 
+// Same as One UI on the S25 Ultra: 4 columns × 6 rows per page, ~101dp per row.
 private const val DRAWER_COLUMNS = 4
-private val DRAWER_CELL_HEIGHT = 112.dp
+private const val DRAWER_ROWS = 6
+private val DRAWER_CELL_HEIGHT = 101.dp
+private val DRAWER_ICON = 60.dp
 private val DrawerText = Color(0xFFE3E8F4)
 private val DrawerSubtle = Color(0xFF9AA6C2)
 private val PillColor = Color(0xE6151924)
@@ -80,12 +84,16 @@ sealed interface DrawerEntry {
 
 /**
  * One UI–style app drawer: no solid panel (the wallpaper softens behind it),
- * a 4-column grid in horizontal pages with page dots, a Search pill at the bottom
+ * a 4 × 6 grid in horizontal pages with page dots, a Search pill at the bottom
  * and a ⋮ menu at the top. Dragging down anywhere follows the finger and closes it.
+ *
+ * [sections] are runs of entries; each starts on a new page (One UI lets you leave
+ * a page part-empty). [horizontalMargin] matches the home grid so columns line up.
  */
 @Composable
 fun AppDrawer(
-    entries: List<DrawerEntry>,
+    sections: List<List<DrawerEntry>>,
+    horizontalMargin: Dp,
     searchable: List<AppEntry>,
     labelFor: (AppEntry) -> String,
     isHidden: (AppEntry) -> Boolean,
@@ -97,7 +105,7 @@ fun AppDrawer(
     onFolderClick: (DrawerFolder) -> Unit,
     onTogglePrivate: () -> Unit,
     onSortAlphabetical: () -> Unit,
-    onImportLayout: () -> Unit,
+    onUseMyLayout: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
@@ -137,6 +145,7 @@ fun AppDrawer(
                 isHidden = isHidden,
                 onAppClick = onAppClick,
                 onAppLongPress = onAppLongPress,
+                horizontalMargin = horizontalMargin,
                 onCancel = {
                     searching = false
                     query = ""
@@ -150,12 +159,13 @@ fun AppDrawer(
                     customOrder = customOrder,
                     onTogglePrivate = onTogglePrivate,
                     onSortAlphabetical = onSortAlphabetical,
-                    onImportLayout = onImportLayout,
+                    onUseMyLayout = onUseMyLayout,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    val rows = (maxHeight / DRAWER_CELL_HEIGHT).toInt().coerceAtLeast(3)
-                    val pages = remember(entries, rows) {
-                        entries.chunked(rows * DRAWER_COLUMNS).ifEmpty { listOf(emptyList()) }
+                    // Leave room for the page dots under the grid.
+                    val cellHeight = minOf(DRAWER_CELL_HEIGHT, (maxHeight - 28.dp) / DRAWER_ROWS)
+                    val pages = remember(sections) {
+                        sections.flatMap { it.chunked(DRAWER_ROWS * DRAWER_COLUMNS) }.ifEmpty { listOf(emptyList()) }
                     }
                     val pagerState = rememberPagerState(pageCount = { pages.size })
                     Column(Modifier.fillMaxSize()) {
@@ -165,6 +175,8 @@ fun AppDrawer(
                         ) { pageIndex ->
                             DrawerPage(
                                 entries = pages.getOrNull(pageIndex).orEmpty(),
+                                cellHeight = cellHeight,
+                                horizontalMargin = horizontalMargin,
                                 labelFor = labelFor,
                                 isHidden = isHidden,
                                 onAppClick = onAppClick,
@@ -188,13 +200,14 @@ private fun DrawerTopBar(
     customOrder: Boolean,
     onTogglePrivate: () -> Unit,
     onSortAlphabetical: () -> Unit,
-    onImportLayout: () -> Unit,
+    onUseMyLayout: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+            .height(54.dp)
+            .padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -235,10 +248,10 @@ private fun DrawerTopBar(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Import layout from One UI Home") },
+                    text = { Text("Reset to my phone's layout") },
                     onClick = {
                         menuOpen = false
-                        onImportLayout()
+                        onUseMyLayout()
                     },
                 )
             }
@@ -249,22 +262,24 @@ private fun DrawerTopBar(
 @Composable
 private fun DrawerPage(
     entries: List<DrawerEntry>,
+    cellHeight: Dp,
+    horizontalMargin: Dp,
     labelFor: (AppEntry) -> String,
     isHidden: (AppEntry) -> Boolean,
     onAppClick: (AppEntry) -> Unit,
     onAppLongPress: (AppEntry) -> Unit,
     onFolderClick: (DrawerFolder) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = horizontalMargin)) {
         entries.chunked(DRAWER_COLUMNS).forEach { rowEntries ->
-            Row(Modifier.fillMaxWidth().height(DRAWER_CELL_HEIGHT)) {
+            Row(Modifier.fillMaxWidth().height(cellHeight)) {
                 rowEntries.forEach { entry ->
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         when (entry) {
                             is DrawerEntry.App -> AppTile(
                                 icon = entry.app.icon,
                                 label = labelFor(entry.app),
-                                iconSize = 58.dp,
+                                iconSize = DRAWER_ICON,
                                 dimmed = isHidden(entry.app),
                                 onClick = { onAppClick(entry.app) },
                                 onLongClick = { onAppLongPress(entry.app) },
@@ -272,7 +287,7 @@ private fun DrawerPage(
                             is DrawerEntry.Folder -> FolderTile(
                                 name = entry.folder.name,
                                 icons = entry.members.map { it.icon },
-                                tileSize = 58.dp,
+                                tileSize = DRAWER_ICON,
                                 onClick = { onFolderClick(entry.folder) },
                             )
                         }
@@ -357,6 +372,7 @@ private fun SearchPanel(
     isHidden: (AppEntry) -> Boolean,
     onAppClick: (AppEntry) -> Unit,
     onAppLongPress: (AppEntry) -> Unit,
+    horizontalMargin: Dp,
     onCancel: () -> Unit,
 ) {
     val focus = remember { FocusRequester() }
@@ -393,14 +409,14 @@ private fun SearchPanel(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(DRAWER_COLUMNS),
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 8.dp),
+                contentPadding = PaddingValues(horizontal = horizontalMargin),
             ) {
                 items(results, key = { it.key }) { e ->
                     Box(Modifier.height(DRAWER_CELL_HEIGHT)) {
                         AppTile(
                             icon = e.icon,
                             label = labelFor(e),
-                            iconSize = 58.dp,
+                            iconSize = DRAWER_ICON,
                             dimmed = isHidden(e),
                             onClick = { onAppClick(e) },
                             onLongClick = { onAppLongPress(e) },
