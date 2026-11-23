@@ -179,8 +179,11 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     if (KineticSettings.current.islandUnlock && km.isKeyguardLocked) showAlert(IslandAlert.Scan(success = false))
                 }
                 Intent.ACTION_USER_PRESENT -> {
-                    // Recognised (face or fingerprint): tick, then the padlock swings open.
-                    if (KineticSettings.current.islandUnlock) showAlert(IslandAlert.Scan(success = true))
+                    // Unlocked (face or fingerprint): the scan disappears straight away.
+                    if (_alert.value is IslandAlert.Scan || _alert.value is IslandAlert.Lock) {
+                        alertJob?.cancel()
+                        _alert.value = null
+                    }
                 }
                 Intent.ACTION_SCREEN_OFF -> {
                     alertJob?.cancel()

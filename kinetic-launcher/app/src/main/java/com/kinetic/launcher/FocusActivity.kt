@@ -1,6 +1,12 @@
 package com.kinetic.launcher
 
+import android.Manifest
+import android.app.TimePickerDialog
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.content.pm.LauncherApps
 import android.os.Bundle
 import android.os.Process
@@ -190,6 +196,41 @@ class FocusActivity : ComponentActivity() {
             Option("Silence notifications", "Turns on Do Not Disturb", m.silence) { save(m.copy(silence = it)) }
             Option("Let every app through", "Only change the look and home page", m.allowAll) { save(m.copy(allowAll = it)) }
 
+            // ---- schedule (like iOS: turn on at a time, on chosen days) ----
+            Text("Schedule", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
+            Option("Turn on automatically", "At the times and days below", m.schedule.enabled) {
+                save(m.copy(schedule = m.schedule.copy(enabled = it)))
+            }
+            if (m.schedule.enabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                    TimeChip("From", m.schedule.startMin, Color(m.color)) { save(m.copy(schedule = m.schedule.copy(startMin = it))) }
+                    TimeChip("To", m.schedule.endMin, Color(m.color)) { save(m.copy(schedule = m.schedule.copy(endMin = it))) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                    listOf("M", "T", "W", "T", "F", "S", "S").forEachIndexed { i, d ->
+                        val on = m.schedule.onDay(i)
+                        Box(
+                            Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (on) Color(m.color) else Tile)
+                                .clickable { save(m.copy(schedule = m.schedule.copy(days = m.schedule.days xor (1 shl i)))) },
+                            contentAlignment = Alignment.Center,
+                        ) { Text(d, color = if (on) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
+            }
+            val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) save(m.copy(carTrigger = true))
+            }
+            Option("When connected to car Bluetooth", "Turns on when your car connects, off when it disconnects", m.carTrigger) { on ->
+                if (on && ContextCompat.checkSelfPermission(this@FocusActivity, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                    askBluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                } else {
+                    save(m.copy(carTrigger = on))
+                }
+            }
+
             Text("Dim wallpaper", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
             var dim by remember(m.wallpaperDim) { mutableFloatStateOf(m.wallpaperDim) }
             Slider(
@@ -239,6 +280,30 @@ class FocusActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /** A time you tap to change (Android's clock picker). */
+    @Composable
+    private fun TimeChip(label: String, minuteOfDay: Int, color: Color, onPick: (Int) -> Unit) {
+        val h = minuteOfDay / 60
+        val min = minuteOfDay % 60
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(Tile)
+                .clickable {
+                    TimePickerDialog(this@FocusActivity, { _, hh, mm -> onPick(hh * 60 + mm) }, h, min, false).show()
+                }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Text(label, color = Subtle, fontSize = 12.sp)
+            Text(
+                "%d:%02d %s".format(if (h % 12 == 0) 12 else h % 12, min, if (h < 12) "AM" else "PM"),
+                color = color,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 

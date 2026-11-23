@@ -21,6 +21,17 @@ object FocusModes {
 
     enum class Glyph { Moon, Bed, Book, Gamepad, Person, Briefcase, Car, Leaf }
 
+    /** Turn on at [startMin] and off at [endMin] (minutes after midnight) on [days]. */
+    data class Schedule(
+        val enabled: Boolean = false,
+        val startMin: Int = 22 * 60,
+        val endMin: Int = 7 * 60,
+        /** Bit 0 = Monday … bit 6 = Sunday. */
+        val days: Int = 0b1111111,
+    ) {
+        fun onDay(dayIndexMonday0: Int) = days and (1 shl dayIndexMonday0) != 0
+    }
+
     data class Mode(
         val id: String,
         val name: String,
@@ -36,15 +47,18 @@ object FocusModes {
         val allowedApps: Set<String> = emptySet(),
         /** Let every app through anyway (only change the look/page). */
         val allowAll: Boolean = false,
+        val schedule: Schedule = Schedule(),
+        /** Turn on while the phone is connected to a car over Bluetooth. */
+        val carTrigger: Boolean = false,
     )
 
     private val defaults = listOf(
         Mode("dnd", "Do Not Disturb", Glyph.Moon, 0xFF7D6BFF.toInt(), silence = true, wallpaperDim = 0.25f),
-        Mode("sleep", "Sleep", Glyph.Bed, 0xFF5E8BFF.toInt(), silence = true, wallpaperDim = 0.7f),
-        Mode("school", "School", Glyph.Book, 0xFFFF9F0A.toInt(), silence = true, wallpaperDim = 0.15f),
+        Mode("sleep", "Sleep", Glyph.Bed, 0xFF5E8BFF.toInt(), silence = true, wallpaperDim = 0.7f, schedule = Schedule(false, 22 * 60 + 30, 7 * 60)),
+        Mode("school", "School", Glyph.Book, 0xFFFF9F0A.toInt(), silence = true, wallpaperDim = 0.15f, schedule = Schedule(false, 8 * 60, 15 * 60, 0b0011111)),
         Mode("gaming", "Gaming", Glyph.Gamepad, 0xFFFF453A.toInt(), silence = true, wallpaperDim = 0.3f),
         Mode("personal", "Personal", Glyph.Person, 0xFF30D158.toInt(), silence = false, allowAll = true),
-        Mode("driving", "Driving", Glyph.Car, 0xFF64D2FF.toInt(), silence = true, wallpaperDim = 0.4f),
+        Mode("driving", "Driving", Glyph.Car, 0xFF64D2FF.toInt(), silence = true, wallpaperDim = 0.4f, carTrigger = true),
     )
 
     private val _modes = MutableStateFlow(defaults)
@@ -126,6 +140,7 @@ object FocusModes {
         _modes.value = list
         prefs?.edit()?.putString(K_MODES, serialize(list))?.apply()
         if (_active.value?.id == mode.id) turnOn(context, mode.id)
+        FocusScheduler.scheduleNext(context)
     }
 
     /** Can Kinetic switch Do Not Disturb? (A one-time Android permission.) */
@@ -148,6 +163,13 @@ object FocusModes {
                 put("dim", m.wallpaperDim.toDouble())
                 put("apps", JSONArray(m.allowedApps.toList()))
                 put("all", m.allowAll)
+                put("sched", JSONObject().apply {
+                    put("on", m.schedule.enabled)
+                    put("start", m.schedule.startMin)
+                    put("end", m.schedule.endMin)
+                    put("days", m.schedule.days)
+                })
+                put("car", m.carTrigger)
             })
         }
     }.toString()
@@ -167,6 +189,10 @@ object FocusModes {
                 wallpaperDim = o.optDouble("dim", 0.0).toFloat(),
                 allowedApps = if (apps == null) emptySet() else (0 until apps.length()).mapTo(HashSet()) { apps.getString(it) },
                 allowAll = o.optBoolean("all", false),
+                schedule = o.optJSONObject("sched")?.let { sj ->
+                    Schedule(sj.optBoolean("on", false), sj.optInt("start", 22 * 60), sj.optInt("end", 7 * 60), sj.optInt("days", 0b1111111))
+                } ?: Schedule(),
+                carTrigger = o.optBoolean("car", false),
             )
         }.ifEmpty { null }
     }.getOrNull()
