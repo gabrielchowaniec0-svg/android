@@ -961,6 +961,11 @@ private fun WidgetCell(
     ) {
         val cellWpx = (constraints.maxWidth + padPx * 2) / spanX.coerceAtLeast(1)
         val cellHpx = (constraints.maxHeight + padPx * 2) / spanY.coerceAtLeast(1)
+        // Read the cell size here: the inner Box below hides BoxWithConstraints' values.
+        val boxWidthDp = maxWidth.value
+        val boxHeightDp = maxHeight.value
+        val boxWidthPx = constraints.maxWidth.toFloat()
+        val boxHeightPx = constraints.maxHeight.toFloat()
         // While the resize handle is dragged the widget stretches live (scaled from its
         // top-left corner); on release it snaps to whole cells with a springy settle.
         Box(
@@ -985,8 +990,8 @@ private fun WidgetCell(
                     Text("Widget unavailable", color = Color.White, fontSize = 12.sp)
                 }
             } else {
-                val widthDp = maxWidth.value
-                val heightDp = maxHeight.value
+                val widthDp = boxWidthDp
+                val heightDp = boxHeightDp
                 LaunchedEffect(view, widthDp, heightDp) {
                     // Lets responsive widgets pick the right layout for their cell size.
                     view.updateAppWidgetSize(Bundle(), listOf(SizeF(widthDp, heightDp)))
@@ -1081,8 +1086,8 @@ private fun WidgetCell(
                             },
                         ) { change, delta ->
                             change.consume()
-                            val minX = -(constraints.maxWidth - cellWpx * 0.6f).coerceAtLeast(0f)
-                            val minY = -(constraints.maxHeight - cellHpx * 0.6f).coerceAtLeast(0f)
+                            val minX = -(boxWidthPx - cellWpx * 0.6f).coerceAtLeast(0f)
+                            val minY = -(boxHeightPx - cellHpx * 0.6f).coerceAtLeast(0f)
                             // Rubber-band resistance past the smallest size.
                             fun band(v: Float, d: Float, min: Float) = if (v + d < min) v + d * 0.25f else v + d
                             val nx = band(stretchX.value, delta.x, minX)
