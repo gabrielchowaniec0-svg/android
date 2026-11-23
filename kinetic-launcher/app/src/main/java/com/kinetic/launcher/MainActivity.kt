@@ -1,6 +1,7 @@
 package com.kinetic.launcher
 
 import android.app.WallpaperManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -8,110 +9,233 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import com.kinetic.core.GridConfig
-import com.kinetic.core.GridGeometry
-import com.kinetic.core.GridItem
-import com.kinetic.core.LauncherGrid
-import com.kinetic.lockscreen.BiometricUnlockBridge
-import com.kinetic.lockscreen.CinematicUnlock
-import com.kinetic.lockscreen.FlowDirection
-import com.kinetic.lockscreen.UnlockIcon
-import com.kinetic.lockscreen.rememberUnlockController
+import com.kinetic.core.apps.AppRepository
+import com.kinetic.core.home.HomeLayoutStore
+import com.kinetic.core.system.SystemGestures
+import com.kinetic.core.widgets.WidgetHostManager
+import com.kinetic.launcher.ui.HomeDeps
+import com.kinetic.launcher.ui.KineticHome
+import com.kinetic.launcher.ui.UnlockPhase
 import com.kinetic.security.StealthCustomizationManager
 import com.kinetic.wallpaper.FluidWallpaperService
-import kotlinx.coroutines.launch
 
 /**
- * App entry point (MAIN/LAUNCHER and HOME). Wires the feature modules together:
+ * The launcher (MAIN/LAUNCHER and HOME). Owns the long-lived pieces — installed
+ * apps, the saved layout, the widget host — and hands them to the Compose UI.
  *
- *  - :launcher-core          -> LauncherGrid home screen
- *  - :security-engine        -> label masks + private workspace filtering
- *  - :lockscreen-transition  -> BiometricPrompt + cinematic unlock into the grid
- *  - :wallpaper-engine       -> "Wallpaper" button opens the live wallpaper picker
- *
- * FragmentActivity (a ComponentActivity) so BiometricPrompt can attach and
- * Compose's setContent works.
+ * Lock screen: the phone's own lock screen is used. When you unlock straight to
+ * the home screen, the icons glide into place along the wallpaper's flow lines.
  */
 class MainActivity : FragmentActivity() {
 
-    private lateinit var customization: StealthCustomizationManager
+    private lateinit var deps: HomeDeps
 
-    /** Launcher-level lock state; re-armed whenever the screen turns off. */
-    private val locked = mutableStateOf(true)
+    private val homePressSignal = mutableIntStateOf(0)
+    private val unlockPhase = mutableStateOf(UnlockPhase.NONE)
 
-    private val screenOffReceiver = object : BroadcastReceiver() {
+    private val handler = Handler(Looper.getMainLooper())
+    private var isResumedNow = false
+    private var lastScreenOffAt = 0L
+    private var lastUserPresentAt = 0L
+
+    private data class PendingWidget(val id: Int, val page: Int, val spanX: Int, val spanY: Int)
+    private var pendingWidget: PendingWidget? = null
+
+    private val bindWidget = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val p = pendingWidget ?: return@registerForActivityResult
+        if (result.resultCode == RESULT_OK) configureOrPlace(p) else cancelWidget(p)
+    }
+
+    /** If the screen came on but no unlock followed quickly, just show the icons. */
+    private val disarmUnlock = Runnable {
+        if (unlockPhase.value == UnlockPhase.ARMED) unlockPhase.value = UnlockPhase.NONE
+    }
+
+    private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            locked.value = true
-            customization.lockToPrimary()
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    lastScreenOffAt = SystemClock.elapsedRealtime()
+                    deps.customization.lockToPrimary()
+                    unlockPhase.value = UnlockPhase.ARMED
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    lastUserPresentAt = SystemClock.elapsedRealtime()
+                    if (isResumedNow && unlockPhase.value == UnlockPhase.ARMED) {
+                        handler.removeCallbacks(disarmUnlock)
+                        unlockPhase.value = UnlockPhase.PLAY
+                    }
+                }
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        customization = StealthCustomizationManager(this)
 
-        // SCREEN_OFF is a protected system broadcast, so it still arrives with NOT_EXPORTED.
+        val config = GridConfig(columns = 5, rows = 6, halfSnap = true)
+        deps = HomeDeps(
+            apps = AppRepository(this),
+            layout = HomeLayoutStore(this, config.columns, config.rows),
+            widgets = WidgetHostManager(this),
+            customization = StealthCustomizationManager(this),
+            config = config,
+        )
+        savedInstanceState?.getIntArray(STATE_PENDING_WIDGET)?.let { a ->
+            if (a.size == 4) pendingWidget = PendingWidget(a[0], a[1], a[2], a[3])
+        }
+        deps.apps.start()
+
+        // Both are protected system broadcasts, so they still arrive with NOT_EXPORTED.
         registerReceiver(
-            screenOffReceiver,
-            IntentFilter(Intent.ACTION_SCREEN_OFF),
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
             RECEIVER_NOT_EXPORTED,
         )
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 KineticHome(
+                    deps = deps,
                     activity = this,
-                    customization = customization,
-                    locked = locked.value,
-                    onUnlocked = { locked.value = false },
+                    homePressSignal = homePressSignal.intValue,
+                    unlockPhase = unlockPhase.value,
+                    onUnlockFinished = { unlockPhase.value = UnlockPhase.NONE },
+                    onRequestWidget = ::requestWidget,
                     onOpenWallpaperPicker = ::openWallpaperPicker,
+                    onExpandNotifications = ::expandNotifications,
                 )
             }
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        deps.widgets.startListening()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isResumedNow = true
+        if (unlockPhase.value == UnlockPhase.ARMED) {
+            val now = SystemClock.elapsedRealtime()
+            val unlockedSinceScreenOff = lastUserPresentAt > lastScreenOffAt
+            when {
+                // Unlocked straight to home: play the glide.
+                unlockedSinceScreenOff && now - lastUserPresentAt < UNLOCK_WINDOW_MS -> unlockPhase.value = UnlockPhase.PLAY
+                // Unlocked into another app earlier and only now came home: no glide.
+                unlockedSinceScreenOff -> unlockPhase.value = UnlockPhase.NONE
+                // Unlock broadcast hasn't arrived yet; give it a moment.
+                else -> handler.postDelayed(disarmUnlock, UNLOCK_WAIT_MS)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isResumedNow = false
+        handler.removeCallbacks(disarmUnlock)
+    }
+
     override fun onStop() {
         super.onStop()
-        // Collapse the private space whenever we leave the foreground.
-        customization.lockToPrimary()
+        deps.widgets.stopListening()
+        deps.customization.lockToPrimary()
     }
 
     override fun onDestroy() {
-        unregisterReceiver(screenOffReceiver)
+        unregisterReceiver(screenReceiver)
+        handler.removeCallbacksAndMessages(null)
+        deps.apps.stop()
         super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Home button pressed while we're already the home screen.
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            homePressSignal.intValue++
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingWidget?.let { outState.putIntArray(STATE_PENDING_WIDGET, intArrayOf(it.id, it.page, it.spanX, it.spanY)) }
+    }
+
+    // ---- widgets: allocate id -> bind permission -> optional configure -> place ----
+
+    private fun requestWidget(info: AppWidgetProviderInfo, page: Int) {
+        val id = deps.widgets.allocateId()
+        val (spanX, spanY) = deps.widgets.defaultSpan(info, deps.config.columns, deps.config.rows)
+        val p = PendingWidget(id, page, spanX, spanY)
+        pendingWidget = p
+        if (deps.widgets.bindIfAllowed(id, info)) {
+            configureOrPlace(p)
+        } else {
+            try {
+                bindWidget.launch(deps.widgets.bindPermissionIntent(id, info))
+            } catch (e: ActivityNotFoundException) {
+                cancelWidget(p)
+            }
+        }
+    }
+
+    private fun configureOrPlace(p: PendingWidget) {
+        val info = deps.widgets.infoFor(p.id)
+        if (info == null) {
+            cancelWidget(p)
+            return
+        }
+        if (deps.widgets.needsConfiguration(info)) {
+            if (!deps.widgets.startConfiguration(this, p.id, REQUEST_CONFIGURE_WIDGET)) cancelWidget(p)
+        } else {
+            placeWidget(p)
+        }
+    }
+
+    private fun placeWidget(p: PendingWidget) {
+        pendingWidget = null
+        deps.layout.addWidget(p.page, p.id, p.spanX, p.spanY)
+    }
+
+    private fun cancelWidget(p: PendingWidget) {
+        pendingWidget = null
+        deps.widgets.deleteId(p.id)
+        Toast.makeText(this, "Widget wasn't added", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Widget configuration screens still report back through onActivityResult. */
+    @Deprecated("Required for AppWidgetHost.startAppWidgetConfigureActivityForResult")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_CONFIGURE_WIDGET) return
+        val p = pendingWidget ?: return
+        if (resultCode == RESULT_OK) placeWidget(p) else cancelWidget(p)
+    }
+
+    // ---- system ----------------------------------------------------------------
+
+    private fun expandNotifications() {
+        if (!SystemGestures.expandNotifications(this)) {
+            Toast.makeText(this, "Couldn't open notifications on this device", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openWallpaperPicker() {
@@ -125,125 +249,11 @@ class MainActivity : FragmentActivity() {
             startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
         }
     }
-}
 
-@Composable
-private fun KineticHome(
-    activity: FragmentActivity,
-    customization: StealthCustomizationManager,
-    locked: Boolean,
-    onUnlocked: () -> Unit,
-    onOpenWallpaperPicker: () -> Unit,
-) {
-    val config = remember { GridConfig(columns = 5, rows = 6, halfSnap = true) }
-    val scope = rememberCoroutineScope()
-    val controller = rememberUnlockController()
-    val bridge = remember(activity) { BiometricUnlockBridge(activity, scope, controller) }
-
-    val workspace by customization.activeWorkspace.collectAsState()
-    // Subscribing makes the grid redraw when masks or the private set change.
-    val masks by customization.masks.collectAsState()
-    val privateApps by customization.privateApps.collectAsState()
-
-    // Session-only layout; persist this (e.g. DataStore) when you're ready.
-    val positions = remember { mutableStateMapOf<String, Pair<Float, Float>>() }
-
-    val packages = rememberExamplePackages()
-    val visible = remember(packages, workspace, privateApps) {
-        customization.visiblePackages(packages, workspace)
-    }
-    val cells = visible.mapIndexed { i, pkg ->
-        pkg to (positions[pkg] ?: ((i % config.columns).toFloat() to (i / config.columns).toFloat()))
-    }
-    // Reads the collected masks state, so a label change recomposes the grid.
-    fun labelFor(pkg: String): String =
-        masks[pkg]?.overrideLabel ?: pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
-
-    // Snap the unlock timeline back to 0 each time we re-lock.
-    LaunchedEffect(locked) { if (locked) controller.reset() }
-
-    Column(Modifier.fillMaxSize()) {
-        BoxWithConstraints(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            if (locked) {
-                val density = LocalDensity.current
-                val w = constraints.maxWidth.toFloat()
-                val h = constraints.maxHeight.toFloat()
-                val geometry = GridGeometry.of(config, w, h, with(density) { config.gutterDp.dp.toPx() })
-                val iconW = with(density) { geometry.spanWidthPx(1).toDp() }
-                val iconH = with(density) { geometry.spanHeightPx(1).toDp() }
-                val p = controller.master.value
-
-                CinematicUnlock(
-                    controller = controller,
-                    direction = FlowDirection.TOP_BOTTOM,
-                    canvasSize = Offset(w, h),
-                    // Each icon glides to the exact pixel spot the grid will use.
-                    icons = cells.map { (pkg, cell) ->
-                        UnlockIcon(id = pkg, home = geometry.cellOrigin(cell.first, cell.second)) {
-                            Box(Modifier.size(iconW, iconH)) { AppIconCell(label = labelFor(pkg)) }
-                        }
-                    },
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {
-                        if (controller.master.isRunning) return@clickable
-                        if (bridge.canAuthenticate()) {
-                            bridge.authenticate { tag ->
-                                customization.workspaceForCredential(tag)
-                                onUnlocked()
-                            }
-                        } else {
-                            // No biometric or screen lock enrolled: play the transition anyway.
-                            scope.launch {
-                                controller.runUnlock()
-                                onUnlocked()
-                            }
-                        }
-                    },
-                    background = {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.55f * (1f - p)))
-                        )
-                    },
-                )
-
-                Text(
-                    text = "Tap to unlock",
-                    color = Color(0xFFCAD4E8),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp)
-                        .graphicsLayer { alpha = (1f - p * 4f).coerceAtLeast(0f) },
-                )
-            } else {
-                LauncherGrid(
-                    config = config,
-                    items = cells.map { (pkg, cell) ->
-                        GridItem(id = pkg, cellX = cell.first, cellY = cell.second) {
-                            AppIconCell(label = labelFor(pkg))
-                        }
-                    },
-                    onMove = { id, cx, cy -> positions[id] = cx to cy },
-                )
-            }
-        }
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(onClick = onOpenWallpaperPicker) {
-                Text("Wallpaper", color = Color(0xFFCAD4E8))
-            }
-        }
+    private companion object {
+        const val REQUEST_CONFIGURE_WIDGET = 1001
+        const val STATE_PENDING_WIDGET = "pending_widget"
+        const val UNLOCK_WINDOW_MS = 2000L
+        const val UNLOCK_WAIT_MS = 800L
     }
 }

@@ -8,9 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Wires a successful [BiometricPrompt] authentication to the cinematic unlock,
- * and reports which credential the user authenticated with so the launcher can
- * decide which workspace to open (see StealthCustomizationManager).
+ * Runs the system [BiometricPrompt] (fingerprint / face, or PIN as fallback).
+ * On success it optionally plays the cinematic unlock on [controller], then
+ * reports the credential tag — used e.g. to reveal hidden apps.
  *
  * This uses the platform BiometricPrompt only — the launcher never sees or
  * stores the biometric itself, just the success signal and an opaque tag the
@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 class BiometricUnlockBridge(
     private val activity: FragmentActivity,
     private val scope: CoroutineScope,
-    private val controller: UnlockTransitionController,
+    private val controller: UnlockTransitionController? = null,
 ) {
 
     fun interface OnUnlocked {
@@ -45,7 +45,7 @@ class BiometricUnlockBridge(
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     scope.launch {
-                        controller.runUnlock()
+                        controller?.runUnlock()
                         onUnlocked.onUnlocked(credentialTag)
                     }
                 }
