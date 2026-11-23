@@ -531,7 +531,7 @@ fun KineticHome(
                     rotationX = -t.y * 5f
                     translationX = t.x * 8.dp.toPx()
                     translationY = t.y * 8.dp.toPx()
-                    cameraDistance = 16f * density
+                    cameraDistance = 16f * this.density // the layer scope's density (a number), not the outer Density object
                 }
                 .systemBarsPadding()
         ) {
