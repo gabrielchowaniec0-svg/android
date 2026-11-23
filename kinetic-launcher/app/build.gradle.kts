@@ -21,8 +21,12 @@ android {
     }
 
     buildTypes {
+        // "release" runs much faster than "debug" (no debugger hooks, fully compiled,
+        // Compose's speed profiles installed). It's signed with the same debug key so
+        // Android Studio can install it with Run: Build ▸ Select Build Variant ▸ release.
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

@@ -102,6 +102,7 @@ import com.kinetic.lockscreen.rememberUnlockController
 import com.kinetic.security.StealthCustomizationManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -189,25 +190,29 @@ fun KineticHome(
     val drawerProgress = remember { Animatable(0f) }
     val drawerShowing by remember { derivedStateOf { drawerProgress.value > 0f } }
     val drawerMostlyOpen by remember { derivedStateOf { drawerProgress.value > 0.15f } }
-    val drawerSpring = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow) }
+    val drawerSpring = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 520f) }
     val dragRangePx = with(density) { 360.dp.toPx() }
 
     // 3D parallax: the home screen leans slightly as you tilt the phone (paused in Battery Saver).
     val powerSave = rememberPowerSaveMode()
     val tilt = rememberDeviceTilt(active = isResumed && !drawerShowing && !editMode && !powerSave)
 
-    fun openDrawer() {
+    /** [velocityPx] is the finger's speed (px/s, negative = up) so the motion carries straight on. */
+    fun openDrawer(velocityPx: Float = 0f) {
         drawerOpen = true
-        scope.launch { drawerProgress.animateTo(1f, drawerSpring) }
+        scope.launch { drawerProgress.animateTo(1f, drawerSpring, initialVelocity = -velocityPx / dragRangePx) }
     }
 
-    fun closeDrawer() {
+    fun closeDrawer(velocityPx: Float = 0f) {
         drawerOpen = false
-        scope.launch { drawerProgress.animateTo(0f, drawerSpring) }
+        scope.launch { drawerProgress.animateTo(0f, drawerSpring, initialVelocity = -velocityPx / dragRangePx) }
     }
 
     fun dragDrawerBy(dy: Float) {
-        scope.launch { drawerProgress.snapTo((drawerProgress.value - dy / dragRangePx).coerceIn(0f, 1f)) }
+        // UNDISPATCHED: applied in this same frame, so the drawer sticks to the finger.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            drawerProgress.snapTo((drawerProgress.value - dy / dragRangePx).coerceIn(0f, 1f))
+        }
     }
 
     fun labelFor(e: AppEntry): String = masks[e.packageName]?.overrideLabel ?: e.label
@@ -680,9 +685,10 @@ fun KineticHome(
     // ---- layout ----------------------------------------------------------------
 
     val gesturesEnabled = !editMode && !drawerOpen && openFolder == null && !widgetPickerOpen
-    // Distance OR speed is enough: ~24dp of travel, or a flick faster than ~250dp/s.
-    val swipeThresholdPx = with(density) { 24.dp.toPx() }
-    val flingVelocityPx = with(density) { 250.dp.toPx() }
+    // Distance OR speed is enough. Even a tiny flick counts (~90dp/s), and pulling down
+    // opens the shade as soon as the finger has moved ~10dp — no need to let go.
+    val swipeThresholdPx = with(density) { 10.dp.toPx() }
+    val flingVelocityPx = with(density) { 90.dp.toPx() }
     val currentExpandNotifications by rememberUpdatedState(onExpandNotifications)
 
     Box(
@@ -693,19 +699,27 @@ fun KineticHome(
                 if (!gesturesEnabled) return@pointerInput
                 var total = 0f
                 var mode = 0 // 0 = undecided, 1 = pulling up the drawer, 2 = notification shade
+                var shadeOpened = false
                 val velocity = VelocityTracker()
                 detectVerticalDragGestures(
                     onDragStart = {
                         total = 0f
                         mode = 0
+                        shadeOpened = false
                         velocity.resetTracking()
                     },
                     onDragEnd = {
-                        // A quick flick counts even if the finger barely moved.
+                        // A quick flick counts even if the finger barely moved; otherwise go by
+                        // which way it was last moving, then by how far it got.
                         val vy = velocity.calculateVelocity().y
                         when (mode) {
-                            1 -> if (vy < -flingVelocityPx || (vy <= flingVelocityPx && drawerProgress.value > 0.12f)) openDrawer() else closeDrawer()
-                            2 -> if (vy > flingVelocityPx || total > swipeThresholdPx) currentExpandNotifications()
+                            1 -> when {
+                                vy < -flingVelocityPx -> openDrawer(vy)
+                                vy > flingVelocityPx -> closeDrawer(vy)
+                                drawerProgress.value > 0.3f -> openDrawer(vy)
+                                else -> closeDrawer(vy)
+                            }
+                            2 -> if (!shadeOpened && (vy > flingVelocityPx || total > swipeThresholdPx)) currentExpandNotifications()
                         }
                     },
                     onDragCancel = { if (mode == 1) closeDrawer() },
@@ -715,6 +729,11 @@ fun KineticHome(
                     total += dragAmount
                     if (mode == 0) mode = if (dragAmount < 0f) 1 else 2
                     if (mode == 1) dragDrawerBy(dragAmount)
+                    // Open the shade mid-swipe, the moment it's clearly a pull down.
+                    if (mode == 2 && !shadeOpened && total > swipeThresholdPx) {
+                        shadeOpened = true
+                        currentExpandNotifications()
+                    }
                 }
             }
     ) {
@@ -887,10 +906,10 @@ fun KineticHome(
                 onDrag = { dy -> dragDrawerBy(dy) },
                 onDragEnd = { vy ->
                     when {
-                        vy > flingVelocityPx -> closeDrawer()          // quick flick down
-                        vy < -flingVelocityPx -> openDrawer()          // quick flick back up
-                        drawerProgress.value < 0.88f -> closeDrawer()  // dragged down a little
-                        else -> openDrawer()
+                        vy > flingVelocityPx -> closeDrawer(vy)          // quick flick down
+                        vy < -flingVelocityPx -> openDrawer(vy)          // quick flick back up
+                        drawerProgress.value < 0.85f -> closeDrawer(vy)  // dragged down a little
+                        else -> openDrawer(vy)
                     }
                 },
                 modifier = Modifier.graphicsLayer {

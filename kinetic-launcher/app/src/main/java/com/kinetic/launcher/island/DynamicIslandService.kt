@@ -45,6 +45,17 @@ import kotlin.math.roundToInt
  * apps" windows sit underneath them, so the island couldn't be tapped there). It
  * doesn't read the screen or anything you type — it only draws the island.
  */
+/** Kinetic's own screens report here when they come to the front (same process). */
+object ForegroundHint {
+    val packageName = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    fun resumed(pkg: String) {
+        // Re-emit even if unchanged, so a returning home screen always counts.
+        packageName.value = null
+        packageName.value = pkg
+    }
+}
+
 class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateRegistryOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -76,6 +87,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         model.start()
         // When Notification access is switched on later, start showing music too.
         scope.launch { NotificationHub.connected.collect { if (it) model.listenForSessions() } }
+        // The home screen also says when it comes to the front (more reliable than events).
+        scope.launch { ForegroundHint.packageName.collect { if (it != null) model.setForeground(it) } }
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         addIsland()
     }
@@ -87,8 +100,6 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || !::model.isInitialized) return
         val pkg = event.packageName?.toString() ?: return
-        // Ignore Kinetic's own pop-ups; only its home screen counts as "an app".
-        if (pkg == packageName && event.className?.toString() != "com.kinetic.launcher.MainActivity") return
         model.setForeground(pkg)
     }
 

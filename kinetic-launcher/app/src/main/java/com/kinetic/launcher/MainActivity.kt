@@ -189,6 +189,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Widgets keep listening while you're in other apps (see onDestroy), so coming
+        // home doesn't have to re-draw every widget at once.
         deps.widgets.startListening()
     }
 
@@ -196,6 +198,8 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         isResumedNow = true
         resumedState.value = true
+        // Tell the Dynamic Island we're in front (so music shows again straight away).
+        com.kinetic.launcher.island.ForegroundHint.resumed(packageName)
         if (unlockPhase.value == UnlockPhase.ARMED) {
             val now = SystemClock.elapsedRealtime()
             val unlockedSinceScreenOff = lastUserPresentAt > lastScreenOffAt
@@ -219,11 +223,11 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
-        deps.widgets.stopListening()
         deps.customization.lockToPrimary()
     }
 
     override fun onDestroy() {
+        deps.widgets.stopListening()
         unregisterReceiver(screenReceiver)
         handler.removeCallbacksAndMessages(null)
         deps.apps.stop()
