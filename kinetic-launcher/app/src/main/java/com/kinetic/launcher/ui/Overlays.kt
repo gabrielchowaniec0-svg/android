@@ -132,7 +132,7 @@ fun FolderOverlay(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             // One UI shows the folder name large, above the panel. Tap it to rename.
             Text(
-                name,
+                name.ifBlank { "Folder" },
                 color = Color.White,
                 fontSize = 30.sp,
                 textAlign = TextAlign.Center,

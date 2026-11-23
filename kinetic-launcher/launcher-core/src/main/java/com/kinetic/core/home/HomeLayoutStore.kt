@@ -28,15 +28,17 @@ sealed interface HomeItem {
         override fun movedTo(x: Float, y: Float) = copy(cellX = x, cellY = y)
     }
 
+    /** A folder. 1 × 1 is a normal folder; 2 × 2 is a One UI–style large folder. */
     data class Folder(
         override val id: String,
         val name: String,
         val appKeys: List<String>,
         override val cellX: Float,
         override val cellY: Float,
+        override val spanX: Int = 1,
+        override val spanY: Int = 1,
     ) : HomeItem {
-        override val spanX: Int get() = 1
-        override val spanY: Int get() = 1
+        val isLarge: Boolean get() = spanX > 1 || spanY > 1
         override fun movedTo(x: Float, y: Float) = copy(cellX = x, cellY = y)
     }
 
@@ -58,35 +60,18 @@ data class HomePage(val id: String, val items: List<HomeItem>)
 data class DrawerFolder(val id: String, val name: String, val appKeys: List<String>)
 
 /**
- * [drawerOrder] is the custom app-drawer order ("app:<key>" / "folder:<id>").
+ * [drawerOrder] is the custom app-drawer order: "app:<key>", "folder:<id>", or
+ * [PAGE_BREAK] to start a new drawer page early (One UI allows part-filled pages).
  * Empty means alphabetical.
  */
 data class HomeLayout(
     val pages: List<HomePage>,
     val drawerFolders: List<DrawerFolder>,
     val drawerOrder: List<String> = emptyList(),
-)
-
-/** A home-screen item read from another launcher, at its original page/cell. */
-sealed interface ImportedHomeItem {
-    val page: Int
-    val x: Int
-    val y: Int
-
-    data class App(override val page: Int, override val x: Int, override val y: Int, val appKey: String) : ImportedHomeItem
-    data class Folder(
-        override val page: Int,
-        override val x: Int,
-        override val y: Int,
-        val name: String,
-        val appKeys: List<String>,
-    ) : ImportedHomeItem
-}
-
-/** An app-drawer entry read from another launcher, in its original order. */
-sealed interface ImportedDrawerEntry {
-    data class App(val appKey: String) : ImportedDrawerEntry
-    data class Folder(val name: String, val appKeys: List<String>) : ImportedDrawerEntry
+) {
+    companion object {
+        const val PAGE_BREAK = "|"
+    }
 }
 
 /**
@@ -264,62 +249,49 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
     }
 
     /** Saves a custom app-drawer order ("app:<key>" / "folder:<id>"). */
-    fun setDrawerOrder(order: List<String>): Boolean = update { it.copy(drawerOrder = order.distinct()) }
+    fun setDrawerOrder(order: List<String>): Boolean = update { it.copy(drawerOrder = dedupeOrder(order)) }
 
     /** Back to alphabetical. */
     fun clearDrawerOrder(): Boolean = update { it.copy(drawerOrder = emptyList()) }
 
     /**
-     * Replaces the home screen and drawer with a layout read from another launcher.
-     * Dock apps go on the bottom row of page 1. Items that don't fit this grid move
-     * to the nearest free cell. Existing Kinetic widgets are kept.
+     * Replaces the whole layout (used for the built-in "my phone" layout). Returns
+     * the app-widget ids that are no longer used, so the caller can free them.
      */
-    fun importLayout(home: List<ImportedHomeItem>, dock: List<String>, drawer: List<ImportedDrawerEntry>) {
-        val old = _layout.value
-        val pageCount = maxOf(1, (home.maxOfOrNull { it.page } ?: 0) + 1)
-        var l = HomeLayout(List(pageCount) { HomePage(newId(), emptyList()) }, emptyList(), emptyList())
-
-        fun put(pageIndex: Int, x: Int, y: Int, make: (Float, Float) -> HomeItem) {
-            val p = l.pages[pageIndex]
-            val spot = if (fits(p.items, null, x.toFloat(), y.toFloat(), 1, 1)) x.toFloat() to y.toFloat()
-            else findFree(p.items, 1, 1)
-            l = if (spot != null) l.replacePage(pageIndex, p.copy(items = p.items + make(spot.first, spot.second)))
-            else l.placeFrom(pageIndex, 1, 1, make)
-        }
-
-        dock.distinct().take(columns).forEachIndexed { i, key ->
-            put(0, i, rows - 1) { x, y -> HomeItem.App(newId(), key, x, y) }
-        }
-        home.sortedWith(compareBy<ImportedHomeItem>({ it.page }, { it.y }, { it.x })).forEach { item ->
-            val page = item.page.coerceIn(0, l.pages.lastIndex)
-            when (item) {
-                is ImportedHomeItem.App -> put(page, item.x, item.y) { x, y -> HomeItem.App(newId(), item.appKey, x, y) }
-                is ImportedHomeItem.Folder -> if (item.appKeys.isNotEmpty()) {
-                    put(page, item.x, item.y) { x, y -> HomeItem.Folder(newId(), item.name, item.appKeys, x, y) }
-                }
-            }
-        }
-        old.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>().forEach { w ->
-            l = l.placeFrom(0, w.spanX, w.spanY) { x, y -> w.copy(cellX = x, cellY = y) }
-        }
-
-        val folders = mutableListOf<DrawerFolder>()
-        val order = mutableListOf<String>()
-        drawer.forEach { e ->
-            when (e) {
-                is ImportedDrawerEntry.App -> order += "app:${e.appKey}"
-                is ImportedDrawerEntry.Folder -> if (e.appKeys.isNotEmpty()) {
-                    val f = DrawerFolder(newId(), e.name, e.appKeys.distinct())
-                    folders += f
-                    order += "folder:${f.id}"
-                }
-            }
-        }
-        l = l.copy(drawerFolders = folders, drawerOrder = order.distinct())
-
+    fun replaceLayout(newLayout: HomeLayout): List<Int> {
+        val keep = newLayout.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>().mapTo(HashSet()) { it.appWidgetId }
+        val dropped = _layout.value.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>()
+            .map { it.appWidgetId }.filter { it !in keep }
+        val l = normalize(newLayout.copy(pages = newLayout.pages.ifEmpty { listOf(HomePage(newId(), emptyList())) }))
         isFresh = false
         _layout.value = l
         save(l)
+        return dropped
+    }
+
+    /** Places a widget at an exact cell if it fits there, otherwise wherever there's room. Returns the page. */
+    fun addWidgetAt(page: Int, appWidgetId: Int, x: Int, y: Int, spanX: Int, spanY: Int): Int {
+        val sx = spanX.coerceIn(1, columns)
+        val sy = spanY.coerceIn(1, rows)
+        val p = _layout.value.pages.getOrNull(page)
+        if (p != null && fits(p.items, null, x.toFloat(), y.toFloat(), sx, sy)) {
+            update { l -> l.replacePage(page, p.copy(items = p.items + HomeItem.Widget(newId(), appWidgetId, x.toFloat(), y.toFloat(), sx, sy))) }
+            return page
+        }
+        return addWidget(page, appWidgetId, sx, sy)
+    }
+
+    /** Switches a home folder between normal (1 × 1) and large (2 × 2). False if there's no room. */
+    fun setFolderLarge(page: Int, folderId: String, large: Boolean): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val f = p.items.firstOrNull { it.id == folderId } as? HomeItem.Folder ?: return@update l
+        val span = if (large) 2 else 1
+        val x = minOf(f.cellX, (columns - span).toFloat())
+        val y = minOf(f.cellY, (rows - span).toFloat())
+        if (!fits(p.items, f.id, x, y, span, span)) l
+        else l.replacePage(page, p.copy(items = p.items.map {
+            if (it.id == f.id) f.copy(cellX = x, cellY = y, spanX = span, spanY = span) else it
+        }))
     }
 
     fun moveToDrawerFolder(folderId: String, appKey: String): Boolean = update { l ->
@@ -356,6 +328,7 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
             val folderIds = pruned.drawerFolders.mapTo(HashSet()) { it.id }
             pruned.copy(drawerOrder = pruned.drawerOrder.filter { entry ->
                 when {
+                    entry == HomeLayout.PAGE_BREAK -> true
                     entry.startsWith("app:") -> entry.removePrefix("app:") in installedKeys
                     entry.startsWith("folder:") -> entry.removePrefix("folder:") in folderIds
                     else -> false
@@ -382,6 +355,12 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
 
     // ---- internals ---------------------------------------------------------------
 
+    /** Removes duplicate entries but keeps every page break. */
+    private fun dedupeOrder(order: List<String>): List<String> {
+        val seen = HashSet<String>()
+        return order.filter { it == HomeLayout.PAGE_BREAK || seen.add(it) }
+    }
+
     /** Moves items that don't fit the current grid (e.g. after it shrank from 5 to 4 columns). */
     private fun normalize(l: HomeLayout): HomeLayout {
         var out = l.copy(pages = l.pages.map { it.copy(items = emptyList()) })
@@ -390,7 +369,12 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
             page.items.forEach { item ->
                 val sx = item.spanX.coerceIn(1, columns)
                 val sy = item.spanY.coerceIn(1, rows)
-                val resized = if (item is HomeItem.Widget && (sx != item.spanX || sy != item.spanY)) item.copy(spanX = sx, spanY = sy) else item
+                val resized = when {
+                    sx == item.spanX && sy == item.spanY -> item
+                    item is HomeItem.Widget -> item.copy(spanX = sx, spanY = sy)
+                    item is HomeItem.Folder -> item.copy(spanX = sx, spanY = sy)
+                    else -> item
+                }
                 val target = out.pages[pageIndex]
                 if (fits(target.items, null, resized.cellX, resized.cellY, sx, sy)) {
                     out = out.replacePage(pageIndex, target.copy(items = target.items + resized))
@@ -485,6 +469,8 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                 put("type", "folder")
                 put("name", item.name)
                 put("keys", JSONArray(item.appKeys))
+                put("sx", item.spanX)
+                put("sy", item.spanY)
             }
             is HomeItem.Widget -> {
                 put("type", "widget")
@@ -526,7 +512,10 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
         val y = o.optDouble("y", 0.0).toFloat()
         return when (o.optString("type")) {
             "app" -> HomeItem.App(id, o.getString("key"), x, y)
-            "folder" -> HomeItem.Folder(id, o.optString("name", "Folder"), o.optJSONArray("keys").toStringList(), x, y)
+            "folder" -> HomeItem.Folder(
+                id, o.optString("name", "Folder"), o.optJSONArray("keys").toStringList(), x, y,
+                o.optInt("sx", 1), o.optInt("sy", 1),
+            )
             "widget" -> HomeItem.Widget(id, o.getInt("wid"), x, y, o.optInt("sx", 1), o.optInt("sy", 1))
             else -> null
         }

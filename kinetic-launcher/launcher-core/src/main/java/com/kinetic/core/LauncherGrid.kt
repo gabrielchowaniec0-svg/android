@@ -44,7 +44,10 @@ import kotlin.math.roundToInt
 data class GridConfig(
     val columns: Int = 5,
     val rows: Int = 6,
+    /** Space between cells (and above/below the grid). */
     val gutterDp: Int = 10,
+    /** Left/right margin of the grid. One UI uses ~14dp with no gutter. */
+    val marginDp: Int = 10,
     val halfSnap: Boolean = true,
 ) {
     init {
@@ -74,6 +77,7 @@ data class GridItem(
 data class GridGeometry(
     val config: GridConfig,
     val gutterPx: Float,
+    val marginPx: Float,
     val cellW: Float,
     val cellH: Float,
 ) {
@@ -81,14 +85,14 @@ data class GridGeometry(
 
     /** Top-left pixel position of a cell coordinate. */
     fun cellOrigin(cx: Float, cy: Float): Offset = Offset(
-        x = gutterPx + cx * (cellW + gutterPx),
+        x = marginPx + cx * (cellW + gutterPx),
         y = gutterPx + cy * (cellH + gutterPx),
     )
 
     /** Nearest legal (half-)cell for an item's top-left pixel, keeping the whole span on the grid. */
     fun nearestCell(px: Offset, spanX: Int = 1, spanY: Int = 1): Pair<Float, Float> {
         fun snap(v: Float) = (v / step).roundToInt() * step
-        val cx = (px.x - gutterPx) / (cellW + gutterPx)
+        val cx = (px.x - marginPx) / (cellW + gutterPx)
         val cy = (px.y - gutterPx) / (cellH + gutterPx)
         return snap(cx).coerceIn(0f, (config.columns - spanX).toFloat().coerceAtLeast(0f)) to
             snap(cy).coerceIn(0f, (config.rows - spanY).toFloat().coerceAtLeast(0f))
@@ -98,12 +102,19 @@ data class GridGeometry(
     fun spanHeightPx(span: Int): Int = (cellH * span + gutterPx * (span - 1)).roundToInt()
 
     companion object {
-        fun of(config: GridConfig, widthPx: Float, heightPx: Float, gutterPx: Float) = GridGeometry(
+        fun of(config: GridConfig, widthPx: Float, heightPx: Float, gutterPx: Float, marginPx: Float) = GridGeometry(
             config = config,
             gutterPx = gutterPx,
-            cellW = (widthPx - gutterPx * (config.columns + 1)) / config.columns,
+            marginPx = marginPx,
+            cellW = (widthPx - marginPx * 2 - gutterPx * (config.columns - 1)) / config.columns,
             cellH = (heightPx - gutterPx * (config.rows + 1)) / config.rows,
         )
+
+        /** Geometry for [config] in an area of the given pixel size, using the current density. */
+        fun of(config: GridConfig, widthPx: Float, heightPx: Float, density: androidx.compose.ui.unit.Density) =
+            with(density) {
+                of(config, widthPx, heightPx, config.gutterDp.dp.toPx(), config.marginDp.dp.toPx())
+            }
     }
 }
 
@@ -129,12 +140,11 @@ fun LauncherGrid(
     emptyHoldMillis: Long = 700L,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val gutterPx = with(LocalDensity.current) { config.gutterDp.dp.toPx() }
         val geometry = GridGeometry.of(
             config,
             constraints.maxWidth.toFloat(),
             constraints.maxHeight.toFloat(),
-            gutterPx,
+            LocalDensity.current,
         )
         // Gesture handlers outlive recompositions; read the latest values through these.
         val currentGeometry by rememberUpdatedState(geometry)
@@ -245,10 +255,12 @@ private fun DrawScope.drawCellOutlines(g: GridGeometry) {
     val radius = CornerRadius(12.dp.toPx())
     for (row in 0 until g.config.rows) {
         for (col in 0 until g.config.columns) {
+            val inset = 3.dp.toPx()
+            val o = g.cellOrigin(col.toFloat(), row.toFloat())
             drawRoundRect(
                 color = Color.White.copy(alpha = 0.12f),
-                topLeft = g.cellOrigin(col.toFloat(), row.toFloat()),
-                size = Size(g.cellW, g.cellH),
+                topLeft = Offset(o.x + inset, o.y + inset),
+                size = Size(g.cellW - inset * 2, g.cellH - inset * 2),
                 cornerRadius = radius,
                 style = stroke,
             )

@@ -37,6 +37,8 @@ data class AppEntry(
     val user: UserHandle,
     val label: String,
     val icon: ImageBitmap,
+    /** ApplicationInfo.category (e.g. CATEGORY_GAME), or -1 if the app didn't declare one. */
+    val category: Int = -1,
 )
 
 /**
@@ -134,6 +136,7 @@ class AppRepository(context: Context) {
                     user = user,
                     label = info.label?.toString() ?: component.packageName,
                     icon = icon,
+                    category = info.applicationInfo?.category ?: -1,
                 )
             }
         }

@@ -111,7 +111,8 @@ Phone and computer must be on the **same network**. For Android 13+:
 - Your real installed apps and icons are loaded automatically. On first run,
   your default phone, messages, browser, camera and gallery apps go along the
   bottom row.
-- **Swipe left/right** to move between home pages.
+- **Swipe left/right** to move between home pages. All swipes respond to a quick
+  flick as well as a longer drag (`flingVelocityPx` / `swipeThresholdPx` in `HomeScreen.kt`).
 - **Swipe up anywhere** to open all apps, One UI–style: it follows your finger,
   the wallpaper softens behind it, apps are in 4‑column pages you swipe
   sideways, and **Search** is the pill at the bottom. Swipe down to close.
@@ -129,14 +130,22 @@ Phone and computer must be on the **same network**. For Android 13+:
 - The first time you add a widget, Android asks you to allow Kinetic to create
   widgets. Tap **Allow**, and tick "always" if offered.
 
-**Bringing over your One UI Home layout**
-- Open the app list ▸ **⋮** ▸ **Import layout from One UI Home**. If Samsung
-  allows it, Kinetic copies your home pages, dock, folders and app‑drawer order
-  (newly installed apps go at the end, like One UI). Widgets can't be copied
-  between launchers; re‑add them from edit mode ▸ **Widgets**.
-- Samsung protects that layout with its own READ_SETTINGS permission. If your
-  One UI version reserves it for system apps, Kinetic shows a message saying so
-  and you'll need to arrange things by hand in edit mode.
+**Your phone's layout (built in)**
+- One UI Home doesn't let other apps read its layout, so Kinetic has your S25
+  Ultra layout written into `app/.../MyPhoneLayout.kt`, copied from your
+  screenshots. On first run after updating, Kinetic sets it up automatically:
+  - home page: weather & clock widget at the top, Device care widget, the
+    large 2 × 2 Google folder (tap its icons directly), Chowaniec, the Google
+    search bar, and the Phone / Messages / Gmail / Camera dock
+  - app list: your three pages in your order, with your Google, Microsoft,
+    Samsung, Xfinity, games, food, streaming, creative, Amazon, smart‑home and
+    "business" folders; anything else goes at the end, like new apps in One UI
+- Kinetic adds the three widgets one by one. Android may ask you to allow
+  Kinetic to add widgets; tap **Allow** (and "always" if offered).
+- Your phone's home screen and app list use the same grid: 14 dp side margins,
+  4 equal columns and 6 rows per app‑list page, so icons line up between the two.
+- To start over: app list ▸ **⋮** ▸ **Reset to my phone's layout**.
+- In edit mode, tap a folder ▸ **Make large (2 × 2)** / **Make small**.
 
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the
