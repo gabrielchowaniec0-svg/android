@@ -1,5 +1,6 @@
 package com.kinetic.lockscreen
 
+import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -26,6 +27,11 @@ class BiometricUnlockBridge(
         fun onUnlocked(credentialTag: String)
     }
 
+    /** True when a strong biometric or a screen-lock credential is enrolled. */
+    fun canAuthenticate(): Boolean =
+        BiometricManager.from(activity).canAuthenticate(AUTHENTICATORS) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+
     fun authenticate(
         title: String = "Unlock",
         subtitle: String = "Confirm it's you",
@@ -51,10 +57,7 @@ class BiometricUnlockBridge(
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(
-                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-            )
+            .setAllowedAuthenticators(AUTHENTICATORS)
             .build()
 
         prompt.authenticate(info)
@@ -62,5 +65,9 @@ class BiometricUnlockBridge(
 
     companion object {
         const val DEFAULT_TAG = "primary"
+
+        private const val AUTHENTICATORS =
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
     }
 }

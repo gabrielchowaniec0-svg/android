@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base app theme (platform theme, no AppCompat dependency needed). -->
+    <style name="Theme.Kinetic" parent="android:Theme.Material.NoActionBar" />
+
+    <!-- Home theme: transparent window so the live wallpaper shows behind the grid. -->
+    <style name="Theme.Kinetic.Home" parent="android:Theme.Material.Wallpaper.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

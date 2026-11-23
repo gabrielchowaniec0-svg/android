@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker thumbnail: dark navy field with two slate ribbons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="256dp"
+    android:height="256dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <path android:fillColor="#FF070A12" android:pathData="M0,0h256v256h-256z" />
+    <path android:strokeColor="#FF2E4066" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M-10,150 C60,90 120,210 190,140 S260,110 270,120" />
+    <path android:strokeColor="#FF5A6E99" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M-10,110 C70,60 130,170 200,100 S260,80 270,90" />
+</vector>

@@ -1,29 +1,26 @@
-# Kinetic Launcher — Phase 1
+# Kinetic Launcher
 
-Production-oriented starting code for a custom Android launcher on the Galaxy
-S25 Ultra, in Kotlin + Jetpack Compose + AGSL.
+Custom Android launcher for the Galaxy S25 Ultra in Kotlin, Jetpack Compose and AGSL.
 
-## Contents
+**Open the `kinetic-launcher` folder (the one containing `settings.gradle.kts`) in
+Android Studio**, let Gradle sync, then run the **app** configuration on your phone.
+Full steps, including USB and Wi‑Fi debugging, are in
+[`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md).
 
-| Module | File | What it is |
+## Modules
+
+| Module | Type | Contents |
 |---|---|---|
-| `:wallpaper-engine` | `wallpaper-engine/src/fluid_wallpaper.agsl` | AGSL fragment shader: layered sine/cosine fluid ribbons, fbm grain, specular rim, touch bloom, dark navy/slate palette |
-| | `wallpaper-engine/src/FluidWallpaperService.kt` | `WallpaperService.Engine` rendering the shader on a hardware canvas, Choreographer-paced to 120Hz |
-| `:lockscreen-transition` | `lockscreen-transition/src/UnlockTransitionController.kt` | Compose unlock: Phase A unblur+scale, Phase B icon glide along cubic-bezier flow lines (`PathMeasure`) with **TOP_BOTTOM / LEFT_RIGHT** options, Phase C widget spring assembly |
-| | `lockscreen-transition/src/BiometricUnlockBridge.kt` | Runs the transition on `BiometricPrompt` success; reports the credential tag used |
-| `:security-engine` | `security-engine/src/StealthCustomizationManager.kt` | Owner-controlled icon/label masking + a private app workspace gated by a chosen credential; settings stored in EncryptedSharedPreferences |
-| `:launcher-core` | `launcher-core/src/LauncherGrid.kt` | Configurable grid (4×5–8×10), half-cell snapping, spring-physics drag |
-| | `launcher-core/src/LauncherActivity.kt`, `LauncherSampleUi.kt` | Host wiring grid ↔ customization manager (runnable sample) |
-| manifest | `manifest/AndroidManifest.xml`, `manifest/res_xml_fluid_wallpaper.xml` | Launcher `CATEGORY_HOME` + wallpaper service registration |
-| docs | `docs/app_build.gradle.kts`, `docs/DEPLOYMENT_GUIDE.md` | Dependencies + step-by-step build/deploy over USB and Wi-Fi |
+| `:app` | `com.android.application` | `MainActivity` (MAIN/LAUNCHER + HOME), theme, icon — wires all modules together |
+| `:launcher-core` | library | `LauncherGrid` (4×5–8×10, half-cell snapping, spring drag), `GridGeometry` |
+| `:wallpaper-engine` | library | `FluidWallpaperService` + AGSL shader (`res/raw/fluid_wallpaper.agsl`), wallpaper metadata, manifest entry |
+| `:lockscreen-transition` | library | `CinematicUnlock` (unblur → flow-line icon glide, TOP_BOTTOM / LEFT_RIGHT → widget assembly), `BiometricUnlockBridge` |
+| `:security-engine` | library | `StealthCustomizationManager` — icon/label overrides and a private workspace opened by a chosen credential, stored in EncryptedSharedPreferences |
 
-## Notes
+Dependency graph: `:app` → all four libraries; the libraries don't depend on each other.
 
-- **minSdk 33** — AGSL (`RuntimeShader`) requires Android 13+.
-- The security engine is a standard launcher personalization + hidden-apps
-  feature: overrides affect only how *this* launcher draws an entry, the private
-  space is unlocked by the device owner's own biometric, and nothing leaves the
-  device. Loading installed apps, an icon-pack renderer, and the settings UI are
-  marked as the integration work left to you in the deployment guide.
-- Start with the deployment guide — it covers project layout, themes, and
-  activating the wallpaper + default launcher on the phone.
+## Requirements
+
+- Android Studio with JDK 17+, Android SDK Platform 35
+- Device on Android 13+ (`minSdk 33` — AGSL `RuntimeShader` needs API 33)
+- Gradle 8.14.3 (via the included wrapper), AGP 8.10.1, Kotlin 2.1.21

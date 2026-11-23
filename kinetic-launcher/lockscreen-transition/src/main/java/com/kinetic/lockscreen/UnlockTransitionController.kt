@@ -7,10 +7,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
@@ -20,7 +20,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -75,6 +74,16 @@ private fun segment(p: Float, start: Float, end: Float): Float {
     if (p >= end) return 1f
     val x = (p - start) / (end - start)
     return FastOutSlowInEasing.transform(x)
+}
+
+/**
+ * Per-item progress inside a phase. Item delays are spread evenly over the
+ * first [spread] of the phase, so the last item still gets (1 - spread) of the
+ * phase to travel no matter how many items there are.
+ */
+private fun staggered(phase: Float, index: Int, count: Int, spread: Float): Float {
+    val delay = if (count <= 1) 0f else spread * index / (count - 1)
+    return ((phase - delay) / (1f - delay)).coerceIn(0f, 1f)
 }
 
 /** Light overshoot so widgets settle with a spring-like pop. */
@@ -159,16 +168,17 @@ fun CinematicUnlock(
         ) { background() }
 
         // Phase B — icons glide in along their flow lines, staggered.
-        icons.forEachIndexed { index, icon ->
-            val start = offscreenStart(icon.home, index, direction, canvasSize)
-            val path = remember(icon.id, direction, canvasSize) {
-                buildFlowPath(start, icon.home, direction, curve = 120f).asAndroidPath()
+        icons.forEachIndexed { index, icon -> key(icon.id) {
+            val measure = remember(icon.home, index, direction, canvasSize) {
+                val start = offscreenStart(icon.home, index, direction, canvasSize)
+                PathMeasure(
+                    buildFlowPath(start, icon.home, direction, curve = 120f).asAndroidPath(),
+                    false,
+                )
             }
-            val measure = remember(path) { PathMeasure(path, false) }
 
             // stagger: each icon consumes a slightly later slice of Phase B
-            val stagger = index * 0.06f
-            val local = ((pB - stagger) / (1f - stagger)).coerceIn(0f, 1f)
+            val local = staggered(pB, index, icons.size, spread = 0.45f)
             val pos = sampleAlong(measure, local)
 
             Box(
@@ -181,12 +191,11 @@ fun CinematicUnlock(
                         rotationZ = (1f - local) * 8f
                     }
             ) { icon.content() }
-        }
+        } }
 
         // Phase C — widgets spring + fade into place.
         widgets.forEachIndexed { index, widget ->
-            val stagger = index * 0.12f
-            val local = ((pC - stagger) / (1f - stagger)).coerceIn(0f, 1f)
+            val local = staggered(pC, index, widgets.size, spread = 0.35f)
             Box(
                 Modifier.graphicsLayer {
                     alpha = local

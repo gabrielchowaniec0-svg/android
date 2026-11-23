@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged into :app. The service is guarded by BIND_WALLPAPER so only the system can bind it. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <service
+            android:name="com.kinetic.wallpaper.FluidWallpaperService"
+            android:exported="true"
+            android:label="@string/fluid_wallpaper_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/fluid_wallpaper" />
+        </service>
+    </application>
+</manifest>

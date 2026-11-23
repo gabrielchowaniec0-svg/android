@@ -12,47 +12,38 @@ build on an S25 Ultra, over USB and over Wi‑Fi.
 
 ## 1. Project layout
 
-Create a new **Empty Activity (Compose)** project, then drop the files in:
+`kinetic-launcher/` is a complete multi-module Gradle project:
 
 ```
-app/src/main/
-├── java/com/kinetic/
-│   ├── launcher/   LauncherActivity.kt, LauncherSampleUi.kt
-│   ├── core/       LauncherGrid.kt
-│   ├── wallpaper/  FluidWallpaperService.kt
-│   ├── lockscreen/ UnlockTransitionController.kt, BiometricUnlockBridge.kt
-│   └── security/   StealthCustomizationManager.kt
-├── res/
-│   ├── xml/fluid_wallpaper.xml      (from manifest/res_xml_fluid_wallpaper.xml)
-│   ├── drawable/fluid_thumb.png     (any 512×512 preview thumbnail you like)
-│   └── values/strings.xml           (add fluid_wallpaper_desc, see below)
-└── AndroidManifest.xml              (merge from manifest/AndroidManifest.xml)
+kinetic-launcher/
+├── settings.gradle.kts         includes all five modules
+├── build.gradle.kts            plugin versions (apply false)
+├── gradle/libs.versions.toml   version catalog
+├── gradlew / gradle/wrapper/   Gradle 8.14.3 wrapper
+├── app/                        com.android.application  <- the runnable module
+│   └── MainActivity            MAIN/LAUNCHER + HOME; wires the modules below
+├── launcher-core/              library: LauncherGrid + GridGeometry
+├── wallpaper-engine/           library: FluidWallpaperService (+ its manifest entry)
+├── lockscreen-transition/      library: CinematicUnlock + BiometricUnlockBridge
+└── security-engine/            library: StealthCustomizationManager
 ```
 
-`fluid_wallpaper.agsl` is kept as a readable reference; the shader string is
-also inlined in `FluidWallpaperService.kt`. If you'd rather load it at runtime,
-put the `.agsl` in `res/raw/` and read it with `openRawResource`.
-
-Add to `res/values/strings.xml`:
-
-```xml
-<string name="fluid_wallpaper_desc">Kinetic dark fluid live wallpaper</string>
-```
-
-Also add a `Theme.Kinetic` and `Theme.Kinetic.Home` (a translucent, no‑action‑bar
-theme) to `themes.xml` — the Home variant should set a transparent window
-background so the wallpaper shows through.
-
-Copy the dependencies from `docs/app_build.gradle.kts` into your module.
+Library manifests (e.g. the wallpaper service) merge into `:app` automatically.
 
 ---
 
-## 2. Build
+## 2. Open and build
 
-1. **File ▸ Sync Project with Gradle Files.**
-2. Resolve the `namespace` / `applicationId` to your own if you like.
-3. **Build ▸ Make Project** (`Ctrl/Cmd‑F9`). Fix any package‑path mismatches
-   (the folders under `java/` must match each file's `package` line).
+1. In Android Studio choose **File ▸ Open** and select the **`kinetic-launcher`
+   folder itself** (the one containing `settings.gradle.kts`) — not the repo
+   root above it, or Studio won't find any modules.
+2. Let Gradle sync. Studio may offer to install SDK Platform 35 — accept.
+   If it suggests an AGP upgrade, that's optional.
+3. The run-configuration dropdown should now show **app**. Pick your phone
+   and press **Run**. From a terminal the equivalent is:
+   ```
+   ./gradlew :app:installDebug
+   ```
 
 ---
 
@@ -78,7 +69,7 @@ Copy the dependencies from `docs/app_build.gradle.kts` into your module.
 5. In Android Studio, pick the device in the target dropdown and press **Run**
    (`Shift‑F10`), or from a terminal:
    ```
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ./gradlew :app:installDebug
    ```
 
 ---
@@ -111,9 +102,9 @@ Phone and computer must be on the **same network**. For Android 13+:
 ## 5. Activate the pieces on the phone
 
 **Live wallpaper**
-1. Long‑press the home screen ▸ **Wallpapers** (or Settings ▸ Wallpaper).
-2. Choose **Live wallpaper ▸ Kinetic Fluid ▸ Set**. Touch the screen to see
-   the bloom react.
+1. Tap the **Wallpaper** button at the bottom of Kinetic's home screen — it
+   opens the system preview for **Kinetic Fluid** directly.
+2. Tap **Set wallpaper**. Touch the screen to see the bloom react.
 
 **Default launcher**
 1. **Settings ▸ Apps ▸ Choose default apps ▸ Home app** (wording varies on
@@ -122,10 +113,12 @@ Phone and computer must be on the **same network**. For Android 13+:
    Samsung's launcher.
 
 **Cinematic unlock + private space**
-- The unlock transition runs inside your launcher after a successful
-  `BiometricPrompt` (wire `BiometricUnlockBridge` to a button or to your lock
-  overlay). It is a launcher‑level animation, not a replacement for the system
-  keyguard.
+- `MainActivity` starts on a "Tap to unlock" overlay. Tapping runs
+  `BiometricPrompt` (fingerprint, or your PIN as a fallback); on success the
+  icons glide into their grid spots and the draggable grid takes over. It
+  re-arms when the screen turns off. If no biometric or screen lock is set up,
+  the tap just plays the animation. This is a launcher‑level animation, not a
+  replacement for the system keyguard.
 - In your settings UI, call `bindPrivateCredential(tag)` to let one of the
   owner's credentials open the private workspace; `workspaceForCredential(tag)`
   then returns `PRIMARY` or `PRIVATE` after each unlock.
@@ -155,5 +148,6 @@ Phone and computer must be on the **same network**. For Android 13+:
 - An icon‑pack renderer that turns `iconKey` into a themed drawable.
 - A settings surface to edit masks, assign a private‑space credential, and pick
   the unlock flow direction.
+- Persisting the grid layout (drag positions currently last for the session).
 - Widget hosting (`AppWidgetHost`) for Phase C — the controller animates
   arbitrary composables, so wrap your hosted widgets as `UnlockWidget` content.

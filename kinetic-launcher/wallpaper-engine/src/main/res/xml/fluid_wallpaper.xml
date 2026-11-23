@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Place at: app/src/main/res/xml/fluid_wallpaper.xml -->
+<!-- Live wallpaper metadata, referenced by FluidWallpaperService in this module's manifest. -->
 <wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
     android:thumbnail="@drawable/fluid_thumb"
     android:description="@string/fluid_wallpaper_desc"
