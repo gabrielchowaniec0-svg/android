@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineStart
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.requiredSize
