@@ -30,6 +30,11 @@
 
     <!-- In-app updater: checks GitHub for a new build and installs it (you confirm). -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Vault: pick photos/videos to move in (and remove the originals). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 11+ package visibility: see every launchable app and every widget provider. -->
@@ -153,6 +158,26 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <!-- Encrypted Vault (Kinetic code only; no screenshots or recents preview). -->
+        <activity
+            android:name=".vault.VaultActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Vault"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Kinetic" />
+
+        <!-- Lets the camera save a Vault photo straight into Kinetic's private space. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.vaultfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/vault_paths" />
+        </provider>
 
         <!-- Result of installing an update. -->
         <receiver

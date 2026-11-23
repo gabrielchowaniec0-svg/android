@@ -100,7 +100,6 @@ import com.kinetic.launcher.Updater
 import com.kinetic.wallpaper.WallpaperSignals
 import com.kinetic.launcher.island.DynamicIslandService
 import com.kinetic.launcher.defaultHomeKeys
-import com.kinetic.lockscreen.BiometricUnlockBridge
 import com.kinetic.lockscreen.CinematicUnlock
 import com.kinetic.lockscreen.FlowDirection
 import com.kinetic.lockscreen.UnlockIcon
@@ -178,6 +177,7 @@ fun KineticHome(
     var drawerOpen by remember { mutableStateOf(false) }
     var drawerPickMode by remember { mutableStateOf(false) }
     var privateRevealed by remember { mutableStateOf(false) }
+    var askingCode by remember { mutableStateOf(false) }
     var openFolder by remember { mutableStateOf<FolderRef?>(null) }
     var widgetPickerOpen by remember { mutableStateOf(false) }
     /** Bumped by the three-finger tap to open search. */
@@ -195,7 +195,6 @@ fun KineticHome(
 
     val pagerState = rememberPagerState(pageCount = { layout.pages.size })
     val controller = rememberUnlockController()
-    val bridge = remember(activity) { BiometricUnlockBridge(activity, scope) }
 
     // 0 = closed, 1 = open. Follows the finger while dragging, springs when released.
     val drawerProgress = remember { Animatable(0f) }
@@ -291,11 +290,18 @@ fun KineticHome(
         }
     }
 
+    // Hidden apps are protected by the Kinetic code (the Vault's PIN or pattern), not by
+    // the phone's fingerprints: Android can't tell apps which finger was used.
     fun revealPrivate() {
-        if (bridge.canAuthenticate()) {
-            bridge.authenticate(title = "Show hidden apps", subtitle = "Confirm it's you") { privateRevealed = true }
+        if (com.kinetic.launcher.vault.VaultCrypto.isSetUp(activity)) {
+            askingCode = true
         } else {
-            privateRevealed = true
+            menu = MenuSpec(
+                title = "Set a Kinetic code first",
+                actions = listOf("Set up code" to fun() { com.kinetic.launcher.vault.VaultActivity.open(activity) }),
+                message = "Hidden apps and the Vault are protected by your own 6-digit PIN or pattern, " +
+                    "separate from your phone's lock screen and fingerprints.",
+            )
         }
     }
 
@@ -1002,6 +1008,7 @@ fun KineticHome(
                 onNotificationRings = { NotificationHub.openSettings(activity) },
                 onSettings = { openSettings() },
                 onFocus = { openFocus() },
+                onVault = { com.kinetic.launcher.vault.VaultActivity.open(activity) },
                 onDynamicIsland = {
                     val on = DynamicIslandService.isEnabled(activity)
                     menu = MenuSpec(
@@ -1151,6 +1158,22 @@ fun KineticHome(
 
         menu?.let { spec -> ActionMenu(spec, onDismiss = { menu = null }) }
         prompt?.let { spec -> TextPrompt(spec, onDismiss = { prompt = null }) }
+        if (askingCode) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { askingCode = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.92f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    com.kinetic.launcher.vault.UnlockWithCode("Hidden apps", "Enter your Kinetic code") {
+                        privateRevealed = true
+                        askingCode = false
+                    }
+                }
+            }
+        }
     }
 }
 

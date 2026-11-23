@@ -153,6 +153,8 @@ fun AppDrawer(
     onSettings: () -> Unit = {},
     /** Opens the Focus picker. */
     onFocus: () -> Unit = {},
+    /** Opens the encrypted Vault. */
+    onVault: () -> Unit = {},
     /** Package of the installed Chowaniec app, if any (search opens its pages there). */
     chowaniecPackage: String? = null,
     /** Called after search opened something outside Kinetic (a contact, a setting…). */
@@ -226,6 +228,7 @@ fun AppDrawer(
                     onDynamicIsland = onDynamicIsland,
                     onSettings = onSettings,
                     onFocus = onFocus,
+                    onVault = onVault,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
@@ -274,6 +277,7 @@ private fun DrawerTopBar(
     onDynamicIsland: () -> Unit,
     onSettings: () -> Unit,
     onFocus: () -> Unit,
+    onVault: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -325,6 +329,13 @@ private fun DrawerTopBar(
                     onClick = {
                         menuOpen = false
                         onNotificationRings()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Vault") },
+                    onClick = {
+                        menuOpen = false
+                        onVault()
                     },
                 )
                 DropdownMenuItem(
