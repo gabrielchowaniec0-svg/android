@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -107,7 +110,8 @@ fun AppDrawer(
     onSortAlphabetical: () -> Unit,
     onUseMyLayout: () -> Unit,
     onDrag: (Float) -> Unit,
-    onDragEnd: () -> Unit,
+    /** Called with the release velocity (px/s, positive = downward). */
+    onDragEnd: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var searching by remember { mutableStateOf(false) }
@@ -125,10 +129,13 @@ fun AppDrawer(
             .fillMaxSize()
             // Vertical drags anywhere (that nothing scrollable claimed) move the drawer.
             .pointerInput(Unit) {
+                val velocity = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragEnd = { currentOnDragEnd() },
-                    onDragCancel = { currentOnDragEnd() },
+                    onDragStart = { velocity.resetTracking() },
+                    onDragEnd = { currentOnDragEnd(velocity.calculateVelocity().y) },
+                    onDragCancel = { currentOnDragEnd(0f) },
                 ) { change, dragAmount ->
+                    velocity.addPointerInputChange(change)
                     change.consume()
                     currentOnDrag(dragAmount)
                 }
@@ -172,6 +179,7 @@ fun AppDrawer(
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.weight(1f).fillMaxWidth(),
+                            flingBehavior = PagerDefaults.flingBehavior(state = pagerState, snapPositionalThreshold = 0.15f),
                         ) { pageIndex ->
                             DrawerPage(
                                 entries = pages.getOrNull(pageIndex).orEmpty(),

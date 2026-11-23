@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +57,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
@@ -463,7 +466,9 @@ fun KineticHome(
     // ---- layout ----------------------------------------------------------------
 
     val gesturesEnabled = !editMode && !drawerOpen && openFolder == null && !widgetPickerOpen
-    val swipeThresholdPx = with(density) { 56.dp.toPx() }
+    // Distance OR speed is enough: ~24dp of travel, or a flick faster than ~250dp/s.
+    val swipeThresholdPx = with(density) { 24.dp.toPx() }
+    val flingVelocityPx = with(density) { 250.dp.toPx() }
     val currentExpandNotifications by rememberUpdatedState(onExpandNotifications)
 
     Box(
@@ -474,19 +479,24 @@ fun KineticHome(
                 if (!gesturesEnabled) return@pointerInput
                 var total = 0f
                 var mode = 0 // 0 = undecided, 1 = pulling up the drawer, 2 = notification shade
+                val velocity = VelocityTracker()
                 detectVerticalDragGestures(
                     onDragStart = {
                         total = 0f
                         mode = 0
+                        velocity.resetTracking()
                     },
                     onDragEnd = {
+                        // A quick flick counts even if the finger barely moved.
+                        val vy = velocity.calculateVelocity().y
                         when (mode) {
-                            1 -> if (drawerProgress.value > 0.25f) openDrawer() else closeDrawer()
-                            2 -> if (total > swipeThresholdPx) currentExpandNotifications()
+                            1 -> if (vy < -flingVelocityPx || (vy <= flingVelocityPx && drawerProgress.value > 0.12f)) openDrawer() else closeDrawer()
+                            2 -> if (vy > flingVelocityPx || total > swipeThresholdPx) currentExpandNotifications()
                         }
                     },
                     onDragCancel = { if (mode == 1) closeDrawer() },
                 ) { change, dragAmount ->
+                    velocity.addPointerInputChange(change)
                     change.consume()
                     total += dragAmount
                     if (mode == 0) mode = if (dragAmount < 0f) 1 else 2
@@ -522,6 +532,8 @@ fun KineticHome(
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
+                        // Change page after a short drag (15%) or any quick flick.
+                        flingBehavior = PagerDefaults.flingBehavior(state = pagerState, snapPositionalThreshold = 0.15f),
                         beyondViewportPageCount = 1,
                         key = { index -> layout.pages.getOrNull(index)?.id ?: "page-$index" },
                     ) { pageIndex ->
@@ -603,7 +615,14 @@ fun KineticHome(
                 onSortAlphabetical = { deps.layout.clearDrawerOrder() },
                 onUseMyLayout = { menu = useMyLayoutMenu() },
                 onDrag = { dy -> dragDrawerBy(dy) },
-                onDragEnd = { if (drawerProgress.value < 0.75f) closeDrawer() else openDrawer() },
+                onDragEnd = { vy ->
+                    when {
+                        vy > flingVelocityPx -> closeDrawer()          // quick flick down
+                        vy < -flingVelocityPx -> openDrawer()          // quick flick back up
+                        drawerProgress.value < 0.88f -> closeDrawer()  // dragged down a little
+                        else -> openDrawer()
+                    }
+                },
                 modifier = Modifier.graphicsLayer {
                     val p = drawerProgress.value
                     alpha = p

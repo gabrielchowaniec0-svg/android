@@ -111,7 +111,8 @@ Phone and computer must be on the **same network**. For Android 13+:
 - Your real installed apps and icons are loaded automatically. On first run,
   your default phone, messages, browser, camera and gallery apps go along the
   bottom row.
-- **Swipe left/right** to move between home pages.
+- **Swipe left/right** to move between home pages. All swipes respond to a quick
+  flick as well as a longer drag (`flingVelocityPx` / `swipeThresholdPx` in `HomeScreen.kt`).
 - **Swipe up anywhere** to open all apps, One UI–style: it follows your finger,
   the wallpaper softens behind it, apps are in 4‑column pages you swipe
   sideways, and **Search** is the pill at the bottom. Swipe down to close.
