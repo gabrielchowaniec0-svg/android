@@ -2,6 +2,7 @@
 
 package com.kinetic.launcher.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -30,16 +31,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,17 +90,32 @@ fun AppTile(
     iconSize: Dp = IconSize,
     dimmed: Boolean = false,
     jiggle: Boolean = false,
+    /** Spinning notification ring around the icon. */
+    ring: Boolean = false,
+    /** Plays a small "landing" bounce (e.g. when you come back from this app). */
+    pop: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
+    val landing = remember { Animatable(1f) }
+    LaunchedEffect(pop) {
+        if (pop) {
+            landing.snapTo(0.78f)
+            landing.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 320f))
+        }
+    }
+    var iconBounds by remember { mutableStateOf<Rect?>(null) }
     val clicks = if (onClick != null || onLongClick != null) {
         Modifier.combinedClickable(
             interactionSource = source,
             indication = null,
-            onLongClick = onLongClick,
-            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick?.let { handler -> { TapOrigin.rect = iconBounds; handler() } },
+            onClick = {
+                TapOrigin.rect = iconBounds
+                onClick?.invoke()
+            },
         )
     } else {
         Modifier
@@ -110,10 +132,13 @@ fun AppTile(
     ) {
         val iconModifier = Modifier
             .size(iconSize)
+            .onGloballyPositioned { iconBounds = it.boundsInWindow() }
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val s = scale * landing.value
+                scaleX = s
+                scaleY = s
             }
+            .notificationRing(ring)
             .depth3D(SquircleShape, elevation = 5.dp)
         if (icon != null) {
             Image(bitmap = icon, contentDescription = label, modifier = iconModifier)
@@ -134,17 +159,29 @@ fun FolderTile(
     tileSize: Dp = IconSize,
     color: Color = DefaultFolderColor,
     jiggle: Boolean = false,
+    /** Ring if any app inside has notifications. */
+    ring: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
+    var tileBounds by remember { mutableStateOf<Rect?>(null) }
     val pad = tileSize * 0.12f
     val gap = tileSize * 0.05f
     val mini = (tileSize - pad * 2 - gap * 2) / 3
     Column(
         modifier
             .fillMaxSize()
-            .then(if (onClick != null) Modifier.clickable(interactionSource = source, indication = null, onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = source, indication = null) {
+                        TapOrigin.rect = tileBounds
+                        onClick()
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .jiggle(jiggle)
             .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -153,10 +190,12 @@ fun FolderTile(
         Box(
             Modifier
                 .size(tileSize)
+                .onGloballyPositioned { tileBounds = it.boundsInWindow() }
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                 }
+                .notificationRing(ring)
                 .depth3D(SquircleShape, elevation = 5.dp, gloss = 0.7f)
                 .background(color)
                 .padding(pad),
@@ -184,9 +223,12 @@ fun LargeFolderTile(
     icons: List<ImageBitmap>,
     modifier: Modifier = Modifier,
     jiggle: Boolean = false,
+    /** Which of [icons] have notifications (same order). */
+    rings: List<Boolean> = emptyList(),
     onIconClick: ((index: Int) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    var tileBounds by remember { mutableStateOf<Rect?>(null) }
     Column(
         modifier
             .fillMaxSize()
@@ -198,15 +240,31 @@ fun LargeFolderTile(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .onGloballyPositioned { tileBounds = it.boundsInWindow() }
                 .depth3D(RoundedCornerShape(28.dp), elevation = 6.dp, gloss = 0.6f)
                 .background(Color.White.copy(alpha = 0.14f))
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable {
+                            TapOrigin.rect = tileBounds
+                            onClick()
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(8.dp),
         ) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
                 icons.take(9).withIndex().chunked(3).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        row.forEach { (index, icon) -> LargeFolderIcon(icon, if (onIconClick != null) ({ onIconClick(index) }) else null) }
+                        row.forEach { (index, icon) ->
+                            LargeFolderIcon(
+                                icon = icon,
+                                ring = rings.getOrElse(index) { false },
+                                onClick = if (onIconClick != null) ({ onIconClick(index) }) else null,
+                            )
+                        }
                         repeat(3 - row.size) { Spacer(Modifier.size(44.dp)) }
                     }
                 }
@@ -218,20 +276,32 @@ fun LargeFolderTile(
 }
 
 @Composable
-private fun LargeFolderIcon(icon: ImageBitmap, onClick: (() -> Unit)?) {
+private fun LargeFolderIcon(icon: ImageBitmap, ring: Boolean, onClick: (() -> Unit)?) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
+    var bounds by remember { mutableStateOf<Rect?>(null) }
     Image(
         bitmap = icon,
         contentDescription = null,
         modifier = Modifier
             .size(44.dp)
+            .onGloballyPositioned { bounds = it.boundsInWindow() }
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
+            .notificationRing(ring)
             .depth3D(SquircleShape, elevation = 3.dp)
-            .then(if (onClick != null) Modifier.clickable(interactionSource = source, indication = null, onClick = onClick) else Modifier),
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = source, indication = null) {
+                        TapOrigin.rect = bounds
+                        onClick()
+                    }
+                } else {
+                    Modifier
+                }
+            ),
     )
 }
 

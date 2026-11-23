@@ -123,6 +123,37 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
         else l.replacePage(page, p.copy(items = p.items.map { if (it.id == itemId) it.movedTo(x, y) else it }))
     }
 
+    /** Two same-size items trade places (edit mode: drop one icon onto another's spot). */
+    fun swapItems(page: Int, aId: String, bId: String): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val a = p.items.firstOrNull { it.id == aId } ?: return@update l
+        val b = p.items.firstOrNull { it.id == bId } ?: return@update l
+        if (a.spanX != b.spanX || a.spanY != b.spanY) return@update l
+        l.replacePage(page, p.copy(items = p.items.map {
+            when (it.id) {
+                aId -> it.movedTo(b.cellX, b.cellY)
+                bId -> it.movedTo(a.cellX, a.cellY)
+                else -> it
+            }
+        }))
+    }
+
+    /**
+     * Edit mode: drop app [draggedId] onto [targetId]. Onto an app, the two become a
+     * new folder (at the target's spot); onto a folder, the app joins it.
+     */
+    fun mergeInto(page: Int, draggedId: String, targetId: String, folderName: String = "Folder"): Boolean = update { l ->
+        val p = l.pages.getOrNull(page) ?: return@update l
+        val dragged = p.items.firstOrNull { it.id == draggedId } as? HomeItem.App ?: return@update l
+        val target = p.items.firstOrNull { it.id == targetId } ?: return@update l
+        val merged: HomeItem = when (target) {
+            is HomeItem.App -> HomeItem.Folder(newId(), folderName, listOf(target.appKey, dragged.appKey).distinct(), target.cellX, target.cellY)
+            is HomeItem.Folder -> target.copy(appKeys = (target.appKeys + dragged.appKey).distinct())
+            is HomeItem.Widget -> return@update l
+        }
+        l.replacePage(page, p.copy(items = p.items.filter { it.id != draggedId }.map { if (it.id == targetId) merged else it }))
+    }
+
     /** Removes an item and returns it (so the caller can free a widget id). */
     fun removeItem(page: Int, itemId: String): HomeItem? {
         var removed: HomeItem? = null

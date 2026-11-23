@@ -1,6 +1,11 @@
 package com.kinetic.launcher.ui
 
 import android.appwidget.AppWidgetProviderInfo
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,18 +37,25 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +64,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.kinetic.core.apps.AppEntry
 import com.kinetic.core.widgets.WidgetHostManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
@@ -111,7 +125,13 @@ fun TextPrompt(spec: PromptSpec, onDismiss: () -> Unit) {
     )
 }
 
-/** An open folder: a floating panel of app icons over a dimmed background. */
+/**
+ * An open folder: a floating panel of app icons over a dimmed background.
+ *
+ * When [origin] (the tapped folder icon's window bounds) is known, the panel grows
+ * out of that icon and shrinks back into it on close; the apps inside pop in one
+ * after another.
+ */
 @Composable
 fun FolderOverlay(
     name: String,
@@ -121,12 +141,33 @@ fun FolderOverlay(
     onAppLongPress: (AppEntry) -> Unit,
     onRename: () -> Unit,
     onDismiss: () -> Unit,
+    origin: Rect? = null,
+    hasNotification: (AppEntry) -> Boolean = { false },
 ) {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
+    var panelRect by remember { mutableStateOf<Rect?>(null) }
+
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, spring(dampingRatio = 0.74f, stiffness = 340f))
+    }
+
+    fun close() {
+        if (closing) return
+        closing = true
+        scope.launch {
+            progress.animateTo(0f, tween(durationMillis = 210, easing = FastOutLinearInEasing))
+            onDismiss()
+        }
+    }
+    BackHandler { close() }
+
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
+            .drawBehind { drawRect(Color.Black.copy(alpha = 0.42f * progress.value.coerceIn(0f, 1f))) }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() },
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -137,6 +178,11 @@ fun FolderOverlay(
                 fontSize = 30.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
+                    .graphicsLayer {
+                        val p = progress.value.coerceIn(0f, 1f)
+                        alpha = p
+                        translationY = (1f - p) * 24.dp.toPx()
+                    }
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(onClick = onRename)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -146,6 +192,26 @@ fun FolderOverlay(
                 Modifier
                     .padding(horizontal = 36.dp)
                     .fillMaxWidth()
+                    .onGloballyPositioned { panelRect = it.boundsInWindow() }
+                    // Grow out of (and shrink back into) the folder icon that was tapped.
+                    .graphicsLayer {
+                        val p = progress.value
+                        val from = origin
+                        val to = panelRect
+                        if (from != null && to != null && to.width > 0f && to.height > 0f) {
+                            val sx = from.width / to.width
+                            val sy = from.height / to.height
+                            scaleX = sx + (1f - sx) * p
+                            scaleY = sy + (1f - sy) * p
+                            translationX = (from.center.x - to.center.x) * (1f - p)
+                            translationY = (from.center.y - to.center.y) * (1f - p)
+                        } else {
+                            val s = 0.85f + 0.15f * p
+                            scaleX = s
+                            scaleY = s
+                        }
+                        alpha = (p * 2.5f).coerceIn(0f, 1f)
+                    }
                     .clip(RoundedCornerShape(32.dp))
                     .background(Color(0xB3222838))
                     // swallow taps so tapping inside the panel doesn't close it
@@ -156,11 +222,23 @@ fun FolderOverlay(
                     Text("This folder is empty", color = SubtleText, modifier = Modifier.padding(16.dp))
                 } else {
                     LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.heightIn(max = 460.dp)) {
-                        items(apps, key = { it.key }) { e ->
-                            Box(Modifier.height(96.dp)) {
+                        itemsIndexed(apps, key = { _, e -> e.key }) { index, e ->
+                            Box(
+                                Modifier
+                                    .height(96.dp)
+                                    // Each icon pops in a beat after the one before it.
+                                    .graphicsLayer {
+                                        val p = ((progress.value - 0.2f - index * 0.035f) / 0.5f).coerceIn(0f, 1.15f)
+                                        alpha = p.coerceIn(0f, 1f)
+                                        val s = 0.6f + 0.4f * p
+                                        scaleX = s
+                                        scaleY = s
+                                    }
+                            ) {
                                 AppTile(
                                     icon = e.icon,
                                     label = labelFor(e),
+                                    ring = hasNotification(e),
                                     onClick = { onAppClick(e) },
                                     onLongClick = { onAppLongPress(e) },
                                 )

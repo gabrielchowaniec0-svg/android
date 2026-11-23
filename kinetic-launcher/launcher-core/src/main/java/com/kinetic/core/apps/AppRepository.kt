@@ -4,8 +4,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
+import android.content.pm.ShortcutInfo
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
+import android.os.Bundle
 import android.os.Process
 import android.os.Handler
 import android.os.Looper
@@ -102,9 +104,47 @@ class AppRepository(context: Context) {
 
     fun find(key: String): AppEntry? = _apps.value?.firstOrNull { it.key == key }
 
-    /** Launches the app the same way the stock launcher does. */
-    fun launch(entry: AppEntry, sourceBounds: Rect? = null): Boolean = try {
-        launcherApps.startMainActivity(entry.component, entry.user, sourceBounds, null)
+    /**
+     * Launches the app the same way the stock launcher does. [sourceBounds] (screen
+     * pixels) and [options] (e.g. a scale-up animation) make it open from the icon.
+     */
+    fun launch(entry: AppEntry, sourceBounds: Rect? = null, options: Bundle? = null): Boolean = try {
+        launcherApps.startMainActivity(entry.component, entry.user, sourceBounds, options)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** One app shortcut from the long-press menu (e.g. "New message", or Chowaniec's "Group Chat"). */
+    data class Shortcut(val info: ShortcutInfo, val label: String, val icon: ImageBitmap?)
+
+    /**
+     * The app's shortcuts, like One UI's long-press menu. Needs Kinetic to be the
+     * default Home app; returns an empty list otherwise.
+     */
+    fun shortcuts(entry: AppEntry, max: Int = 5): List<Shortcut> {
+        if (!runCatching { launcherApps.hasShortcutHostPermission() }.getOrDefault(false)) return emptyList()
+        val query = LauncherApps.ShortcutQuery()
+            .setPackage(entry.packageName)
+            .setActivity(entry.component)
+            .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC)
+        val found = runCatching { launcherApps.getShortcuts(query, entry.user) }.getOrNull().orEmpty()
+        val shortcutPx = (40 * appContext.resources.displayMetrics.density).roundToInt()
+        val shortcutRenderer = IconRenderer(shortcutPx)
+        return found
+            .filter { it.isEnabled }
+            .sortedWith(compareBy<ShortcutInfo>({ if (it.isDeclaredInManifest) 0 else 1 }, { it.rank }))
+            .take(max)
+            .map { info ->
+                val icon = runCatching {
+                    launcherApps.getShortcutIconDrawable(info, densityDpi)?.let { shortcutRenderer.render(it).asImageBitmap() }
+                }.getOrNull()
+                Shortcut(info, (info.shortLabel ?: info.longLabel ?: "").toString(), icon)
+            }
+    }
+
+    fun startShortcut(shortcut: Shortcut, sourceBounds: Rect? = null, options: Bundle? = null): Boolean = try {
+        launcherApps.startShortcut(shortcut.info, sourceBounds, options)
         true
     } catch (e: Exception) {
         false

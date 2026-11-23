@@ -2,6 +2,7 @@
 
 package com.kinetic.launcher.ui
 
+import android.app.ActivityOptions
 import android.appwidget.AppWidgetProviderInfo
 import android.os.Bundle
 import android.util.SizeF
@@ -18,6 +19,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +60,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -81,6 +86,7 @@ import com.kinetic.core.home.HomeItem
 import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.home.HomeLayout
 import com.kinetic.core.widgets.WidgetHostManager
+import com.kinetic.launcher.NotificationHub
 import com.kinetic.launcher.defaultHomeKeys
 import com.kinetic.lockscreen.BiometricUnlockBridge
 import com.kinetic.lockscreen.CinematicUnlock
@@ -109,6 +115,15 @@ class HomeDeps(
     val customization: StealthCustomizationManager,
     val config: GridConfig,
 )
+
+/** Where a long-pressed app lives, which decides the actions in its quick menu. */
+private sealed interface QuickSource {
+    data class Home(val page: Int, val itemId: String) : QuickSource
+    data class HomeFolder(val page: Int, val folderId: String) : QuickSource
+    data class Drawer(val folder: DrawerFolder?) : QuickSource
+}
+
+private data class QuickMenuState(val entry: AppEntry, val anchor: Rect?, val source: QuickSource)
 
 private sealed interface FolderRef {
     data class Home(val page: Int, val folderId: String) : FolderRef
@@ -142,6 +157,7 @@ fun KineticHome(
     val privateApps by deps.customization.privateApps.collectAsState()
     val masks by deps.customization.masks.collectAsState()
     val appsByKey = remember(allApps) { allApps.orEmpty().associateBy { it.key } }
+    val chowaniecPackage = remember(allApps) { SmartSearch.chowaniecApp(allApps.orEmpty())?.packageName }
 
     var editMode by remember { mutableStateOf(false) }
     var drawerOpen by remember { mutableStateOf(false) }
@@ -151,6 +167,11 @@ fun KineticHome(
     var widgetPickerOpen by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<MenuSpec?>(null) }
     var prompt by remember { mutableStateOf<PromptSpec?>(null) }
+    var quickMenu by remember { mutableStateOf<QuickMenuState?>(null) }
+    var folderOrigin by remember { mutableStateOf<Rect?>(null) }
+    var lastLaunchedKey by remember { mutableStateOf<String?>(null) }
+    var popKey by remember { mutableStateOf<String?>(null) }
+    val notifying by NotificationHub.packages.collectAsState()
 
     val pagerState = rememberPagerState(pageCount = { layout.pages.size })
     val controller = rememberUnlockController()
@@ -184,6 +205,30 @@ fun KineticHome(
     fun labelFor(e: AppEntry): String = masks[e.packageName]?.overrideLabel ?: e.label
     fun isHidden(e: AppEntry): Boolean = e.packageName in privateApps
     fun toast(msg: String) = Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
+
+    fun hasNotification(e: AppEntry): Boolean = e.packageName in notifying
+
+    /** Launch options that make the app zoom out of the tapped icon. */
+    fun launchOrigin(): Pair<android.graphics.Rect?, android.os.Bundle?> {
+        val r = TapOrigin.rect ?: return null to null
+        val bounds = android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+        val options = runCatching {
+            ActivityOptions.makeScaleUpAnimation(
+                activity.window.decorView, bounds.left, bounds.top, bounds.width(), bounds.height(),
+            ).toBundle()
+        }.getOrNull()
+        return bounds to options
+    }
+
+    fun launchApp(e: AppEntry) {
+        val (bounds, options) = launchOrigin()
+        if (deps.apps.launch(e, bounds, options)) lastLaunchedKey = e.key
+    }
+
+    fun openHomeFolder(pageIndex: Int, folderId: String) {
+        folderOrigin = TapOrigin.rect
+        openFolder = FolderRef.Home(pageIndex, folderId)
+    }
 
     /** Scrolls once the pager knows about page [index] (it may have just been created). */
     fun scrollToPageSoon(index: Int) {
@@ -236,7 +281,7 @@ fun KineticHome(
 
     fun folderMenu(pageIndex: Int, folder: HomeItem.Folder): MenuSpec {
         val actions = mutableListOf<Pair<String, () -> Unit>>()
-        actions += "Open" to fun() { openFolder = FolderRef.Home(pageIndex, folder.id) }
+        actions += "Open" to fun() { openHomeFolder(pageIndex, folder.id) }
         actions += "Rename" to fun() {
             prompt = PromptSpec("Rename folder", folder.name) { name ->
                 deps.layout.renameFolder(folder.id, name.ifBlank { folder.name })
@@ -303,6 +348,56 @@ fun KineticHome(
         return MenuSpec(labelFor(e), actions)
     }
 
+    // ---- long-press quick menu ------------------------------------------------------
+
+    fun quickActions(q: QuickMenuState): List<Pair<String, () -> Unit>> {
+        val e = q.entry
+        return when (val src = q.source) {
+            is QuickSource.Home -> listOf(
+                "App info" to fun() {
+                    quickMenu = null
+                    deps.apps.openAppInfo(e)
+                },
+                "Edit home" to fun() {
+                    quickMenu = null
+                    editMode = true
+                },
+                "Remove" to fun() {
+                    quickMenu = null
+                    deps.layout.removeItem(src.page, src.itemId)
+                },
+            )
+            is QuickSource.HomeFolder -> listOf(
+                "App info" to fun() {
+                    quickMenu = null
+                    deps.apps.openAppInfo(e)
+                },
+                "To home" to fun() {
+                    quickMenu = null
+                    if (!deps.layout.removeFromFolder(src.page, src.folderId, e.key, placeOnHome = true)) toast("No space on this page")
+                },
+                "Remove" to fun() {
+                    quickMenu = null
+                    deps.layout.removeFromFolder(src.page, src.folderId, e.key, placeOnHome = false)
+                },
+            )
+            is QuickSource.Drawer -> listOf(
+                "Add to home" to fun() {
+                    quickMenu = null
+                    if (deps.layout.addApp(pagerState.currentPage, e.key)) toast("Added to home screen") else toast("Already on this page")
+                },
+                "App info" to fun() {
+                    quickMenu = null
+                    deps.apps.openAppInfo(e)
+                },
+                "More…" to fun() {
+                    quickMenu = null
+                    menu = drawerAppMenu(e, src.folder)
+                },
+            )
+        }
+    }
+
     // ---- what each home item looks like --------------------------------------
 
     /** Content for one home item, or null if it shouldn't show (app missing or hidden). */
@@ -317,10 +412,18 @@ fun KineticHome(
                         icon = entry.icon,
                         label = labelFor(entry),
                         jiggle = interactive && editMode,
+                        ring = hasNotification(entry),
+                        pop = interactive && entry.key == popKey,
                         onClick = when {
                             !interactive -> null
                             editMode -> fun() { menu = appItemMenu(pageIndex, item, entry) }
-                            else -> fun() { deps.apps.launch(entry) }
+                            else -> fun() { launchApp(entry) }
+                        },
+                        // Icons stay frozen; long-press shows shortcuts instead of moving them.
+                        onLongClick = if (interactive && !editMode) {
+                            fun() { quickMenu = QuickMenuState(entry, TapOrigin.rect, QuickSource.Home(pageIndex, item.id)) }
+                        } else {
+                            null
                         },
                     )
                 }
@@ -333,17 +436,18 @@ fun KineticHome(
                 val onTap: (() -> Unit)? = when {
                     !interactive -> null
                     editMode -> fun() { menu = folderMenu(pageIndex, item) }
-                    else -> fun() { openFolder = FolderRef.Home(pageIndex, item.id) }
+                    else -> fun() { openHomeFolder(pageIndex, item.id) }
                 }
                 if (item.isLarge) {
                     LargeFolderTile(
                         name = item.name,
                         icons = members.map { it.icon },
+                        rings = members.map { hasNotification(it) },
                         jiggle = interactive && editMode,
                         // Like One UI: the visible icons launch directly.
                         onIconClick = if (interactive && !editMode) {
                             fun(i: Int) {
-                                members.getOrNull(i)?.let { deps.apps.launch(it) }
+                                members.getOrNull(i)?.let { launchApp(it) }
                             }
                         } else {
                             null
@@ -355,6 +459,7 @@ fun KineticHome(
                         name = item.name,
                         icons = members.map { it.icon },
                         jiggle = interactive && editMode,
+                        ring = members.any { hasNotification(it) },
                         onClick = onTap,
                     )
                 }
@@ -368,6 +473,13 @@ fun KineticHome(
                     widgets = deps.widgets,
                     editMode = interactive && editMode,
                     onEditTap = { menu = widgetMenu(pageIndex, item) },
+                    spanX = item.spanX,
+                    spanY = item.spanY,
+                    onResize = { dx, dy ->
+                        deps.layout.resizeWidget(pageIndex, item.id, dx, dy).also { ok ->
+                            if (ok) haptics.performHapticFeedback(HapticFeedbackType.LongPress) else toast("Not enough room")
+                        }
+                    },
                 )
             }
             content
@@ -446,6 +558,33 @@ fun KineticHome(
         closeDrawer()
         editMode = false
         if (pagerState.pageCount > 0) pagerState.animateScrollToPage(0)
+    }
+
+    // Coming back from an app: its icon gives a little landing bounce.
+    LaunchedEffect(isResumed) {
+        if (isResumed) {
+            val key = lastLaunchedKey ?: return@LaunchedEffect
+            lastLaunchedKey = null
+            popKey = key
+            delay(900)
+            popKey = null
+        }
+    }
+
+    // Ask once to turn on notification access for the spinning rings.
+    LaunchedEffect(allApps != null) {
+        if (allApps == null) return@LaunchedEffect
+        val prefs = activity.getSharedPreferences("kinetic_activity", android.content.Context.MODE_PRIVATE)
+        if (!NotificationHub.isEnabled(activity) && !prefs.getBoolean("asked_notification_rings", false)) {
+            delay(1500)
+            prefs.edit().putBoolean("asked_notification_rings", true).apply()
+            menu = MenuSpec(
+                title = "Turn on notification rings?",
+                actions = listOf("Open settings" to fun() { NotificationHub.openSettings(activity) }),
+                message = "Kinetic can spin a ring around apps that have notifications. Android needs you to " +
+                    "allow Notification access for Kinetic — it only checks which apps have notifications.",
+            )
+        }
     }
 
     LaunchedEffect(drawerOpen) {
@@ -577,6 +716,18 @@ fun KineticHome(
                                 editable = editMode,
                                 canPlace = { id, x, y -> deps.layout.canPlace(pageIndex, id, x, y) },
                                 onMove = { id, x, y -> deps.layout.moveItem(pageIndex, id, x, y) },
+                                // Drop an app onto an app (new folder) or onto a folder (joins it).
+                                canMerge = { dragged, target ->
+                                    val items = layout.pages.getOrNull(pageIndex)?.items.orEmpty()
+                                    items.firstOrNull { it.id == dragged } is HomeItem.App &&
+                                        items.firstOrNull { it.id == target }.let { it is HomeItem.App || it is HomeItem.Folder }
+                                },
+                                onMerge = { dragged, target ->
+                                    if (deps.layout.mergeInto(pageIndex, dragged, target)) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                },
+                                onSwap = { dragged, target -> deps.layout.swapItems(pageIndex, dragged, target) },
                                 onEmptyLongPress = if (editMode) null else fun() {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     editMode = true
@@ -634,12 +785,19 @@ fun KineticHome(
                         if (deps.layout.addApp(pagerState.currentPage, e.key)) toast("Added ${labelFor(e)}")
                         else toast("Already on this page")
                     } else {
-                        deps.apps.launch(e)
+                        launchApp(e)
                     }
                     closeDrawer()
                 },
-                onAppLongPress = { e -> menu = drawerAppMenu(e, null) },
-                onFolderClick = { f -> openFolder = FolderRef.Drawer(f.id) },
+                onAppLongPress = { e -> quickMenu = QuickMenuState(e, TapOrigin.rect, QuickSource.Drawer(null)) },
+                onFolderClick = { f ->
+                    folderOrigin = TapOrigin.rect
+                    openFolder = FolderRef.Drawer(f.id)
+                },
+                hasNotification = { hasNotification(it) },
+                onNotificationRings = { NotificationHub.openSettings(activity) },
+                chowaniecPackage = chowaniecPackage,
+                onLeave = { closeDrawer() },
                 onTogglePrivate = { if (privateRevealed) privateRevealed = false else revealPrivate() },
                 onSortAlphabetical = { deps.layout.clearDrawerOrder() },
                 onUseMyLayout = { menu = useMyLayoutMenu() },
@@ -673,22 +831,14 @@ fun KineticHome(
                         apps = folder.appKeys.mapNotNull { appsByKey[it] }.filterNot { isHidden(it) },
                         labelFor = { labelFor(it) },
                         onAppClick = { e ->
-                            deps.apps.launch(e)
+                            launchApp(e)
                             openFolder = null
                         },
                         onAppLongPress = { e ->
-                            menu = MenuSpec(labelFor(e), listOf(
-                                "Move to home screen" to fun() {
-                                    if (!deps.layout.removeFromFolder(ref.page, folder.id, e.key, placeOnHome = true)) {
-                                        toast("No space on this page")
-                                    }
-                                },
-                                "Remove from folder" to fun() {
-                                    deps.layout.removeFromFolder(ref.page, folder.id, e.key, placeOnHome = false)
-                                },
-                                "App info" to fun() { deps.apps.openAppInfo(e) },
-                            ))
+                            quickMenu = QuickMenuState(e, TapOrigin.rect, QuickSource.HomeFolder(ref.page, folder.id))
                         },
+                        origin = folderOrigin,
+                        hasNotification = { hasNotification(it) },
                         onRename = {
                             prompt = PromptSpec("Rename folder", folder.name) { name ->
                                 deps.layout.renameFolder(folder.id, name.ifBlank { folder.name })
@@ -707,11 +857,13 @@ fun KineticHome(
                         apps = folder.appKeys.mapNotNull { appsByKey[it] }.filter { privateRevealed || !isHidden(it) },
                         labelFor = { labelFor(it) },
                         onAppClick = { e ->
-                            deps.apps.launch(e)
+                            launchApp(e)
                             openFolder = null
                             closeDrawer()
                         },
-                        onAppLongPress = { e -> menu = drawerAppMenu(e, folder) },
+                        onAppLongPress = { e -> quickMenu = QuickMenuState(e, TapOrigin.rect, QuickSource.Drawer(folder)) },
+                        origin = folderOrigin,
+                        hasNotification = { hasNotification(it) },
                         onRename = {
                             prompt = PromptSpec("Rename folder", folder.name) { name ->
                                 deps.layout.renameFolder(folder.id, name.ifBlank { folder.name })
@@ -737,6 +889,37 @@ fun KineticHome(
             )
         }
 
+        quickMenu?.let { q ->
+            QuickMenu(
+                anchor = q.anchor,
+                title = labelFor(q.entry),
+                loadShortcuts = { deps.apps.shortcuts(q.entry) },
+                onShortcut = { shortcut ->
+                    quickMenu = null
+                    val (bounds, options) = launchOrigin()
+                    if (deps.apps.startShortcut(shortcut, bounds, options)) {
+                        openFolder = null
+                        if (q.source is QuickSource.Drawer) closeDrawer()
+                    } else {
+                        toast("Couldn't open that shortcut")
+                    }
+                },
+                actions = quickActions(q),
+                onDismiss = { quickMenu = null },
+                // Chowaniec's pages, in case Chrome didn't publish its app shortcuts.
+                fallbackRows = if (SmartSearch.isChowaniec(q.entry)) {
+                    SmartSearch.chowaniecMenuPages.map { page ->
+                        page.title to fun() {
+                            quickMenu = null
+                            SmartSearch.openChowaniec(activity, page.path, q.entry.packageName)
+                        }
+                    }
+                } else {
+                    emptyList()
+                },
+            )
+        }
+
         menu?.let { spec -> ActionMenu(spec, onDismiss = { menu = null }) }
         prompt?.let { spec -> TextPrompt(spec, onDismiss = { prompt = null }) }
     }
@@ -754,8 +937,17 @@ private fun WidgetCell(
     widgets: WidgetHostManager,
     editMode: Boolean,
     onEditTap: () -> Unit,
+    spanX: Int = 1,
+    spanY: Int = 1,
+    /** Grow/shrink by whole cells; returns false if there's no room. */
+    onResize: ((dx: Int, dy: Int) -> Boolean)? = null,
 ) {
     val view = remember(appWidgetId) { widgets.viewFor(appWidgetId) }
+    val padPx = with(LocalDensity.current) { 6.dp.toPx() }
+    val stretchX = remember { Animatable(0f) }
+    val stretchY = remember { Animatable(0f) }
+    var resizing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val minRadiusPx = with(LocalDensity.current) { 18.dp.toPx() }
     var edges by remember(appWidgetId) { mutableStateOf<WidgetEdges?>(null) }
     var layoutTick by remember(appWidgetId) { mutableIntStateOf(0) }
@@ -767,72 +959,138 @@ private fun WidgetCell(
             .jiggle(editMode)
             .padding(6.dp)
     ) {
-        if (view == null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.10f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Widget unavailable", color = Color.White, fontSize = 12.sp)
-            }
-        } else {
-            val widthDp = maxWidth.value
-            val heightDp = maxHeight.value
-            LaunchedEffect(view, widthDp, heightDp) {
-                // Lets responsive widgets pick the right layout for their cell size.
-                view.updateAppWidgetSize(Bundle(), listOf(SizeF(widthDp, heightDp)))
-            }
-            // Find the card after the widget has drawn, and again later in case it loads slowly.
-            LaunchedEffect(view, widthDp, heightDp, layoutTick) {
-                for (wait in longArrayOf(300, 1200, 4000)) {
-                    delay(wait)
-                    WidgetEdgeDetector.detect(view)?.let { edges = it }
+        val cellWpx = (constraints.maxWidth + padPx * 2) / spanX.coerceAtLeast(1)
+        val cellHpx = (constraints.maxHeight + padPx * 2) / spanY.coerceAtLeast(1)
+        // While the resize handle is dragged the widget stretches live (scaled from its
+        // top-left corner); on release it snaps to whole cells with a springy settle.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val w = size.width.coerceAtLeast(1f)
+                    val h = size.height.coerceAtLeast(1f)
+                    scaleX = ((w + stretchX.value) / w).coerceAtLeast(0.3f)
+                    scaleY = ((h + stretchY.value) / h).coerceAtLeast(0.3f)
+                    transformOrigin = TransformOrigin(0f, 0f)
                 }
-            }
-            AndroidView(
-                factory = { _ ->
-                    // The same view object is reused across screens, so detach it first.
-                    (view.parent as? ViewGroup)?.removeView(view)
-                    view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
-                        if (r - l != orr - ol || b - t != ob - ot) layoutTick++
+        ) {
+            if (view == null) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Widget unavailable", color = Color.White, fontSize = 12.sp)
+                }
+            } else {
+                val widthDp = maxWidth.value
+                val heightDp = maxHeight.value
+                LaunchedEffect(view, widthDp, heightDp) {
+                    // Lets responsive widgets pick the right layout for their cell size.
+                    view.updateAppWidgetSize(Bundle(), listOf(SizeF(widthDp, heightDp)))
+                }
+                // Find the card after the widget has drawn, and again later in case it loads slowly.
+                LaunchedEffect(view, widthDp, heightDp, layoutTick) {
+                    for (wait in longArrayOf(300, 1200, 4000)) {
+                        delay(wait)
+                        WidgetEdgeDetector.detect(view)?.let { edges = it }
                     }
-                    view
-                },
-                update = { v ->
-                    // Round the view itself too, for widgets that draw outside Compose's clip.
-                    val shape = cardShape
-                    if (shape == null) {
-                        v.clipToOutline = false
-                    } else {
-                        v.outlineProvider = object : ViewOutlineProvider() {
-                            override fun getOutline(target: View, outline: Outline) {
-                                val e = shape.edges
-                                outline.setRoundRect(
-                                    e.left.roundToInt(), e.top.roundToInt(),
-                                    e.right.roundToInt().coerceAtMost(target.width),
-                                    e.bottom.roundToInt().coerceAtMost(target.height),
-                                    shape.radiusFor(target.width.toFloat(), target.height.toFloat()),
-                                )
-                            }
+                }
+                AndroidView(
+                    factory = { _ ->
+                        // The same view object is reused across screens, so detach it first.
+                        (view.parent as? ViewGroup)?.removeView(view)
+                        view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+                            if (r - l != orr - ol || b - t != ob - ot) layoutTick++
                         }
-                        v.clipToOutline = true
-                        v.invalidateOutline()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    // Shadow, rounded clip and bevel exactly on the widget's own edges.
-                    .then(if (cardShape != null) Modifier.depth3D(cardShape, elevation = 8.dp, gloss = 0.5f) else Modifier),
-            )
+                        view
+                    },
+                    update = { v ->
+                        // Round the view itself too, for widgets that draw outside Compose's clip.
+                        val shape = cardShape
+                        if (shape == null) {
+                            v.clipToOutline = false
+                        } else {
+                            v.outlineProvider = object : ViewOutlineProvider() {
+                                override fun getOutline(target: View, outline: Outline) {
+                                    val e = shape.edges
+                                    outline.setRoundRect(
+                                        e.left.roundToInt(), e.top.roundToInt(),
+                                        e.right.roundToInt().coerceAtMost(target.width),
+                                        e.bottom.roundToInt().coerceAtMost(target.height),
+                                        shape.radiusFor(target.width.toFloat(), target.height.toFloat()),
+                                    )
+                                }
+                            }
+                            v.clipToOutline = true
+                            v.invalidateOutline()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // Shadow, rounded clip and bevel exactly on the widget's own edges.
+                        .then(if (cardShape != null) Modifier.depth3D(cardShape, elevation = 8.dp, gloss = 0.5f) else Modifier),
+                )
+            }
+            if (editMode) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .border(1.dp, Color.White.copy(alpha = 0.5f), cardShape ?: RoundedCornerShape(24.dp))
+                        .clickable(onClick = onEditTap)
+                )
+            }
         }
-        if (editMode) {
+        if (editMode && onResize != null) {
             Box(
                 Modifier
-                    .matchParentSize()
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), cardShape ?: RoundedCornerShape(24.dp))
-                    .clickable(onClick = onEditTap)
+                    .align(Alignment.BottomEnd)
+                    .offset { IntOffset(stretchX.value.roundToInt() + 10.dp.roundToPx(), stretchY.value.roundToInt() + 10.dp.roundToPx()) }
+                    .size(30.dp)
+                    .graphicsLayer {
+                        val s = if (resizing) 1.25f else 1f
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .depth3D(CircleShape, elevation = 4.dp)
+                    .background(Brush.linearGradient(listOf(WallpaperPalette.Glint, WallpaperPalette.Light)), CircleShape)
+                    .pointerInput(spanX, spanY) {
+                        detectDragGestures(
+                            onDragStart = { resizing = true },
+                            onDragEnd = {
+                                resizing = false
+                                val dx = (stretchX.value / cellWpx).roundToInt()
+                                val dy = (stretchY.value / cellHpx).roundToInt()
+                                val ok = (dx != 0 || dy != 0) && onResize(dx, dy)
+                                scope.launch {
+                                    // The widget is now (dx, dy) cells bigger, so keep only the leftover stretch.
+                                    if (ok) {
+                                        launch { stretchX.snapTo(stretchX.value - dx * cellWpx) }
+                                        launch { stretchY.snapTo(stretchY.value - dy * cellHpx) }
+                                    }
+                                    launch { stretchX.animateTo(0f, spring(dampingRatio = 0.42f, stiffness = 420f)) }
+                                    launch { stretchY.animateTo(0f, spring(dampingRatio = 0.42f, stiffness = 420f)) }
+                                }
+                            },
+                            onDragCancel = {
+                                resizing = false
+                                scope.launch { stretchX.animateTo(0f, spring(dampingRatio = 0.42f)) }
+                                scope.launch { stretchY.animateTo(0f, spring(dampingRatio = 0.42f)) }
+                            },
+                        ) { change, delta ->
+                            change.consume()
+                            val minX = -(constraints.maxWidth - cellWpx * 0.6f).coerceAtLeast(0f)
+                            val minY = -(constraints.maxHeight - cellHpx * 0.6f).coerceAtLeast(0f)
+                            // Rubber-band resistance past the smallest size.
+                            fun band(v: Float, d: Float, min: Float) = if (v + d < min) v + d * 0.25f else v + d
+                            val nx = band(stretchX.value, delta.x, minX)
+                            val ny = band(stretchY.value, delta.y, minY)
+                            scope.launch { stretchX.snapTo(nx) }
+                            scope.launch { stretchY.snapTo(ny) }
+                        }
+                    }
             )
         }
     }

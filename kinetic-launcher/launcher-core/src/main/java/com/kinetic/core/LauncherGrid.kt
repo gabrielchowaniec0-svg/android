@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -127,6 +130,12 @@ data class GridGeometry(
  *
  * [onEmptyLongPress] fires when the user presses and holds on empty space (not on
  * an item) for [emptyHoldMillis] without moving — used to enter edit mode.
+ *
+ * Edit-mode juice:
+ *  - Drag an item over a same-size item's spot and that item slides out of the way
+ *    into the spot you came from ([onSwap] on release).
+ *  - Hold an item over the middle of another for a moment ([canMerge] permitting)
+ *    and the target swells up; let go to merge them ([onMerge] — e.g. make a folder).
  */
 @Composable
 fun LauncherGrid(
@@ -138,6 +147,10 @@ fun LauncherGrid(
     onMove: (id: String, cellX: Float, cellY: Float) -> Unit = { _, _, _ -> },
     onEmptyLongPress: (() -> Unit)? = null,
     emptyHoldMillis: Long = 700L,
+    canMerge: (draggedId: String, targetId: String) -> Boolean = { _, _ -> false },
+    onMerge: (draggedId: String, targetId: String) -> Unit = { _, _ -> },
+    onSwap: ((draggedId: String, targetId: String) -> Unit)? = null,
+    mergeHoldMillis: Long = 450L,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val geometry = GridGeometry.of(
@@ -151,6 +164,55 @@ fun LauncherGrid(
         val currentOnMove by rememberUpdatedState(onMove)
         val currentCanPlace by rememberUpdatedState(canPlace)
         val currentLongPress by rememberUpdatedState(onEmptyLongPress)
+        val currentItems by rememberUpdatedState(items)
+        val currentCanMerge by rememberUpdatedState(canMerge)
+        val currentOnMerge by rememberUpdatedState(onMerge)
+        val currentOnSwap by rememberUpdatedState(onSwap)
+
+        // ---- shared drag state (for swap previews and merging) --------------------
+        var dragId by remember { mutableStateOf<String?>(null) }
+        var dragTopLeft by remember { mutableStateOf(Offset.Zero) }
+        var mergeArmed by remember { mutableStateOf(false) }
+
+        val hover by remember {
+            derivedStateOf {
+                val id = dragId ?: return@derivedStateOf DragHover.None
+                val all = currentItems
+                val dragged = all.firstOrNull { it.id == id } ?: return@derivedStateOf DragHover.None
+                val g = currentGeometry
+                val center = dragTopLeft + Offset(g.spanWidthPx(dragged.spanX) / 2f, g.spanHeightPx(dragged.spanY) / 2f)
+                // Merge: hovering near the middle of another item.
+                val under = all.firstOrNull { other ->
+                    if (other.id == id) return@firstOrNull false
+                    val o = g.cellOrigin(other.cellX, other.cellY)
+                    center.x in o.x..(o.x + g.spanWidthPx(other.spanX)) && center.y in o.y..(o.y + g.spanHeightPx(other.spanY))
+                }
+                if (under != null && currentCanMerge(id, under.id)) {
+                    val o = g.cellOrigin(under.cellX, under.cellY)
+                    val w = g.spanWidthPx(under.spanX).toFloat()
+                    val h = g.spanHeightPx(under.spanY).toFloat()
+                    val dist = (center - Offset(o.x + w / 2f, o.y + h / 2f)).getDistance()
+                    if (dist < minOf(w, h) * 0.3f) return@derivedStateOf DragHover.Merge(under.id)
+                }
+                // Swap: the spot we'd land on holds an item of the same size.
+                if (currentOnSwap != null) {
+                    val (cx, cy) = g.nearestCell(dragTopLeft, dragged.spanX, dragged.spanY)
+                    val occupant = all.firstOrNull {
+                        it.id != id && it.cellX == cx && it.cellY == cy && it.spanX == dragged.spanX && it.spanY == dragged.spanY
+                    }
+                    if (occupant != null) return@derivedStateOf DragHover.Swap(occupant.id, dragged.cellX, dragged.cellY)
+                }
+                DragHover.None
+            }
+        }
+        val mergeTargetId = (hover as? DragHover.Merge)?.targetId
+        LaunchedEffect(mergeTargetId) {
+            mergeArmed = false
+            if (mergeTargetId != null) {
+                delay(mergeHoldMillis)
+                mergeArmed = true
+            }
+        }
 
         // Empty-space layer. It sits *below* the items, so it only receives touches
         // that don't land on an icon or widget.
@@ -182,7 +244,10 @@ fun LauncherGrid(
         items.forEach { item ->
             key(item.id) {
                 val scope = rememberCoroutineScope()
-                val home = geometry.cellOrigin(item.cellX, item.cellY)
+                val swapping = (hover as? DragHover.Swap)?.takeIf { it.targetId == item.id }
+                // While another icon hovers over our spot, slide into the spot it came from.
+                val home = if (swapping != null) geometry.cellOrigin(swapping.toX, swapping.toY)
+                else geometry.cellOrigin(item.cellX, item.cellY)
                 val currentHome by rememberUpdatedState(home)
                 val animX = remember { Animatable(home.x) }
                 val animY = remember { Animatable(home.y) }
@@ -196,6 +261,21 @@ fun LauncherGrid(
                     }
                 }
 
+                // Merge target: swells a little while you hover, then more when it's ready.
+                val isHoverTarget = mergeTargetId == item.id
+                val isMergeTarget = isHoverTarget && mergeArmed
+                val targetScale = remember { Animatable(1f) }
+                val glow = remember { Animatable(0f) }
+                LaunchedEffect(isHoverTarget, isMergeTarget) {
+                    val to = when {
+                        isMergeTarget -> 1.16f
+                        isHoverTarget -> 1.05f
+                        else -> 1f
+                    }
+                    launch { targetScale.animateTo(to, spring(dampingRatio = 0.5f, stiffness = 500f)) }
+                    launch { glow.animateTo(if (isMergeTarget) 1f else 0f, spring(stiffness = 400f)) }
+                }
+
                 val wPx = geometry.spanWidthPx(item.spanX)
                 val hPx = geometry.spanHeightPx(item.spanY)
 
@@ -205,26 +285,53 @@ fun LauncherGrid(
                         scope.launch { animY.animateTo(target.y, gridSpring()) }
                     }
                     detectDragGestures(
-                        onDragStart = { dragging = true },
+                        onDragStart = {
+                            dragging = true
+                            dragId = item.id
+                            dragTopLeft = Offset(animX.value, animY.value)
+                        },
                         onDragEnd = {
-                            dragging = false
                             val g = currentGeometry
-                            val (cx, cy) = g.nearestCell(Offset(animX.value, animY.value), item.spanX, item.spanY)
-                            if (currentCanPlace(item.id, cx, cy)) {
-                                currentOnMove(item.id, cx, cy)
-                                settleAt(g.cellOrigin(cx, cy))
-                            } else {
-                                settleAt(currentHome)
+                            val h = hover
+                            val armed = mergeArmed
+                            dragging = false
+                            when {
+                                h is DragHover.Merge && armed -> {
+                                    val t = currentItems.firstOrNull { it.id == h.targetId }
+                                    if (t != null) settleAt(g.cellOrigin(t.cellX, t.cellY))
+                                    currentOnMerge(item.id, h.targetId)
+                                }
+                                h is DragHover.Swap -> {
+                                    val t = currentItems.firstOrNull { it.id == h.targetId }
+                                    if (t != null) settleAt(g.cellOrigin(t.cellX, t.cellY))
+                                    currentOnSwap?.invoke(item.id, h.targetId)
+                                }
+                                else -> {
+                                    val (cx, cy) = g.nearestCell(Offset(animX.value, animY.value), item.spanX, item.spanY)
+                                    if (currentCanPlace(item.id, cx, cy)) {
+                                        currentOnMove(item.id, cx, cy)
+                                        settleAt(g.cellOrigin(cx, cy))
+                                    } else {
+                                        settleAt(currentHome)
+                                    }
+                                }
                             }
+                            dragId = null
+                            mergeArmed = false
                         },
                         onDragCancel = {
                             dragging = false
+                            dragId = null
+                            mergeArmed = false
                             settleAt(currentHome)
                         },
                         onDrag = { change, delta ->
                             change.consume()
-                            scope.launch { animX.snapTo(animX.value + delta.x) }
-                            scope.launch { animY.snapTo(animY.value + delta.y) }
+                            val nx = animX.value + delta.x
+                            val ny = animY.value + delta.y
+                            scope.launch { animX.snapTo(nx) }
+                            scope.launch { animY.snapTo(ny) }
+                            dragTopLeft = Offset(nx, ny)
                         },
                     )
                 }
@@ -239,15 +346,40 @@ fun LauncherGrid(
                             }
                         }
                         .graphicsLayer {
-                            val s = if (dragging) 1.08f else 1f
+                            val s = when {
+                                dragging && mergeArmed -> 0.86f
+                                dragging -> 1.08f
+                                else -> targetScale.value
+                            }
                             scaleX = s
                             scaleY = s
                         }
+                        .then(
+                            if (isMergeTarget) Modifier.drawBehind {
+                                // Soft glow showing "let go to make a folder".
+                                val r = minOf(size.width, size.height) * 0.42f
+                                drawCircle(
+                                    Brush.radialGradient(
+                                        listOf(Color.White.copy(alpha = 0.35f * glow.value), Color.Transparent),
+                                        center = center,
+                                        radius = r * 1.5f,
+                                    ),
+                                    radius = r * 1.5f,
+                                )
+                            } else Modifier
+                        )
                         .then(dragModifier)
                 ) { item.content() }
             }
         }
     }
+}
+
+private sealed interface DragHover {
+    data object None : DragHover
+    data class Merge(val targetId: String) : DragHover
+    /** [targetId] slides to cell ([toX], [toY]) — where the dragged item started. */
+    data class Swap(val targetId: String, val toX: Float, val toY: Float) : DragHover
 }
 
 private fun DrawScope.drawCellOutlines(g: GridGeometry) {
