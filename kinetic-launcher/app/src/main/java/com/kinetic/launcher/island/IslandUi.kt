@@ -48,6 +48,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.CoroutineStart
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.core.VectorConverter
 import com.kinetic.launcher.KineticSettings
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.TextStyle
@@ -205,34 +213,70 @@ fun DynamicIsland(
 
     val restW = maxOf(pillH * 3.4f, 84.dp)
     val fullW = screenWidth - 20.dp
-    val (targetW, targetH) = when (mode) {
+    // Big shapes keep the camera's strip at the top clear: their content starts below it.
+    val cameraRoom = (pillH - 10.dp).coerceAtLeast(0.dp)
+    fun sizeOf(md: IslandMode): Pair<Dp, Dp> = when (md) {
         IslandMode.Idle -> restW to pillH
-        is IslandMode.Alert -> when (val a = mode.alert) {
+        is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
             is IslandAlert.Lock -> (restW + 44.dp) to pillH
             else -> CompactW to pillH
         }
         IslandMode.MediaCompact, IslandMode.CallCompact, IslandMode.TimerCompact -> CompactW to pillH
-        IslandMode.NavCompact -> (CompactW + 24.dp) to pillH
+        IslandMode.NavCompact -> (CompactW + 56.dp) to pillH
         IslandMode.MediaMinimal -> MinimalW to pillH
-        IslandMode.MediaExpanded -> fullW to ExpandedMediaH
-        IslandMode.CallExpanded -> fullW to ExpandedCallH
-        IslandMode.TimerExpanded -> fullW to ExpandedTimerH
-        IslandMode.AlarmExpanded -> fullW to ExpandedAlarmH
-        IslandMode.NavExpanded -> fullW to ExpandedNavH
-        IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH)
+        IslandMode.MediaExpanded -> fullW to ExpandedMediaH + cameraRoom
+        IslandMode.CallExpanded -> fullW to ExpandedCallH + cameraRoom
+        IslandMode.TimerExpanded -> fullW to ExpandedTimerH + cameraRoom
+        IslandMode.AlarmExpanded -> fullW to ExpandedAlarmH + cameraRoom
+        IslandMode.NavExpanded -> fullW to ExpandedNavH + cameraRoom
+        IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH) + cameraRoom
     }
-    val targetR = if (targetH <= pillH) targetH / 2 else ExpandedRadius
+    fun radiusFor(height: Dp) = if (height <= pillH) height / 2 else ExpandedRadius
+    val (targetW, targetH) = sizeOf(mode)
+    val targetR = radiusFor(targetH)
+
+    // The shape the island turns into when you pull it down (or push it back up).
+    val expandsTo: IslandMode? = when (mode) {
+        IslandMode.MediaCompact, IslandMode.MediaMinimal -> IslandMode.MediaExpanded
+        IslandMode.CallCompact -> IslandMode.CallExpanded
+        IslandMode.TimerCompact -> IslandMode.TimerExpanded
+        IslandMode.NavCompact -> IslandMode.NavExpanded
+        else -> null
+    }
+    val collapsesTo: IslandMode? = when (mode) {
+        IslandMode.MediaExpanded -> if (look == IslandModel.MediaLook.Minimal) IslandMode.MediaMinimal else IslandMode.MediaCompact
+        IslandMode.CallExpanded -> if (c?.incoming == false) IslandMode.CallCompact else null
+        IslandMode.TimerExpanded -> IslandMode.TimerCompact
+        IslandMode.NavExpanded -> IslandMode.NavCompact
+        else -> null
+    }
 
     // A second activity splits off into a bubble (only next to small shapes).
     val showBubble = secondary != null && targetH <= pillH && mode !is IslandMode.Alert
     val hideResting = mode == IslandMode.Idle && !settings.islandRestingPill
 
-    // iOS-like spring: quick, with a little overshoot when it grows.
-    val morph = spring<Dp>(dampingRatio = 0.72f, stiffness = 340f)
-    val w by animateDpAsState(targetW, morph, label = "w")
-    val h by animateDpAsState(targetH, morph, label = "h")
-    val r by animateDpAsState(targetR, morph, label = "r")
+    // Size is driven by Animatables so a pull can move it directly and a release can
+    // spring on from wherever your finger left it.
+    val wA = remember { Animatable(targetW, Dp.VectorConverter) }
+    val hA = remember { Animatable(targetH, Dp.VectorConverter) }
+    val rA = remember { Animatable(targetR, Dp.VectorConverter) }
+    val w = wA.value
+    val h = hA.value
+    val r = rA.value
+    /** 0..1: how far a pull has morphed the island towards [morphTo]. */
+    val morph = remember { Animatable(0f) }
+    var morphTo by remember { mutableStateOf<IslandMode?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+    var settleTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(targetW, targetH, targetR, settleTick, dragging) {
+        if (dragging) return@LaunchedEffect
+        // iOS-like spring: quick, with a little overshoot when it grows.
+        val spec = spring<Dp>(dampingRatio = 0.74f, stiffness = 360f)
+        launch { wA.animateTo(targetW, spec) }
+        launch { hA.animateTo(targetH, spec) }
+        launch { rA.animateTo(targetR, spec) }
+    }
     val restAlpha by animateFloatAsState(if (hideResting) 0f else 1f, tween(250), label = "rest")
     // The bubble pops out of the pill like a drop of gel, and back in when it goes.
     val bubble by animateFloatAsState(
@@ -241,24 +285,17 @@ fun DynamicIsland(
         label = "bubble",
     )
 
-    // ---- gel: drag the island and it stretches after your finger, then wobbles back --
     val density = LocalDensity.current
-    val maxPull = with(density) { 46.dp.toPx() }
-    val expandPull = with(density) { 40.dp.toPx() }
-    val pullX = remember { Animatable(0f) }
-    val pullY = remember { Animatable(0f) }
-    var dragging by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    /** Rubber band: follows the finger at first, then resists more and more. */
-    fun band(raw: Float): Float = sign(raw) * maxPull * (1f - 1f / (abs(raw) / maxPull + 1f))
 
     // The window grows straight away and shrinks once the spring has settled. While
     // you drag, it gets some extra room so the stretch isn't cut off.
     val bubbleRoom = if (showBubble) (BubbleGap + pillH) * 2 else 0.dp
     var windowW by remember { mutableStateOf(targetW) }
     var windowH by remember { mutableStateOf(targetH) }
-    val extraW = if (dragging) 48.dp else 0.dp
-    val extraH = if (dragging) 64.dp else 0.dp
+    // While pulling, the window is already as big as the expanded shape.
+    val extraW = if (dragging) (fullW - windowW).coerceAtLeast(0.dp) else 0.dp
+    val extraH = if (dragging) (sizeOf(expandsTo ?: mode).second - windowH).coerceAtLeast(0.dp) else 0.dp
     LaunchedEffect(targetW, targetH, dragging, bubbleRoom) {
         windowW = maxOf(windowW, targetW + bubbleRoom)
         windowH = maxOf(windowH, targetH)
@@ -281,6 +318,20 @@ fun DynamicIsland(
     val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
         (mode == IslandMode.CallExpanded && c?.incoming == false)
     val haptic = { if (settings.haptics) onHaptic() }
+
+    /** Moves the island part-way between [from] and [to] (p = 0..1), straight from the finger. */
+    fun morphStep(from: IslandMode, to: IslandMode, p: Float) {
+        val (fw, fh) = sizeOf(from)
+        val (tw, th) = sizeOf(to)
+        val cw = lerp(fw, tw, p)
+        val ch = lerp(fh, th, p)
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            wA.snapTo(cw)
+            hA.snapTo(ch)
+            rA.snapTo(minOf(ch / 2, ExpandedRadius))
+            morph.snapTo(p)
+        }
+    }
 
     fun open(which: Activity?) {
         when (which) {
@@ -325,63 +376,64 @@ fun DynamicIsland(
                     .padding(top = top)
                     .size(w, h)
                     .graphicsLayer {
-                        val nx = pullX.value / maxPull
-                        val ny = pullY.value / maxPull
-                        // Slide a little with the finger…
-                        translationX = pullX.value * 0.45f
-                        translationY = pullY.value * 0.45f
-                        // …and stretch like gel towards it (thinner the other way).
-                        scaleX = squish * (1f + 0.16f * abs(nx) - 0.07f * abs(ny))
-                        scaleY = squish * (1f + 0.26f * abs(ny) - 0.10f * abs(nx))
-                        transformOrigin = TransformOrigin(
-                            0.5f - 0.5f * (nx * 3f).coerceIn(-1f, 1f),
-                            0.5f - 0.5f * (ny * 3f).coerceIn(-1f, 1f),
-                        )
+                        scaleX = squish
+                        scaleY = squish
+                        transformOrigin = TransformOrigin(0.5f, 0f)
                         alpha = restAlpha
                     }
                     .clip(RoundedCornerShape(r))
                     .background(IslandBlack)
-                    .pointerInput(mode) {
-                        var rawX = 0f
+                    .pointerInput(mode, expandsTo, collapsesTo) {
+                        // Pull down on a small island to open it (or push up on a big one to
+                        // close it): the shape follows your finger the whole way, then
+                        // finishes on its own when you let go.
                         var rawY = 0f
-                        var fired = false
-                        fun release() {
-                            dragging = false
-                            // Low damping = a jelly wobble as it settles.
-                            scope.launch { pullX.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
-                            scope.launch { pullY.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+                        val tracker = VelocityTracker()
+                        val pullDist = with(density) { 110.dp.toPx() }
+                        val flick = with(density) { 300.dp.toPx() }
+                        fun target(): IslandMode? = when {
+                            mode == IslandMode.Peek -> null
+                            expandsTo != null -> expandsTo
+                            else -> collapsesTo
                         }
-                        detectDragGestures(
+                        detectVerticalDragGestures(
                             onDragStart = {
-                                rawX = 0f
                                 rawY = 0f
-                                fired = false
-                                dragging = true
+                                tracker.resetTracking()
                                 model.touched()
                                 model.touchPeek()
+                                morphTo = target()
+                                dragging = morphTo != null
                             },
-                            onDragEnd = { release() },
-                            onDragCancel = { release() },
-                        ) { change, delta ->
+                            onDragEnd = {
+                                val vy = tracker.calculateVelocity().y
+                                val to = morphTo
+                                val p = morph.value
+                                val opening = expandsTo != null
+                                val commit = to != null && (if (opening) (p > 0.35f && vy > -flick) || vy > flick else (p > 0.35f && vy < flick) || vy < -flick)
+                                if (mode == IslandMode.Peek && !replying && (rawY < -pullDist * 0.25f || vy < -flick)) model.dismissPeek()
+                                if (commit) {
+                                    haptic()
+                                    if (opening) model.expand() else model.collapse()
+                                }
+                                scope.launch { morph.animateTo(0f, tween(160)) }
+                                morphTo = null
+                                dragging = false
+                                settleTick++
+                            },
+                            onDragCancel = {
+                                morphTo = null
+                                dragging = false
+                                settleTick++
+                                scope.launch { morph.snapTo(0f) }
+                            },
+                        ) { change, dy ->
                             change.consume()
-                            rawX += delta.x
-                            rawY += delta.y
-                            scope.launch { pullX.snapTo(band(rawX)) }
-                            scope.launch { pullY.snapTo(band(rawY)) }
-                            if (!fired && compactish && rawY > expandPull) {
-                                // Pull down to open it up.
-                                fired = true
-                                haptic()
-                                model.expand()
-                            } else if (!fired && isExpanded && rawY < -expandPull * 0.8f) {
-                                // Push up to fold it away.
-                                fired = true
-                                model.collapse()
-                            } else if (!fired && mode == IslandMode.Peek && !replying && rawY < -expandPull * 0.6f) {
-                                // Flick a message away.
-                                fired = true
-                                model.dismissPeek()
-                            }
+                            tracker.addPointerInputChange(change)
+                            rawY += dy
+                            val to = morphTo ?: return@detectVerticalDragGestures
+                            val p = if (expandsTo != null) (rawY / pullDist) else (-rawY / pullDist)
+                            morphStep(mode, to, p.coerceIn(0f, 1f))
                         }
                     }
                     .pointerInput(mode) {
@@ -423,6 +475,45 @@ fun DynamicIsland(
                     },
                     label = "island",
                 ) { shown ->
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - morph.value * 2.2f).coerceIn(0f, 1f) }) {
+                        IslandContent(shown, media, c, t, n, p, replying, model, cameraRoom)
+                    }
+                }
+                // While pulling, the shape it's turning into fades in, revealed by the growing outline.
+                val preview = morphTo
+                if (preview != null) {
+                    val (pw, ph) = sizeOf(preview)
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .wrapContentSize(Alignment.TopCenter, unbounded = true)
+                            .requiredSize(pw, ph)
+                            .graphicsLayer { alpha = ((morph.value - 0.35f) / 0.5f).coerceIn(0f, 1f) }
+                    ) {
+                        IslandContent(preview, media, c, t, n, p, replying, model, cameraRoom)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** What's drawn inside the island for [shown]. Big shapes start below the camera. */
+@Composable
+private fun IslandContent(
+    shown: IslandMode,
+    media: MediaInfo?,
+    c: NotificationHub.CallInfo?,
+    t: NotificationHub.TimerInfo?,
+    n: NotificationHub.NavInfo?,
+    p: NotificationHub.MessagePeek?,
+    replying: Boolean,
+    model: IslandModel,
+    cameraRoom: Dp,
+) {
+    val big = shown is IslandMode.MediaExpanded || shown is IslandMode.CallExpanded || shown is IslandMode.TimerExpanded ||
+        shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek
+    Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
                         IslandMode.Idle -> Box(Modifier.fillMaxSize())
                         is IslandMode.Alert -> AlertContent(shown.alert)
@@ -438,9 +529,6 @@ fun DynamicIsland(
                         IslandMode.NavExpanded -> n?.let { NavExpanded(it) }
                         IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
                     }
-                }
-            }
-        }
     }
 }
 
@@ -480,96 +568,114 @@ private fun MediaMinimal(m: MediaInfo) {
 @Composable
 private fun compactSp() = if (LocalPill.current < 30.dp) 12.sp else 13.sp
 
+/**
+ * Compact layout: things on the left and right of the camera, never over it. The
+ * middle (where the camera hole is) is kept empty.
+ */
+@Composable
+private fun CompactSplit(
+    leading: @Composable () -> Unit,
+    trailing: @Composable () -> Unit,
+    padding: Dp = 10.dp,
+) {
+    val s = LocalPill.current
+    Row(Modifier.fillMaxSize().padding(horizontal = padding), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            Row(verticalAlignment = Alignment.CenterVertically) { leading() }
+        }
+        // The camera sits here.
+        Spacer(Modifier.width(s + 6.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            Row(verticalAlignment = Alignment.CenterVertically) { trailing() }
+        }
+    }
+}
+
 @Composable
 private fun MediaCompact(m: MediaInfo) {
     val s = LocalPill.current
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Art(m, s - 9.dp, (s - 9.dp) * 0.3f)
-        Spacer(Modifier.weight(1f))
-        Waveform(m.playing, m.accent, Modifier.padding(end = 6.dp).size(s * 0.62f, s * 0.4f))
-    }
+    CompactSplit(
+        leading = { Art(m, s - 9.dp, (s - 9.dp) * 0.3f) },
+        trailing = { Waveform(m.playing, m.accent, Modifier.padding(end = 4.dp).size(s * 0.62f, s * 0.4f)) },
+        padding = 5.dp,
+    )
 }
 
 @Composable
 private fun CallCompact(call: NotificationHub.CallInfo) {
     val s = LocalPill.current
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PhoneGlyph(Green, Modifier.size(s * 0.45f))
-        Spacer(Modifier.width(6.dp))
-        Text(callTime(call), color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular)
-        Spacer(Modifier.weight(1f))
-        Waveform(true, Green, Modifier.size(s * 0.62f, s * 0.4f))
-    }
+    CompactSplit(
+        leading = {
+            PhoneGlyph(Green, Modifier.size(s * 0.45f))
+            Spacer(Modifier.width(5.dp))
+            Text(callTime(call), color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1)
+        },
+        trailing = { Waveform(true, Green, Modifier.size(s * 0.62f, s * 0.4f)) },
+    )
 }
 
 @Composable
 private fun TimerCompact(t: NotificationHub.TimerInfo) {
     val s = LocalPill.current
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TimerGlyph(Orange, Modifier.size(s * 0.5f))
-        Spacer(Modifier.weight(1f))
-        Text(timerText(t), color = Orange, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular)
-    }
+    CompactSplit(
+        leading = { TimerGlyph(Orange, Modifier.size(s * 0.5f)) },
+        trailing = { Text(timerText(t), color = Orange, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1) },
+    )
 }
 
 @Composable
 private fun NavCompact(n: NotificationHub.NavInfo) {
     val s = LocalPill.current
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        NavArrow(n, Modifier.size(s * 0.62f))
-        Spacer(Modifier.weight(1f))
-        Text(n.distance, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1)
-    }
+    CompactSplit(
+        leading = { NavArrow(n, Modifier.size(s * 0.62f)) },
+        trailing = {
+            Text(
+                n.distance.ifBlank { n.instruction },
+                color = Color.White,
+                fontSize = compactSp(),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
 }
 
 @Composable
 private fun AlertContent(alert: IslandAlert) {
     val s = LocalPill.current
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when (alert) {
-            is IslandAlert.Ringer -> {
-                val silent = alert.mode != AudioManager.RINGER_MODE_NORMAL
-                val color = if (silent) Red else Color.White
-                BellGlyph(color, slashed = silent, modifier = Modifier.size(s * 0.5f))
-                Spacer(Modifier.weight(1f))
-                Text(
-                    when (alert.mode) {
-                        AudioManager.RINGER_MODE_SILENT -> "Silent"
-                        AudioManager.RINGER_MODE_VIBRATE -> "Vibrate"
-                        else -> "Ring"
-                    },
-                    color = if (silent) Orange else Color.White,
-                    fontSize = compactSp(),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            is IslandAlert.Charging -> {
-                Text("Charging", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text("${alert.level}%", color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
+    when (alert) {
+        is IslandAlert.Ringer -> {
+            val silent = alert.mode != AudioManager.RINGER_MODE_NORMAL
+            CompactSplit(
+                leading = { BellGlyph(if (silent) Red else Color.White, slashed = silent, modifier = Modifier.size(s * 0.5f)) },
+                trailing = {
+                    Text(
+                        when (alert.mode) {
+                            AudioManager.RINGER_MODE_SILENT -> "Silent"
+                            AudioManager.RINGER_MODE_VIBRATE -> "Vibrate"
+                            else -> "Ring"
+                        },
+                        color = if (silent) Orange else Color.White,
+                        fontSize = compactSp(),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                },
+            )
+        }
+        is IslandAlert.Charging -> CompactSplit(
+            leading = { Text("Charging", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1) },
+            trailing = {
+                Text("${alert.level}%", color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
                 BatteryGlyph(alert.level / 100f, Green, Modifier.size(s * 0.78f, s * 0.38f))
-            }
-            is IslandAlert.Lock -> {
-                LockGlyph(open = alert.open, modifier = Modifier.size(s * 0.55f))
-                Spacer(Modifier.weight(1f))
-            }
-        }
+            },
+        )
+        is IslandAlert.Lock -> CompactSplit(
+            leading = { LockGlyph(open = alert.open, modifier = Modifier.size(s * 0.55f)) },
+            trailing = {},
+        )
     }
 }
 
@@ -643,8 +749,12 @@ private fun NavExpanded(n: NotificationHub.NavInfo) {
             NavArrow(n, Modifier.size(44.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(n.distance, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text(n.instruction, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (n.distance.isNotBlank()) {
+                    Text(n.distance, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(n.instruction, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Text(n.instruction, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         Spacer(Modifier.weight(1f))

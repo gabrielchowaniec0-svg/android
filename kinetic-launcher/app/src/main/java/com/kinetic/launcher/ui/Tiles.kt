@@ -108,7 +108,7 @@ fun AppTile(
     val landing = remember { Animatable(1f) }
     LaunchedEffect(pop) {
         if (pop) {
-            landing.snapTo(0.78f)
+            landing.snapTo(0.9f)
             landing.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 320f))
         }
     }

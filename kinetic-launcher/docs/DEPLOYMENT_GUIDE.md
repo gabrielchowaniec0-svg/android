@@ -219,8 +219,11 @@ Phone and computer must be on the **same network**. For Android 13+:
     the call's own Answer / Decline buttons.
   - **Charging** (with %), and **Silent / Vibrate / Ring** when you change the
     ringer.
-- **Drag it** and it stretches after your finger like gel, then wobbles back.
-  **Pull down** on it to expand (same as holding); **push up** to fold it away.
+- **Pull down** on it and it morphs open, following your finger the whole way;
+  let go past about a third (or flick) and it finishes opening, otherwise it
+  settles back. **Push up** on a big one to fold it the same way.
+- Nothing is ever drawn over the camera: compact layouts keep the middle empty,
+  and big shapes start their content below the camera.
 - Like iOS, a song doesn't show while you're inside the app playing it. If it's
   paused and you've been out of that app for 10 seconds, the island shrinks to
   just the app's little logo (`MINIMAL_AFTER_MS` in `IslandModel.kt`); tap the
@@ -306,3 +309,11 @@ Phone and computer must be on the **same network**. For Android 13+:
 - A settings screen (grid size, edit hold time, unlock flow direction).
 - Dragging items between pages (use "Move to next/previous page" for now) and
   drag‑onto‑icon to create folders (use the edit menu for now).
+
+
+## Speed tip: run the "release" build
+
+Debug builds (Android Studio's default) are noticeably slower, especially for
+animations: the app runs with debugging hooks and isn't fully compiled. For
+day-to-day use pick **Build ▸ Select Build Variant… ▸ app: release**, then Run.
+It's signed with the same debug key, so it installs over the debug version.

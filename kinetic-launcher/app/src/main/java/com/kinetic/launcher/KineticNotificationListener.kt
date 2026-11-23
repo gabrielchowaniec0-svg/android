@@ -259,7 +259,8 @@ class KineticNotificationListener : NotificationListenerService() {
         return NotificationHub.NavInfo(
             key = sbn.key,
             packageName = sbn.packageName,
-            distance = if (titleIsDistance) title else DISTANCE.find(text)?.value ?: title,
+            // No distance yet (e.g. "Head toward S 80th Ave"): leave it blank, the island shows the instruction.
+            distance = if (titleIsDistance) title else DISTANCE.find(text)?.value.orEmpty(),
             instruction = if (titleIsDistance) text else title,
             eta = sub,
             arrow = arrow,

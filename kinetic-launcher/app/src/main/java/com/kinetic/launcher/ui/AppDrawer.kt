@@ -68,6 +68,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -526,6 +532,16 @@ private fun SearchPanel(
         if (ok) onLeave()
     }
 
+    /** Enter: open the top app (the highlighted one), otherwise search the web. */
+    fun submit() {
+        val top = apps.firstOrNull()
+        when {
+            q.isEmpty() -> Unit
+            top != null -> onAppClick(top)
+            else -> leaveIf(SmartSearch.webSearch(context, q))
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -536,7 +552,7 @@ private fun SearchPanel(
             TextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Apps, contacts, settings, maths…") },
+                placeholder = { Text("Search apps, contacts, maths", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 shape = RoundedCornerShape(26.dp),
                 colors = TextFieldDefaults.colors(
@@ -547,18 +563,24 @@ private fun SearchPanel(
                 ),
                 leadingIcon = { SearchGlyph(Modifier.size(20.dp)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    // Enter opens the best match: the top app, otherwise a web search.
-                    val top = apps.firstOrNull()
-                    when {
-                        q.isEmpty() -> Unit
-                        top != null -> onAppClick(top)
-                        else -> leaveIf(SmartSearch.webSearch(context, q))
-                    }
-                }),
+                // Enter (whatever the keyboard calls it) opens the highlighted best match.
+                keyboardActions = KeyboardActions(
+                    onSearch = { submit() },
+                    onDone = { submit() },
+                    onGo = { submit() },
+                    onSend = { submit() },
+                ),
                 modifier = Modifier
                     .weight(1f)
-                    .focusRequester(focus),
+                    .focusRequester(focus)
+                    .onPreviewKeyEvent { e ->
+                        if (e.type == KeyEventType.KeyUp && (e.key == Key.Enter || e.key == Key.NumPadEnter)) {
+                            submit()
+                            true
+                        } else {
+                            false
+                        }
+                    },
             )
             TextButton(onClick = onCancel) { Text("Cancel") }
         }
@@ -583,8 +605,16 @@ private fun SearchPanel(
                 }
             }
 
-            items(apps, key = { it.key }) { e ->
-                Box(Modifier.height(DRAWER_CELL_HEIGHT)) {
+            itemsIndexed(apps, key = { _, e -> e.key }) { index, e ->
+                // The app Enter will open gets a soft highlight.
+                val best = q.isNotEmpty() && index == 0
+                Box(
+                    Modifier
+                        .height(DRAWER_CELL_HEIGHT)
+                        .padding(2.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (best) Color.White.copy(alpha = 0.12f) else Color.Transparent)
+                ) {
                     AppTile(
                         icon = e.icon,
                         label = labelFor(e),
