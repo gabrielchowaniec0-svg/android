@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Draws the island only: listens to no events and can't read window contents. -->
+<!-- Draws the island. Only notices which app is in front (to hide a song while you're in its app); can't read window contents. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAnnouncement"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRetrieveWindowContent="false"
     android:description="@string/island_description"

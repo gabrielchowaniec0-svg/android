@@ -58,6 +58,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     /** Camera hole: centre x and centre y in screen pixels. */
     private var holeX = 0f
     private var holeY = 0f
+    private var holeTop = 0f
 
     override fun onCreate() {
         super.onCreate()
@@ -75,7 +76,17 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         addIsland()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    /**
+     * Only used to know which app is on screen (so the island hides a song while
+     * you're in the app playing it, like iOS). Nothing on the screen is read.
+     */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || !::model.isInitialized) return
+        val pkg = event.packageName?.toString() ?: return
+        // Ignore Kinetic's own pop-ups; only its home screen counts as "an app".
+        if (pkg == packageName && event.className?.toString() != "com.kinetic.launcher.MainActivity") return
+        model.setForeground(pkg)
+    }
 
     override fun onInterrupt() = Unit
 
@@ -115,9 +126,11 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         if (rect != null) {
             holeX = rect.exactCenterX()
             holeY = rect.exactCenterY()
+            holeTop = rect.top.toFloat()
         } else {
             holeX = metrics.bounds.width() / 2f
             holeY = 18 * density
+            holeTop = 10 * density
         }
     }
 
@@ -129,7 +142,9 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         val density = resources.displayMetrics.density
         val screenWidth = (wm.currentWindowMetrics.bounds.width() / density).dp
         // Keep the resting pill centred on the camera hole; bigger shapes grow downwards.
-        val top = (holeY / density - 35 / 2f).coerceAtLeast(2f).dp
+        // 5dp lower than centring it on the camera, for a taller gap above it like
+        // iOS. The pill is 35dp tall, so the small S25 camera hole stays well inside.
+        val top = (holeY / density - 35 / 2f + TOP_NUDGE_DP).coerceAtLeast(6f).dp
 
         val p = WindowManager.LayoutParams(
             1, 1,
@@ -202,6 +217,9 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     companion object {
+        /** How far below "centred on the camera" the island sits. Raise for a bigger gap. */
+        const val TOP_NUDGE_DP = 5f
+
         /** True once the user has switched the island on in Accessibility settings. */
         fun isEnabled(context: Context): Boolean {
             val am = context.getSystemService(AccessibilityManager::class.java)

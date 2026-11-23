@@ -2,6 +2,7 @@ package com.kinetic.launcher.island
 
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -20,6 +21,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,12 +55,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
@@ -66,13 +71,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kinetic.launcher.NotificationHub
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.sign
 
 // Sizes follow Apple's Dynamic Island (iPhone 15 Pro: a 126 × 37 pt resting pill,
 // compact leading/trailing views either side of it, a 44 pt corner radius when
 // expanded), scaled to the S25 Ultra.
 private val RestW = 120.dp
 private val PillH = 35.dp
-private val CompactW = 240.dp
+// Narrower than iOS's so it covers fewer status-bar icons on the S25.
+private val CompactW = 206.dp
+private val MinimalW = 160.dp
 private val ChargingW = 290.dp
 private val ExpandedMediaH = 172.dp
 private val ExpandedCallH = 86.dp
@@ -88,6 +98,7 @@ private sealed interface IslandMode {
     data object Idle : IslandMode
     data class Alert(val alert: IslandAlert) : IslandMode
     data object MediaCompact : IslandMode
+    data object MediaMinimal : IslandMode
     data object MediaExpanded : IslandMode
     data object CallCompact : IslandMode
     data object CallExpanded : IslandMode
@@ -111,17 +122,20 @@ fun DynamicIsland(
     onTouchable: (Boolean) -> Unit = {},
 ) {
     val media by model.media.collectAsState()
+    val look by model.mediaLook.collectAsState()
     val call by model.call.collectAsState()
     val alert by model.alert.collectAsState()
     val expanded by model.expanded.collectAsState()
 
     val c = call
+    val m = media
     val mode: IslandMode = when {
         c != null && (c.incoming || expanded) -> IslandMode.CallExpanded
         alert != null -> IslandMode.Alert(alert!!)
         c != null -> IslandMode.CallCompact
-        media != null && expanded -> IslandMode.MediaExpanded
-        media != null -> IslandMode.MediaCompact
+        m != null && expanded -> IslandMode.MediaExpanded
+        m != null && look == IslandModel.MediaLook.Compact -> IslandMode.MediaCompact
+        m != null && look == IslandModel.MediaLook.Minimal -> IslandMode.MediaMinimal
         else -> IslandMode.Idle
     }
 
@@ -130,6 +144,7 @@ fun DynamicIsland(
         IslandMode.Idle -> RestW to PillH
         is IslandMode.Alert -> (if (mode.alert is IslandAlert.Charging) ChargingW else CompactW) to PillH
         IslandMode.MediaCompact, IslandMode.CallCompact -> CompactW to PillH
+        IslandMode.MediaMinimal -> MinimalW to PillH
         IslandMode.MediaExpanded -> fullW to ExpandedMediaH
         IslandMode.CallExpanded -> fullW to ExpandedCallH
     }
@@ -141,17 +156,31 @@ fun DynamicIsland(
     val h by animateDpAsState(targetH, morph, label = "h")
     val r by animateDpAsState(targetR, morph, label = "r")
 
-    // The window grows straight away and shrinks once the spring has settled.
+    // ---- gel: drag the island and it stretches after your finger, then wobbles back --
+    val density = LocalDensity.current
+    val maxPull = with(density) { 46.dp.toPx() }
+    val expandPull = with(density) { 40.dp.toPx() }
+    val pullX = remember { Animatable(0f) }
+    val pullY = remember { Animatable(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    /** Rubber band: follows the finger at first, then resists more and more. */
+    fun band(raw: Float): Float = sign(raw) * maxPull * (1f - 1f / (abs(raw) / maxPull + 1f))
+
+    // The window grows straight away and shrinks once the spring has settled. While
+    // you drag, it gets some extra room so the stretch isn't cut off.
     var windowW by remember { mutableStateOf(targetW) }
     var windowH by remember { mutableStateOf(targetH) }
-    LaunchedEffect(targetW, targetH) {
+    val extraW = if (dragging) 48.dp else 0.dp
+    val extraH = if (dragging) 64.dp else 0.dp
+    LaunchedEffect(targetW, targetH, dragging) {
         windowW = maxOf(windowW, targetW)
         windowH = maxOf(windowH, targetH)
-        onWindowSize(windowW + 8.dp, top + windowH + 8.dp)
-        delay(650)
+        onWindowSize(windowW + 8.dp + extraW, top + windowH + 8.dp + extraH)
+        delay(700)
         windowW = targetW
         windowH = targetH
-        onWindowSize(windowW + 8.dp, top + windowH + 8.dp)
+        onWindowSize(windowW + 8.dp + extraW, top + windowH + 8.dp + extraH)
     }
 
     val touchable = mode != IslandMode.Idle
@@ -160,17 +189,68 @@ fun DynamicIsland(
     var pressed by remember { mutableStateOf(false) }
     val squish by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "squish")
 
+    val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal
+    val isExpanded = mode == IslandMode.MediaExpanded || (mode == IslandMode.CallExpanded && c?.incoming == false)
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Box(
             Modifier
                 .padding(top = top)
                 .size(w, h)
                 .graphicsLayer {
-                    scaleX = squish
-                    scaleY = squish
+                    val nx = pullX.value / maxPull
+                    val ny = pullY.value / maxPull
+                    // Slide a little with the finger…
+                    translationX = pullX.value * 0.45f
+                    translationY = pullY.value * 0.45f
+                    // …and stretch like gel towards it (thinner the other way).
+                    scaleX = squish * (1f + 0.16f * abs(nx) - 0.07f * abs(ny))
+                    scaleY = squish * (1f + 0.26f * abs(ny) - 0.10f * abs(nx))
+                    transformOrigin = TransformOrigin(
+                        0.5f - 0.5f * (nx * 3f).coerceIn(-1f, 1f),
+                        0.5f - 0.5f * (ny * 3f).coerceIn(-1f, 1f),
+                    )
                 }
                 .clip(RoundedCornerShape(r))
                 .background(IslandBlack)
+                .pointerInput(mode) {
+                    var rawX = 0f
+                    var rawY = 0f
+                    var fired = false
+                    fun release() {
+                        dragging = false
+                        // Low damping = a jelly wobble as it settles.
+                        scope.launch { pullX.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+                        scope.launch { pullY.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 420f)) }
+                    }
+                    detectDragGestures(
+                        onDragStart = {
+                            rawX = 0f
+                            rawY = 0f
+                            fired = false
+                            dragging = true
+                            model.touched()
+                        },
+                        onDragEnd = { release() },
+                        onDragCancel = { release() },
+                    ) { change, delta ->
+                        change.consume()
+                        rawX += delta.x
+                        rawY += delta.y
+                        scope.launch { pullX.snapTo(band(rawX)) }
+                        scope.launch { pullY.snapTo(band(rawY)) }
+                        if (!fired && compactish && rawY > expandPull) {
+                            // Pull down to open it up.
+                            fired = true
+                            onHaptic()
+                            model.expand()
+                        } else if (!fired && isExpanded && rawY < -expandPull * 0.8f) {
+                            // Push up to fold it away.
+                            fired = true
+                            model.collapse()
+                        }
+                    }
+                }
                 .pointerInput(mode) {
                     detectTapGestures(
                         onPress = {
@@ -182,7 +262,7 @@ fun DynamicIsland(
                         },
                         onTap = {
                             when (mode) {
-                                IslandMode.MediaCompact, IslandMode.MediaExpanded -> {
+                                IslandMode.MediaCompact, IslandMode.MediaMinimal, IslandMode.MediaExpanded -> {
                                     model.openMediaApp()
                                     model.collapse()
                                 }
@@ -191,7 +271,7 @@ fun DynamicIsland(
                             }
                         },
                         onLongPress = {
-                            if (mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact) {
+                            if (compactish) {
                                 onHaptic()
                                 model.expand()
                             }
@@ -207,16 +287,30 @@ fun DynamicIsland(
                         (fadeOut(tween(110)) + scaleOut(tween(160), targetScale = 0.92f))
                 },
                 label = "island",
-            ) { m ->
-                when (m) {
+            ) { shown ->
+                when (shown) {
                     IslandMode.Idle -> Box(Modifier.fillMaxSize())
-                    is IslandMode.Alert -> AlertContent(m.alert)
+                    is IslandMode.Alert -> AlertContent(shown.alert)
                     IslandMode.MediaCompact -> media?.let { MediaCompact(it) }
+                    IslandMode.MediaMinimal -> media?.let { MediaMinimal(it) }
                     IslandMode.MediaExpanded -> media?.let { MediaExpanded(it, model) }
                     IslandMode.CallCompact -> c?.let { CallCompact(it) }
                     IslandMode.CallExpanded -> c?.let { CallExpanded(it, model) }
                 }
             }
+        }
+    }
+}
+
+/** Paused for a while: just the app's little logo beside the camera. */
+@Composable
+private fun MediaMinimal(m: MediaInfo) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        val icon = m.appIcon
+        if (icon != null) {
+            Image(icon, contentDescription = null, modifier = Modifier.size(21.dp).clip(CircleShape))
+        } else {
+            Art(m, 21.dp, 11.dp)
         }
     }
 }
