@@ -527,6 +527,32 @@ private fun SearchPanel(
 
     val q = query.trim()
     val calc = remember(q) { SmartSearch.calculate(q) }
+
+    // ---- Kinetic Commands: "call Mom", "route to O'Hare", "timer 10 min"… ----
+    val parsedCommand = remember(q) { KineticCommands.parse(q) }
+    val command by produceState<KineticCommands.Ready?>(initialValue = null, parsedCommand, contactsAllowed) {
+        val pc = parsedCommand
+        value = if (pc == null) null else withContext(Dispatchers.IO) { KineticCommands.resolve(context, pc) }
+    }
+    var pendingCommand by remember { mutableStateOf<KineticCommands.Ready?>(null) }
+    val askForCommand = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val cmd = pendingCommand
+        pendingCommand = null
+        if (cmd?.permission == Manifest.permission.READ_CONTACTS) {
+            contactsAllowed = granted
+        } else if (cmd != null && cmd.run(context)) {
+            onLeave()
+        }
+    }
+    fun runCommand(cmd: KineticCommands.Ready) {
+        val perm = cmd.permission
+        if (perm != null && ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED) {
+            pendingCommand = cmd
+            askForCommand.launch(perm)
+        } else if (cmd.run(context)) {
+            onLeave()
+        }
+    }
     val chowPages = remember(q, chowaniecPackage) {
         if (chowaniecPackage == null) emptyList() else SmartSearch.matchChowaniec(q)
     }
@@ -546,8 +572,10 @@ private fun SearchPanel(
     /** Enter: open the top app (the highlighted one), otherwise search the web. */
     fun submit() {
         val top = apps.firstOrNull()
+        val cmd = command
         when {
             q.isEmpty() -> Unit
+            cmd != null -> runCommand(cmd)
             top != null -> onAppClick(top)
             else -> leaveIf(SmartSearch.webSearch(context, q))
         }
@@ -563,7 +591,7 @@ private fun SearchPanel(
             TextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Search apps, contacts, maths", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                placeholder = { Text("Search, or try “call Mom”", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 shape = RoundedCornerShape(26.dp),
                 colors = TextFieldDefaults.colors(
@@ -601,6 +629,11 @@ private fun SearchPanel(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(start = horizontalMargin, end = horizontalMargin, bottom = 24.dp),
         ) {
+            command?.let { cmd ->
+                item(key = "command", span = { GridItemSpan(maxLineSpan) }) {
+                    CommandCard(cmd, onRun = { runCommand(cmd) })
+                }
+            }
             if (calc != null) {
                 item(key = "calc", span = { GridItemSpan(maxLineSpan) }) {
                     SearchRow(
@@ -618,7 +651,7 @@ private fun SearchPanel(
 
             itemsIndexed(apps, key = { _, e -> e.key }) { index, e ->
                 // The app Enter will open gets a soft highlight.
-                val best = q.isNotEmpty() && index == 0
+                val best = q.isNotEmpty() && index == 0 && command == null
                 Box(
                     Modifier
                         .height(DRAWER_CELL_HEIGHT)
@@ -687,6 +720,39 @@ private fun SearchPanel(
                 }
             }
         }
+    }
+}
+
+/** The Kinetic Command card: what will happen, and one big button to do it (Enter works too). */
+@Composable
+private fun CommandCard(cmd: KineticCommands.Ready, onRun: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(Brush.linearGradient(listOf(WallpaperPalette.Mid.copy(alpha = 0.55f), PillColor)))
+            .clickable(onClick = onRun)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(SquircleShape).background(Brush.linearGradient(listOf(WallpaperPalette.Light, WallpaperPalette.Deep))),
+            contentAlignment = Alignment.Center,
+        ) { Text(cmd.badge, color = WallpaperPalette.Glint, fontSize = 20.sp) }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(cmd.title, color = DrawerText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(cmd.subtitle, color = DrawerSubtle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(10.dp))
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White)
+                .clickable(onClick = onRun)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) { Text(cmd.actionLabel, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
 

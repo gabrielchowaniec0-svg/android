@@ -225,8 +225,9 @@ fun DynamicIsland(
         IslandMode.Idle -> restW to pillH
         is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
-            // Face ID: the island becomes a rounded square below the camera.
-            is IslandAlert.Scan -> 118.dp to (pillH + 100.dp)
+            // Face ID: a small rounded square hanging just below the camera
+            // (kept short so it clears the lock-screen clock).
+            is IslandAlert.Scan -> 74.dp to (pillH + 46.dp)
             is IslandAlert.Focus -> (CompactW + 24.dp) to pillH
             is IslandAlert.Lock -> (restW + 44.dp) to pillH
             else -> CompactW to pillH
@@ -243,7 +244,7 @@ fun DynamicIsland(
     }
     fun radiusFor(height: Dp) = if (height <= pillH) height / 2 else ExpandedRadius
     val (targetW, targetH) = sizeOf(mode)
-    val targetR = radiusFor(targetH)
+    val targetR = if (mode is IslandMode.Alert && mode.alert is IslandAlert.Scan) 24.dp else radiusFor(targetH)
 
     // The shape the island turns into when you pull it down (or push it back up).
     val expandsTo: IslandMode? = when (mode) {
@@ -707,9 +708,9 @@ private fun AlertContent(alert: IslandAlert) {
             trailing = {},
         )
         is IslandAlert.Scan -> Box(
-            Modifier.fillMaxSize().padding(top = (s - 6.dp).coerceAtLeast(0.dp)),
+            Modifier.fillMaxSize().padding(top = (s - 4.dp).coerceAtLeast(0.dp), bottom = 4.dp),
             contentAlignment = Alignment.Center,
-        ) { FaceScanGlyph(success = alert.success, modifier = Modifier.size(58.dp)) }
+        ) { FaceScanGlyph(success = alert.success, modifier = Modifier.size(32.dp)) }
         is IslandAlert.Focus -> CompactSplit(
             leading = {
                 FocusGlyph(alert.glyph, Color(alert.color), Modifier.size(s * 0.55f))

@@ -119,6 +119,12 @@ class SettingsActivity : ComponentActivity() {
                     if (notificationsOn) "On — rings, music, calls, timers, directions" else "Needed for rings and most island features",
                     on = notificationsOn,
                 ) { NotificationHub.openSettings(this@SettingsActivity) }
+                val usageOn = remember(tick) { com.kinetic.launcher.ui.KineticCommands.hasUsageAccess(this@SettingsActivity) }
+                LinkRow(
+                    "Usage access (optional)",
+                    if (usageOn) "On — Commands use the app you use most" else "Lets Commands pick the app you use most for calls, music, maps…",
+                    on = usageOn,
+                ) { com.kinetic.launcher.ui.KineticCommands.openUsageAccess(this@SettingsActivity) }
                 LinkRow(
                     "Dynamic Island",
                     if (islandOn) "On" else "Off — turn on \"Kinetic Dynamic Island\" in Accessibility",

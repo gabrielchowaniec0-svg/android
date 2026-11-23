@@ -192,20 +192,26 @@ object WallpaperStyles {
             return sum;
         }
 
-        // A ring spreading out from r.xy since time r.z, fading as it grows.
-        float ring(float2 uv, float4 r) {
-            float age = iTime - r.z;
-            if (r.w <= 0.0 || age < 0.0 || age > 2.4) return 0.0;
-            float rad = age * 0.75;
-            float d = length(uv - r.xy);
-            float band = exp(-((d - rad) * 11.0) * ((d - rad) * 11.0));
-            return band * r.w * (1.0 - age / 2.4);
+        // Ripple helpers. A ripple r = (x, y, start time, strength). Each style
+        // decides what its ripple looks like (ripplePush / rippleLight below).
+        float rippleAge(float4 r) { return iTime - r.z; }
+
+        // Strength left in a ripple (0 once it's finished).
+        float alive(float4 r, float life) {
+            float a = iTime - r.z;
+            if (r.w <= 0.0 || a < 0.0 || a > life) return 0.0;
+            return r.w * (1.0 - a / life);
         }
 
-        float2 push(float2 uv, float4 r, float w) {
-            float2 dir = uv - r.xy;
-            float len = max(length(dir), 0.001);
-            return dir / len * w * 0.035;
+        // A soft band at distance [rad] from the centre.
+        float band(float d, float rad, float sharp) {
+            float x = (d - rad) * sharp;
+            return exp(-x * x);
+        }
+
+        float2 dirFrom(float2 uv, float4 r) {
+            float2 v = uv - r.xy;
+            return v / max(length(v), 0.001);
         }
 
     """.trimIndent() + "\n"
@@ -214,11 +220,8 @@ object WallpaperStyles {
 
         half4 main(float2 fragCoord) {
             float2 uv = (fragCoord - 0.5 * iResolution) / iResolution.y;
-            float w0 = ring(uv, iR0);
-            float w1 = ring(uv, iR1);
-            float w2 = ring(uv, iR2);
             float2 par = iTilt * 0.05;
-            float2 p = uv + par + push(uv, iR0, w0) + push(uv, iR1, w1) + push(uv, iR2, w2);
+            float2 p = uv + par + ripplePush(uv, iR0) + ripplePush(uv, iR1) + ripplePush(uv, iR2);
             float soft = 1.0 + iFocus * 1.6;
 
             float3 col = scene(uv, p * iScale, soft);
@@ -226,8 +229,8 @@ object WallpaperStyles {
 
             // music glow
             col += iGlow.rgb * iGlow.a * (0.04 + 0.9 * lum);
-            // ripple light
-            col += iRC0 * w0 * 0.42 + iRC1 * w1 * 0.42 + iRC2 * w2 * 0.42;
+            // ripple light (each style draws its own kind)
+            col += rippleLight(uv, iR0, iRC0) + rippleLight(uv, iR1, iRC1) + rippleLight(uv, iR2, iRC2);
             // touch
             if (iTouch.x > 0.5 || iTouch.y > 0.5) {
                 float2 t = (iTouch - 0.5 * iResolution) / iResolution.y;
@@ -265,6 +268,17 @@ object WallpaperStyles {
                 col += iColC * pow(rim, 2.0) * 0.9 * iIntensity;
                 return col;
             }
+                    // Ribbons: a clean ring of light that pushes the ribbons outwards.
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float2(0.0);
+                return dirFrom(uv, r) * band(length(uv - r.xy), rippleAge(r) * 0.75, 11.0) * k * 0.035;
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float3(0.0);
+                return rc * band(length(uv - r.xy), rippleAge(r) * 0.75, 11.0) * k * 0.42;
+            }
         """.trimIndent()
 
         Style.Waves -> """
@@ -286,6 +300,22 @@ object WallpaperStyles {
                 }
                 return col;
             }
+                    // Waves: a swell that rolls up and down the screen as a wavy line.
+            float swell(float2 uv, float4 r) {
+                float a = rippleAge(r);
+                float y = abs(uv.y - r.y + 0.04 * sin(uv.x * 9.0 + a * 5.0));
+                return band(y, a * 0.6, 9.0);
+            }
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float2(0.0);
+                return float2(0.0, sign(uv.y - r.y)) * swell(uv, r) * k * 0.06;
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float3(0.0);
+                return mix(rc, iColC, 0.5) * swell(uv, r) * k * 0.35;
+            }
         """.trimIndent()
 
         Style.Silk -> """
@@ -299,6 +329,22 @@ object WallpaperStyles {
                 float3 col = mix(iColA, iColB * 0.9, shade * 0.8 * iIntensity);
                 col += iColC * sheen * 0.5 * iIntensity;
                 return col;
+            }
+                    // Silk: fine concentric folds run through the fabric, catching the light.
+            float folds(float2 uv, float4 r) {
+                float d = length(uv - r.xy);
+                float front = rippleAge(r) * 0.7;
+                return sin((d - front) * 42.0) * exp(-abs(d - front) * 9.0);
+            }
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float2(0.0);
+                return dirFrom(uv, r) * folds(uv, r) * k * 0.012;
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float3(0.0);
+                return mix(iColC, rc, 0.3) * max(folds(uv, r), 0.0) * k * 0.3;
             }
         """.trimIndent()
 
@@ -321,6 +367,23 @@ object WallpaperStyles {
                 float star = step(0.995, hash21(cell)) * (0.5 + 0.5 * sin(iTime * 2.0 + hash21(cell + 3.0) * 6.28));
                 col += iColC * star * 0.6 * smoothstep(-0.1, 0.5, uv.y);
                 return col;
+            }
+                    // Aurora: a shimmering burst that lifts the curtains as it passes.
+            float shimmer(float2 uv, float4 r) {
+                float2 v = uv - r.xy;
+                float a = rippleAge(r);
+                float rays = 0.45 + 0.55 * valueNoise(float2(atan(v.y, v.x) * 5.0, a * 3.0));
+                return band(length(v), a * 0.9, 7.0) * rays;
+            }
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float2(0.0);
+                return float2(0.0, -shimmer(uv, r) * k * 0.05);
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float3(0.0);
+                return mix(rc, iColC, 0.6) * shimmer(uv, r) * k * 0.6;
             }
         """.trimIndent()
 
@@ -346,6 +409,21 @@ object WallpaperStyles {
                 col += iColC * hi * 0.35 * iIntensity;
                 col += iColB * 0.15 * smoothstep(0.2, 1.0, field) * iIntensity;
                 return col;
+            }
+                    // Orbs: a soft, gooey bubble that shoves the blobs aside.
+            float bubble(float2 uv, float4 r) {
+                return band(length(uv - r.xy), rippleAge(r) * 0.65, 5.5);
+            }
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float2(0.0);
+                return dirFrom(uv, r) * bubble(uv, r) * k * 0.07;
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.6);
+                if (k <= 0.0) return float3(0.0);
+                float b = bubble(uv, r);
+                return (rc * b * 0.22 + iColC * b * b * b * 0.35) * k;
             }
         """.trimIndent()
 
@@ -375,6 +453,17 @@ object WallpaperStyles {
                 col += iColC * edge * 0.7 * iIntensity;
                 return col;
             }
+                    // Crystal: shards light up one by one as the shock wave reaches them.
+            float2 ripplePush(float2 uv, float4 r) { return float2(0.0); }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.2);
+                if (k <= 0.0) return float3(0.0);
+                float2 cell = floor(uv * 22.0);
+                float2 c = (cell + 0.5) / 22.0;
+                float b = band(length(c - r.xy), rippleAge(r) * 0.9, 12.0);
+                float flash = b * (0.3 + 0.7 * step(0.45, hash21(cell)));
+                return (iColC * flash * 0.9 + rc * b * 0.15) * k;
+            }
         """.trimIndent()
 
         Style.Dunes -> """
@@ -396,6 +485,22 @@ object WallpaperStyles {
                 col += iColC * lines * 0.18 * iIntensity;
                 return col;
             }
+                    // Dunes: a sandy shock wave — bright crest, dark trough, gritty texture.
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float2(0.0);
+                float d = length(uv - r.xy);
+                float rad = rippleAge(r) * 0.6;
+                return dirFrom(uv, r) * (band(d, rad, 14.0) - band(d, rad - 0.06, 14.0)) * k * 0.03;
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 2.4);
+                if (k <= 0.0) return float3(0.0);
+                float d = length(uv - r.xy);
+                float rad = rippleAge(r) * 0.6;
+                float grit = 0.55 + 0.45 * hash21(floor(uv * 240.0));
+                return (rc * band(d, rad, 14.0) * 0.5 - iColB * band(d, rad - 0.06, 14.0) * 0.35) * grit * k;
+            }
         """.trimIndent()
 
         Style.Static -> """
@@ -414,6 +519,21 @@ object WallpaperStyles {
                 float bar = exp(-abs(fract(uv.y * 0.5 - iTime * 0.05) - 0.5) * 40.0);
                 col += iColC * bar * 0.08 * iIntensity;
                 return col;
+            }
+                    // Static: a glitch burst — rows tear sideways and colours split.
+            float2 ripplePush(float2 uv, float4 r) {
+                float k = alive(r, 1.8);
+                if (k <= 0.0) return float2(0.0);
+                float b = band(length(uv - r.xy), rippleAge(r) * 1.1, 8.0);
+                float tear = hash21(float2(floor(uv.y * 60.0), floor(iTime * 30.0))) - 0.5;
+                return float2(tear * 0.12 * b * k, 0.0);
+            }
+            float3 rippleLight(float2 uv, float4 r, float3 rc) {
+                float k = alive(r, 1.8);
+                if (k <= 0.0) return float3(0.0);
+                float b = band(length(uv - r.xy), rippleAge(r) * 1.1, 8.0);
+                float flick = 0.5 + step(0.6, hash21(float2(floor(uv.y * 80.0), floor(iTime * 20.0))));
+                return float3(rc.r * 1.3, rc.g * 0.4, rc.b * 1.4) * b * k * 0.5 * flick;
             }
         """.trimIndent()
     } + "\n"

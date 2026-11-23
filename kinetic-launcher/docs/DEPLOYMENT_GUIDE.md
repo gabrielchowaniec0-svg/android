@@ -315,7 +315,10 @@ Phone and computer must be on the **same network**. For Android 13+:
 
 Edit mode ▸ **Wallpaper**, or Settings ▸ Personalise ▸ **Wallpaper**.
 - **Styles:** smooth (*Ribbons, Waves, Silk*), abstract (*Aurora, Orbs*) and rough
-  (*Crystal, Dunes, Static*). Every style still reacts to unlocks, app launches,
+  (*Crystal, Dunes, Static*). Each style has its own ripple. Waves send a swell
+  rolling up and down. Silk gets fine folds. Aurora shimmers. Orbs push out a gooey
+  bubble. Crystal shards flash in turn. Dunes get a gritty shock wave. Static tears
+  into glitchy rows. Every style still reacts to unlocks, app launches,
   notifications, charging, music and tilt.
 - **Colours:** 8 palettes, or the *Custom colour* slider to build your own.
 - **Feel:** speed, brightness, grain and detail sliders.
@@ -340,11 +343,35 @@ tap ✎ and drag *Focus* in.
 - For silencing, Kinetic needs **Do Not Disturb access** once. The picker
   has a link to it.
 
+## Kinetic Commands
+
+Type a command into the app-list search. A card shows what will happen; tap the
+button or press Enter.
+- **Call:** `call Mom`, `call 555 1234`. The first time, Kinetic asks to place
+  calls directly. If you say no, the dialer opens ready to go.
+- **Text:** `text Dad on my way`, `text Mom Smith: running late`.
+- **Email:** `email Sam`.
+- **Directions:** `route to O'Hare` (also `directions to`, `navigate to`, `take me to`).
+- **Timers and alarms:** `timer 10 min`, `25 min timer`, `alarm 6:30am`, `wake me up at 7`.
+- **Music and video:** `play lofi beats`, `youtube landing tutorials`.
+- **Phone controls:** `flashlight on`, `wifi`, `volume`.
+
+Kinetic sends each command to the app you use most for that job (Maps or Waze,
+Spotify or YouTube Music…). This needs **Usage access**, which you can turn on
+in Settings ▸ Setup. Without it, Android's default app is used.
+
+## Focus schedules
+
+Hold a Focus ▸ **Schedule** ▸ *Turn on automatically*. Pick the start and end
+times and the days; overnight schedules like 10:30 PM–7:00 AM work.
+**Driving** can also turn on when your car's Bluetooth connects. Kinetic asks for
+Bluetooth permission the first time.
+
 ## Unlock animation
 
-When the screen wakes on the lock screen, the island turns into a Face ID–style
-square with a face that turns side to side. When you're recognised (face or
-fingerprint), it becomes a tick, then the padlock swings open. Android doesn't
+When the screen wakes on the lock screen, the island becomes a small Face ID–style
+square just under the camera, with a face that turns side to side. It stays above
+the clock, and it disappears the moment you unlock. Android doesn't
 tell apps when the scan starts or which method worked, so the animation follows
 "screen on while locked" and "unlocked".
 
