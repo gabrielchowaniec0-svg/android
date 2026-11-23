@@ -311,6 +311,43 @@ Phone and computer must be on the **same network**. For Android 13+:
   drag‑onto‑icon to create folders (use the edit menu for now).
 
 
+## Wallpaper studio
+
+Edit mode ▸ **Wallpaper**, or Settings ▸ Personalise ▸ **Wallpaper**.
+- **Styles:** smooth (*Ribbons, Waves, Silk*), abstract (*Aurora, Orbs*) and rough
+  (*Crystal, Dunes, Static*). Every style still reacts to unlocks, app launches,
+  notifications, charging, music and tilt.
+- **Colours:** 8 palettes, or the *Custom colour* slider to build your own.
+- **Feel:** speed, brightness, grain and detail sliders.
+- The big preview is the real shader. Tap it to see a ripple. Changes apply live.
+  If Kinetic isn't your wallpaper yet, use **Set as wallpaper**.
+
+## Focus
+
+Open it from the app list ▸ ⋮ ▸ **Focus…**, Settings ▸ Personalise ▸ **Focus**, or
+the **Focus** quick-settings tile. To add the tile, pull down the quick panel,
+tap ✎ and drag *Focus* in.
+- The tile turns your last Focus on or off. Long-pressing it opens the picker.
+- Built in: Do Not Disturb, Sleep, School, Gaming, Personal and Driving.
+- Hold a Focus to customise it:
+  - Silence (Do Not Disturb)
+  - Let every app through
+  - Wallpaper dimming
+  - Which home page to jump to
+  - Which apps may still show rings and island pop-ups
+- The island shows "*Sleep* On" when a Focus switches, and keeps its little icon
+  next to the camera while it's on.
+- For silencing, Kinetic needs **Do Not Disturb access** once. The picker
+  has a link to it.
+
+## Unlock animation
+
+When the screen wakes on the lock screen, the island turns into a Face ID–style
+square with a face that turns side to side. When you're recognised (face or
+fingerprint), it becomes a tick, then the padlock swings open. Android doesn't
+tell apps when the scan starts or which method worked, so the animation follows
+"screen on while locked" and "unlocked".
+
 ## Speed tip: run the "release" build
 
 Debug builds (Android Studio's default) are noticeably slower, especially for

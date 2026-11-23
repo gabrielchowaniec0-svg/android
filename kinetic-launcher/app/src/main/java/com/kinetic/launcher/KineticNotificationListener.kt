@@ -297,7 +297,9 @@ class KineticNotificationListener : NotificationListenerService() {
             )
         }
 
-        val wanted = (isChowaniec && settings.islandChowaniecPeek) || (isMessage && settings.islandAllMessagesPeek)
+        FocusModes.init(this)
+        val wanted = ((isChowaniec && settings.islandChowaniecPeek) || (isMessage && settings.islandAllMessagesPeek)) &&
+            FocusModes.allows(sbn.packageName)
         if (!wanted) return
         val extras = n.extras
         val title = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()

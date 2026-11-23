@@ -72,6 +72,10 @@ object WallpaperSignals {
         listeners.forEach { it.onRipple(r) }
     }
 
+    /** 0 = normal, 1 = fully dimmed (set by the active Focus). */
+    @Volatile
+    var focusDim: Float = 0f
+
     // ---- music glow -------------------------------------------------------------------
 
     @Volatile

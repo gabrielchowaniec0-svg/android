@@ -63,6 +63,10 @@ sealed interface IslandAlert {
     data class Ringer(val mode: Int) : IslandAlert
     /** Lock-screen padlock: [open] animates the shackle opening after you unlock. */
     data class Lock(val open: Boolean) : IslandAlert
+    /** Face ID–style scan while the lock screen is waiting; [success] = recognised. */
+    data class Scan(val success: Boolean) : IslandAlert
+    /** A Focus was switched on or off. */
+    data class Focus(val name: String, val glyph: com.kinetic.launcher.FocusModes.Glyph, val color: Int, val on: Boolean) : IslandAlert
 }
 
 /**
@@ -170,11 +174,17 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     showAlert(IslandAlert.Charging(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)))
                 }
                 Intent.ACTION_SCREEN_ON -> {
+                    // Face unlock starts scanning as soon as the screen wakes, so show the scan.
                     val km = c.getSystemService(KeyguardManager::class.java)
-                    if (KineticSettings.current.islandUnlock && km.isKeyguardLocked) showAlert(IslandAlert.Lock(open = false))
+                    if (KineticSettings.current.islandUnlock && km.isKeyguardLocked) showAlert(IslandAlert.Scan(success = false))
                 }
                 Intent.ACTION_USER_PRESENT -> {
-                    if (KineticSettings.current.islandUnlock) showAlert(IslandAlert.Lock(open = true))
+                    // Recognised (face or fingerprint): tick, then the padlock swings open.
+                    if (KineticSettings.current.islandUnlock) showAlert(IslandAlert.Scan(success = true))
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    alertJob?.cancel()
+                    _alert.value = null
                 }
                 AudioManager.RINGER_MODE_CHANGED_ACTION -> {
                     // The current mode is re-sent when we register; only show real changes.
@@ -192,11 +202,22 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
         listenForSessions()
+        // Switching a Focus shows its name and icon, like iOS.
+        scope.launch {
+            var last: String? = com.kinetic.launcher.FocusModes.active.value?.id
+            com.kinetic.launcher.FocusModes.active.collect { m ->
+                if (m?.id == last) return@collect
+                val shown = m ?: com.kinetic.launcher.FocusModes.modes.value.firstOrNull { it.id == last }
+                last = m?.id
+                if (shown != null) showAlert(IslandAlert.Focus(shown.name, shown.glyph, shown.color, on = m != null))
+            }
+        }
         // New messages drop down for a few seconds (longer if you touch them).
         scope.launch {
             NotificationHub.message.collect { m ->
@@ -320,10 +341,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 when (alert) {
                     is IslandAlert.Charging -> 3000
                     is IslandAlert.Lock -> if (alert.open) 1300 else 2500
+                    is IslandAlert.Scan -> if (alert.success) 750 else 4000
                     else -> 2200
                 }
             )
             _alert.value = null
+            // After the tick, the padlock opens.
+            if (alert is IslandAlert.Scan && alert.success) showAlert(IslandAlert.Lock(open = true))
         }
     }
 

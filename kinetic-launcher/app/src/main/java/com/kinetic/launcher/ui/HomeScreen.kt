@@ -86,7 +86,10 @@ import com.kinetic.core.home.HomeItem
 import com.kinetic.core.home.HomeLayoutStore
 import com.kinetic.core.home.HomeLayout
 import com.kinetic.core.widgets.WidgetHostManager
+import com.kinetic.launcher.FocusActivity
+import com.kinetic.launcher.FocusModes
 import com.kinetic.launcher.KineticSettings
+import com.kinetic.launcher.WallpaperStudioActivity
 import com.kinetic.launcher.NotificationHub
 import com.kinetic.launcher.SettingsActivity
 import com.kinetic.wallpaper.WallpaperSignals
@@ -220,7 +223,22 @@ fun KineticHome(
     fun toast(msg: String) = Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
 
     val kineticSettings by KineticSettings.values.collectAsState()
-    fun hasNotification(e: AppEntry): Boolean = kineticSettings.notificationRings && e.packageName in notifying
+    val focus by FocusModes.active.collectAsState()
+    // During a Focus, only its allowed apps get rings.
+    fun hasNotification(e: AppEntry): Boolean =
+        kineticSettings.notificationRings && e.packageName in notifying && (focus == null || FocusModes.allows(e.packageName))
+
+    // Switching on a Focus can jump to its home page.
+    LaunchedEffect(focus?.id) {
+        val page = focus?.homePage ?: -1
+        if (page >= 0 && page < pagerState.pageCount) pagerState.animateScrollToPage(page)
+    }
+
+    fun openFocus() = FocusActivity.open(activity)
+
+    fun openWallpaperStudio() {
+        activity.startActivity(android.content.Intent(activity, WallpaperStudioActivity::class.java))
+    }
 
     fun openSettings() {
         activity.startActivity(android.content.Intent(activity, SettingsActivity::class.java))
@@ -834,7 +852,7 @@ fun KineticHome(
                         openDrawer()
                     },
                     onAddWidget = { widgetPickerOpen = true },
-                    onWallpaper = onOpenWallpaperPicker,
+                    onWallpaper = { openWallpaperStudio() },
                     onAddPage = { scrollToPageSoon(deps.layout.addPage()) },
                     onDeletePage = {
                         val cur = pagerState.currentPage
@@ -880,6 +898,7 @@ fun KineticHome(
                 hasNotification = { hasNotification(it) },
                 onNotificationRings = { NotificationHub.openSettings(activity) },
                 onSettings = { openSettings() },
+                onFocus = { openFocus() },
                 onDynamicIsland = {
                     val on = DynamicIslandService.isEnabled(activity)
                     menu = MenuSpec(

@@ -58,6 +58,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.animation.core.VectorConverter
 import com.kinetic.launcher.KineticSettings
+import com.kinetic.launcher.ui.FocusGlyph
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -164,6 +165,10 @@ fun DynamicIsland(
     onHaptic: () -> Unit,
     /** False while the island is just resting, so swipes there still pull down the shade. */
     onTouchable: (Boolean) -> Unit = {},
+    /** Where on screen (px) the island can be touched right now, or null when it can't. */
+    onTouchArea: (android.graphics.Rect?) -> Unit = {},
+    /** How far the camera is from the middle of the screen. */
+    centerOffset: Dp = 0.dp,
     /** True while typing a reply (the window needs the keyboard then). */
     onFocusable: (Boolean) -> Unit = {},
 ) {
@@ -220,6 +225,9 @@ fun DynamicIsland(
         IslandMode.Idle -> restW to pillH
         is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
+            // Face ID: the island becomes a rounded square below the camera.
+            is IslandAlert.Scan -> 118.dp to (pillH + 100.dp)
+            is IslandAlert.Focus -> (CompactW + 24.dp) to pillH
             is IslandAlert.Lock -> (restW + 44.dp) to pillH
             else -> CompactW to pillH
         }
@@ -309,6 +317,26 @@ fun DynamicIsland(
 
     val touchable = mode != IslandMode.Idle || showBubble
     LaunchedEffect(touchable) { onTouchable(touchable) }
+    // The touch area follows the shape the island is heading to (not every animation frame).
+    LaunchedEffect(touchable, targetW, targetH, showBubble, top, pillH, centerOffset) {
+        if (!touchable) {
+            onTouchArea(null)
+        } else {
+            with(density) {
+                val cx = screenWidth.toPx() / 2f + centerOffset.toPx()
+                val half = targetW.toPx() / 2f
+                val extra = if (showBubble) (BubbleGap + pillH).toPx() else 0f
+                onTouchArea(
+                    android.graphics.Rect(
+                        (cx - half).toInt(),
+                        top.toPx().toInt(),
+                        (cx + half + extra).toInt(),
+                        (top + targetH).toPx().toInt() + 1,
+                    )
+                )
+            }
+        }
+    }
     LaunchedEffect(replying) { onFocusable(replying) }
 
     var pressed by remember { mutableStateOf(false) }
@@ -351,7 +379,7 @@ fun DynamicIsland(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             // ---- the bubble for a second activity --------------------------------------
             if (bubble > 0.01f && secondary != null) {
-                val offsetX = (w / 2 + BubbleGap + pillH / 2) * bubble
+                val offsetX = centerOffset + (w / 2 + BubbleGap + pillH / 2) * bubble
                 Box(
                     Modifier
                         .padding(top = top)
@@ -375,6 +403,7 @@ fun DynamicIsland(
             Box(
                 Modifier
                     .padding(top = top)
+                    .offset(x = centerOffset)
                     .size(w, h)
                     .graphicsLayer {
                         scaleX = squish
@@ -516,7 +545,7 @@ private fun IslandContent(
         shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek
     Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
-                        IslandMode.Idle -> Box(Modifier.fillMaxSize())
+                        IslandMode.Idle -> IdleContent()
                         is IslandMode.Alert -> AlertContent(shown.alert)
                         IslandMode.MediaCompact -> media?.let { MediaCompact(it) }
                         IslandMode.MediaMinimal -> media?.let { MediaMinimal(it) }
@@ -677,6 +706,89 @@ private fun AlertContent(alert: IslandAlert) {
             leading = { LockGlyph(open = alert.open, modifier = Modifier.size(s * 0.55f)) },
             trailing = {},
         )
+        is IslandAlert.Scan -> Box(
+            Modifier.fillMaxSize().padding(top = (s - 6.dp).coerceAtLeast(0.dp)),
+            contentAlignment = Alignment.Center,
+        ) { FaceScanGlyph(success = alert.success, modifier = Modifier.size(58.dp)) }
+        is IslandAlert.Focus -> CompactSplit(
+            leading = {
+                FocusGlyph(alert.glyph, Color(alert.color), Modifier.size(s * 0.55f))
+                Spacer(Modifier.width(6.dp))
+                Text(alert.name, color = Color(alert.color), fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            trailing = {
+                Text(if (alert.on) "On" else "Off", color = if (alert.on) Color.White else Grey, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
+            },
+        )
+    }
+}
+
+/** The resting pill. While a Focus is on, its little icon sits left of the camera. */
+@Composable
+private fun IdleContent() {
+    val focus by com.kinetic.launcher.FocusModes.active.collectAsState()
+    val s = LocalPill.current
+    Row(Modifier.fillMaxSize().padding(horizontal = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        val f = focus
+        if (f != null) FocusGlyph(f.glyph, Color(f.color), Modifier.size(s * 0.45f))
+    }
+}
+
+/**
+ * Face ID–style animation: a face in corner brackets that turns from side to side
+ * while scanning, then becomes a tick when you're recognised.
+ */
+@Composable
+private fun FaceScanGlyph(success: Boolean, modifier: Modifier) {
+    val t = rememberInfiniteTransition(label = "scan")
+    val turn by t.animateFloat(-22f, 22f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "turn")
+    val pulse by t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(520), RepeatMode.Reverse), label = "pulse")
+    val tick = remember { Animatable(0f) }
+    LaunchedEffect(success) {
+        if (success) tick.animateTo(1f, tween(380)) else tick.snapTo(0f)
+    }
+    Canvas(
+        modifier.graphicsLayer {
+            rotationY = if (success) 0f else turn
+            cameraDistance = 12f * density
+        }
+    ) {
+        val w = size.width
+        val h = size.height
+        val st = w * 0.055f
+        val k = tick.value
+        // Corner brackets, closing in a little on success.
+        val inset = w * 0.06f * k
+        val len = w * 0.22f
+        val c = Color.White.copy(alpha = if (success) 1f else pulse)
+        fun corner(x: Float, y: Float, dx: Float, dy: Float) {
+            drawLine(c, Offset(x, y), Offset(x + dx * len, y), strokeWidth = st, cap = StrokeCap.Round)
+            drawLine(c, Offset(x, y), Offset(x, y + dy * len), strokeWidth = st, cap = StrokeCap.Round)
+        }
+        corner(inset + st, inset + st, 1f, 1f)
+        corner(w - inset - st, inset + st, -1f, 1f)
+        corner(inset + st, h - inset - st, 1f, -1f)
+        corner(w - inset - st, h - inset - st, -1f, -1f)
+        // The face fades out as the tick draws in.
+        val faceA = 1f - k
+        if (faceA > 0.01f) {
+            val fc = Color.White.copy(alpha = faceA)
+            drawLine(fc, Offset(w * 0.36f, h * 0.36f), Offset(w * 0.36f, h * 0.44f), strokeWidth = st, cap = StrokeCap.Round)
+            drawLine(fc, Offset(w * 0.64f, h * 0.36f), Offset(w * 0.64f, h * 0.44f), strokeWidth = st, cap = StrokeCap.Round)
+            drawLine(fc, Offset(w * 0.5f, h * 0.38f), Offset(w * 0.5f, h * 0.55f), strokeWidth = st, cap = StrokeCap.Round)
+            drawLine(fc, Offset(w * 0.5f, h * 0.55f), Offset(w * 0.45f, h * 0.55f), strokeWidth = st, cap = StrokeCap.Round)
+            drawArc(fc, 20f, 140f, false, Offset(w * 0.33f, h * 0.48f), Size(w * 0.34f, h * 0.2f), style = Stroke(st, cap = StrokeCap.Round))
+        }
+        if (k > 0f) {
+            // Tick drawn from left to right.
+            val a = Offset(w * 0.3f, h * 0.52f)
+            val b = Offset(w * 0.45f, h * 0.66f)
+            val e = Offset(w * 0.72f, h * 0.36f)
+            val first = (k / 0.4f).coerceIn(0f, 1f)
+            val second = ((k - 0.4f) / 0.6f).coerceIn(0f, 1f)
+            drawLine(Color.White, a, a + (b - a) * first, strokeWidth = st * 1.2f, cap = StrokeCap.Round)
+            if (second > 0f) drawLine(Color.White, b, b + (e - b) * second, strokeWidth = st * 1.2f, cap = StrokeCap.Round)
+        }
     }
 }
 
