@@ -64,6 +64,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         KineticSettings.init(this)
+        FocusModes.init(this)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Accent)) {
                 SettingsScreen(resumeTick.intValue, onBack = ::finish)
@@ -123,6 +124,17 @@ class SettingsActivity : ComponentActivity() {
                     if (islandOn) "On" else "Off — turn on \"Kinetic Dynamic Island\" in Accessibility",
                     on = islandOn,
                 ) { DynamicIslandService.openSettings(this@SettingsActivity) }
+            }
+
+            // ---- focus & wallpaper ------------------------------------------------------------
+            Section("Personalise") {
+                val focus by FocusModes.active.collectAsState()
+                LinkRow("Focus", focus?.let { "${it.name} is on" } ?: "Sleep, School, Gaming… silence and calm things down", on = focus != null) {
+                    FocusActivity.open(this@SettingsActivity)
+                }
+                LinkRow("Wallpaper", "Styles, colours, speed, grain and detail", on = true) {
+                    startActivity(Intent(this@SettingsActivity, WallpaperStudioActivity::class.java))
+                }
             }
 
             // ---- island -------------------------------------------------------------------

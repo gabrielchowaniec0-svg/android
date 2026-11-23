@@ -7,6 +7,9 @@
     <!-- Smart search can show matching contacts. Asked for only when you first use it. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Focus modes can switch Do Not Disturb (you allow it once in Settings). -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
     <!-- Android 11+ package visibility: see every launchable app and every widget provider. -->
     <queries>
         <intent>
@@ -63,6 +66,37 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Wallpaper studio: styles, colours, speed… with a live preview. -->
+        <activity
+            android:name=".WallpaperStudioActivity"
+            android:exported="false"
+            android:label="Wallpaper"
+            android:theme="@style/Theme.Kinetic" />
+
+        <!-- Focus picker (also opened by long-pressing the Focus quick-settings tile). -->
+        <activity
+            android:name=".FocusActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Focus"
+            android:theme="@style/Theme.Kinetic.Sheet">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Focus" tile in the quick-settings panel. -->
+        <service
+            android:name=".FocusTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_focus"
+            android:label="Focus"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Kinetic settings (app list ▸ ⋮ ▸ Kinetic settings, or Settings in edit mode). -->
         <activity

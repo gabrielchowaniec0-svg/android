@@ -66,8 +66,15 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var model: IslandModel
     private var windowManager: WindowManager? = null
+    /**
+     * Two windows: a full-width one that only *draws* the island (it never moves
+     * sideways or changes width, so nothing can jerk), and a small invisible one on
+     * top that catches touches exactly where the island is and hands them over.
+     */
     private var view: ComposeView? = null
     private var params: WindowManager.LayoutParams? = null
+    private var touchView: View? = null
+    private var touchParams: WindowManager.LayoutParams? = null
 
     /** Camera hole: centre x and centre y in screen pixels. */
     private var holeX = 0f
@@ -83,6 +90,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     override fun onServiceConnected() {
         super.onServiceConnected()
         KineticSettings.init(this)
+        com.kinetic.launcher.FocusModes.init(this)
         model = IslandModel(this, scope)
         model.start()
         // When Notification access is switched on later, start showing music too.
@@ -110,13 +118,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         // The camera moves to the side in landscape; iOS hides the island there too.
         val landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
         view?.visibility = if (landscape) View.GONE else View.VISIBLE
-        if (!landscape) {
-            measureHole()
-            params?.let { p ->
-                p.x = (holeX - p.width / 2f).roundToInt()
-                runCatching { windowManager?.updateViewLayout(view, p) }
-            }
-        }
+        touchView?.visibility = if (landscape) View.GONE else View.VISIBLE
+        if (!landscape) measureHole()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -157,17 +160,21 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         val density = resources.displayMetrics.density
         val screenWidth = (wm.currentWindowMetrics.bounds.width() / density).dp
 
+        val screenWidthPx = wm.currentWindowMetrics.bounds.width()
+        // Drawing window: full width, never touchable (touches go to the touch window).
         val p = WindowManager.LayoutParams(
-            1, 1,
+            WindowManager.LayoutParams.MATCH_PARENT, 1,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             setFitInsetsTypes(0)
             title = "Kinetic Dynamic Island"
@@ -178,14 +185,6 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             setViewTreeLifecycleOwner(this@DynamicIslandService)
             setViewTreeSavedStateRegistryOwner(this@DynamicIslandService)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            // A tap anywhere outside the island folds it back up.
-            setOnTouchListener { _, e ->
-                if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-                    model.collapse()
-                    if (!model.replying.value) model.dismissPeek()
-                }
-                false
-            }
             setContent {
                 val settings by KineticSettings.values.collectAsState()
                 // The top edge sits [islandGapDp] below where a 35dp pill centred on the
@@ -200,9 +199,11 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     screenWidth = screenWidth,
                     top = top.dp,
                     pillH = pillH.dp,
-                    onWindowSize = { w, h -> resizeWindow(w, h) },
+                    // In case the camera isn't exactly in the middle of the screen.
+                    centerOffset = ((holeX - screenWidthPx / 2f) / density).dp,
+                    onWindowSize = { _, h -> resizeWindow(h) },
+                    onTouchArea = { r -> placeTouchArea(r) },
                     onHaptic = { performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) },
-                    onTouchable = { on -> setTouchable(on) },
                     onFocusable = { on -> setFocusable(on) },
                 )
             }
@@ -212,25 +213,71 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             wm.addView(v, p)
         } catch (_: Exception) {
             view = null
+            return
         }
+
+        // Touch window: an invisible box kept over the island. Its touches are passed
+        // to the drawing window in screen coordinates, so moving it never matters.
+        val tp = WindowManager.LayoutParams(
+            1, 1,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            setFitInsetsTypes(0)
+            title = "Kinetic Dynamic Island touch"
+        }
+        touchParams = tp
+        val t = View(this).apply {
+            setOnTouchListener { _, e ->
+                if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    // A tap anywhere outside the island folds it back up.
+                    model.collapse()
+                    if (!model.replying.value) model.dismissPeek()
+                } else {
+                    val ev = MotionEvent.obtain(e)
+                    ev.offsetLocation(e.rawX - e.x, e.rawY - e.y)
+                    v.dispatchTouchEvent(ev)
+                    ev.recycle()
+                }
+                true
+            }
+        }
+        touchView = t
+        runCatching { wm.addView(t, tp) }.onFailure { touchView = null }
     }
 
-    private fun resizeWindow(width: Dp, height: Dp) {
-        val p = params ?: return
-        val v = view ?: return
-        val density = resources.displayMetrics.density
-        p.width = (width.value * density).roundToInt()
-        p.height = (height.value * density).roundToInt()
-        p.x = (holeX - p.width / 2f).roundToInt()
-        p.y = 0
-        runCatching { windowManager?.updateViewLayout(v, p) }
+    /** Moves the touch window over the island ([r] in screen px), or switches it off (null). */
+    private fun placeTouchArea(r: android.graphics.Rect?) {
+        val tp = touchParams ?: return
+        val t = touchView ?: return
+        if (r == null || r.isEmpty) {
+            tp.flags = tp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            tp.width = 1
+            tp.height = 1
+        } else {
+            tp.flags = tp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            tp.x = r.left
+            tp.y = r.top
+            tp.width = r.width()
+            tp.height = r.height()
+        }
+        runCatching { windowManager?.updateViewLayout(t, tp) }
     }
 
-    private fun setTouchable(on: Boolean) {
+    /** Only the height changes (anchored at the top), so the island never shifts. */
+    private fun resizeWindow(height: Dp) {
         val p = params ?: return
         val v = view ?: return
-        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        else p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val h = (height.value * resources.displayMetrics.density).roundToInt()
+        if (h == p.height) return
+        p.height = h
         runCatching { windowManager?.updateViewLayout(v, p) }
     }
 
@@ -238,13 +285,16 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     private fun setFocusable(on: Boolean) {
         val p = params ?: return
         val v = view ?: return
-        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        // While typing, the drawing window takes touches and focus itself (the reply box).
+        p.flags = if (on) p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv() and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        else p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
         runCatching { windowManager?.updateViewLayout(v, p) }
     }
 
     private fun removeIsland() {
+        touchView?.let { t -> runCatching { windowManager?.removeView(t) } }
+        touchView = null
         val v = view ?: return
         runCatching { windowManager?.removeView(v) }
         view = null

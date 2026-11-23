@@ -149,6 +149,8 @@ fun AppDrawer(
     onDynamicIsland: () -> Unit = {},
     /** Opens Kinetic's Settings screen. */
     onSettings: () -> Unit = {},
+    /** Opens the Focus picker. */
+    onFocus: () -> Unit = {},
     /** Package of the installed Chowaniec app, if any (search opens its pages there). */
     chowaniecPackage: String? = null,
     /** Called after search opened something outside Kinetic (a contact, a setting…). */
@@ -220,6 +222,7 @@ fun AppDrawer(
                     onNotificationRings = onNotificationRings,
                     onDynamicIsland = onDynamicIsland,
                     onSettings = onSettings,
+                    onFocus = onFocus,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
@@ -267,6 +270,7 @@ private fun DrawerTopBar(
     onNotificationRings: () -> Unit,
     onDynamicIsland: () -> Unit,
     onSettings: () -> Unit,
+    onFocus: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -318,6 +322,13 @@ private fun DrawerTopBar(
                     onClick = {
                         menuOpen = false
                         onNotificationRings()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Focus…") },
+                    onClick = {
+                        menuOpen = false
+                        onFocus()
                     },
                 )
                 DropdownMenuItem(

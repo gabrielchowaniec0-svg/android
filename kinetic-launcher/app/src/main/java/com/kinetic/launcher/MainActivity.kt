@@ -113,6 +113,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         KineticSettings.init(this)
+        FocusModes.init(this)
 
         // 4 columns like One UI Home; the 7th row doubles as the dock.
         // Same geometry as One UI on the S25 Ultra: 14dp side margins, 4 equal columns, no gaps.
