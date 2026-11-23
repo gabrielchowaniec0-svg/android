@@ -50,7 +50,17 @@ object FocusModes {
         val schedule: Schedule = Schedule(),
         /** Turn on while the phone is connected to a car over Bluetooth. */
         val carTrigger: Boolean = false,
+        /** Turn on while one of these apps is open (e.g. games for Gaming). */
+        val triggerApps: Set<String> = emptySet(),
+        /** Turn on when you arrive here, off when you leave. */
+        val place: Place? = null,
     )
+
+    data class Place(val lat: Double, val lng: Double, val radiusM: Float = 200f, val label: String = "Here")
+
+    /** What switched the current Focus on by itself ("app", "place", "car", "schedule"), if anything. */
+    var autoSource: String? = null
+        private set
 
     private val defaults = listOf(
         Mode("dnd", "Do Not Disturb", Glyph.Moon, 0xFF7D6BFF.toInt(), silence = true, wallpaperDim = 0.25f),
@@ -82,6 +92,7 @@ object FocusModes {
         prefs = p
         _modes.value = p.getString(K_MODES, null)?.let(::parse) ?: defaults
         _active.value = p.getString(K_ACTIVE, null)?.let { id -> _modes.value.firstOrNull { it.id == id } }
+        autoSource = if (_active.value != null) p.getString("focus_auto", null) else null
         WallpaperSignals.focusDim = _active.value?.wallpaperDim ?: 0f
     }
 
@@ -103,7 +114,16 @@ object FocusModes {
         if (_active.value?.id == id) turnOff(context) else turnOn(context, id)
     }
 
+    /** Switched on by a trigger: remembers which, so leaving that trigger switches it off again. */
+    fun turnOnAuto(context: Context, id: String, source: String) {
+        turnOn(context, id)
+        autoSource = source
+        prefs?.edit()?.putString("focus_auto", source)?.apply()
+    }
+
     fun turnOn(context: Context, id: String) {
+        autoSource = null
+        prefs?.edit()?.remove("focus_auto")?.apply()
         init(context)
         val mode = _modes.value.firstOrNull { it.id == id } ?: return
         val p = prefs ?: return
@@ -141,6 +161,7 @@ object FocusModes {
         prefs?.edit()?.putString(K_MODES, serialize(list))?.apply()
         if (_active.value?.id == mode.id) turnOn(context, mode.id)
         FocusScheduler.scheduleNext(context)
+        FocusTriggers.registerPlaces(context)
     }
 
     /** Can Kinetic switch Do Not Disturb? (A one-time Android permission.) */
@@ -170,6 +191,15 @@ object FocusModes {
                     put("days", m.schedule.days)
                 })
                 put("car", m.carTrigger)
+                put("apps_on", JSONArray(m.triggerApps.toList()))
+                m.place?.let { pl ->
+                    put("place", JSONObject().apply {
+                        put("lat", pl.lat)
+                        put("lng", pl.lng)
+                        put("r", pl.radiusM.toDouble())
+                        put("label", pl.label)
+                    })
+                }
             })
         }
     }.toString()
@@ -193,6 +223,10 @@ object FocusModes {
                     Schedule(sj.optBoolean("on", false), sj.optInt("start", 22 * 60), sj.optInt("end", 7 * 60), sj.optInt("days", 0b1111111))
                 } ?: Schedule(),
                 carTrigger = o.optBoolean("car", false),
+                triggerApps = o.optJSONArray("apps_on")?.let { a -> (0 until a.length()).mapTo(HashSet()) { a.getString(it) } }.orEmpty(),
+                place = o.optJSONObject("place")?.let { pj ->
+                    Place(pj.getDouble("lat"), pj.getDouble("lng"), pj.optDouble("r", 200.0).toFloat(), pj.optString("label", "Here"))
+                },
             )
         }.ifEmpty { null }
     }.getOrNull()

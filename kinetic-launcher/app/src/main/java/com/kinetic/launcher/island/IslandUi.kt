@@ -129,7 +129,7 @@ private val LocalPill = compositionLocalOf { 35.dp }
 private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 
 /** Things that can live in the island, most important first. */
-private enum class Activity { Call, Nav, Timer, Media }
+private enum class Activity { Call, Nav, Trip, Timer, Score, Media }
 
 private sealed interface IslandMode {
     data object Idle : IslandMode
@@ -144,6 +144,10 @@ private sealed interface IslandMode {
     data object AlarmExpanded : IslandMode
     data object NavCompact : IslandMode
     data object NavExpanded : IslandMode
+    data object TripCompact : IslandMode
+    data object TripExpanded : IslandMode
+    data object ScoreCompact : IslandMode
+    data object ScoreExpanded : IslandMode
     data object Peek : IslandMode
 }
 
@@ -178,6 +182,9 @@ fun DynamicIsland(
     val call by model.call.collectAsState()
     val timer by model.timer.collectAsState()
     val nav by model.nav.collectAsState()
+    val trip by model.trip.collectAsState()
+    val score by model.score.collectAsState()
+    val privacy by model.privacy.collectAsState()
     val peek by model.peek.collectAsState()
     val replying by model.replying.collectAsState()
     val alert by model.alert.collectAsState()
@@ -192,7 +199,9 @@ fun DynamicIsland(
     val activities = buildList {
         if (c != null) add(Activity.Call)
         if (n != null) add(Activity.Nav)
+        if (trip != null) add(Activity.Trip)
         if (t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm) add(Activity.Timer)
+        if (score != null) add(Activity.Score)
         if (m != null && look != IslandModel.MediaLook.Hidden) add(Activity.Media)
     }
     val primary = activities.firstOrNull()
@@ -208,11 +217,15 @@ fun DynamicIsland(
             Activity.Call -> IslandMode.CallExpanded
             Activity.Nav -> IslandMode.NavExpanded
             Activity.Timer -> IslandMode.TimerExpanded
+            Activity.Trip -> IslandMode.TripExpanded
+            Activity.Score -> IslandMode.ScoreExpanded
             Activity.Media -> IslandMode.MediaExpanded
         }
         primary == Activity.Call -> IslandMode.CallCompact
         primary == Activity.Nav -> IslandMode.NavCompact
         primary == Activity.Timer -> IslandMode.TimerCompact
+        primary == Activity.Trip -> IslandMode.TripCompact
+        primary == Activity.Score -> IslandMode.ScoreCompact
         look == IslandModel.MediaLook.Minimal -> IslandMode.MediaMinimal
         else -> IslandMode.MediaCompact
     }
@@ -229,6 +242,7 @@ fun DynamicIsland(
             // (kept short so it clears the lock-screen clock).
             is IslandAlert.Scan -> 74.dp to (pillH + 46.dp)
             is IslandAlert.Focus -> (CompactW + 24.dp) to pillH
+            is IslandAlert.LowBattery -> (CompactW + 30.dp) to pillH
             is IslandAlert.Lock -> (restW + 44.dp) to pillH
             else -> CompactW to pillH
         }
@@ -240,6 +254,9 @@ fun DynamicIsland(
         IslandMode.TimerExpanded -> fullW to ExpandedTimerH + cameraRoom
         IslandMode.AlarmExpanded -> fullW to ExpandedAlarmH + cameraRoom
         IslandMode.NavExpanded -> fullW to ExpandedNavH + cameraRoom
+        IslandMode.TripCompact, IslandMode.ScoreCompact -> (CompactW + 40.dp) to pillH
+        IslandMode.TripExpanded -> fullW to 118.dp + cameraRoom
+        IslandMode.ScoreExpanded -> fullW to 104.dp + cameraRoom
         IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH) + cameraRoom
     }
     fun radiusFor(height: Dp) = if (height <= pillH) height / 2 else ExpandedRadius
@@ -252,6 +269,8 @@ fun DynamicIsland(
         IslandMode.CallCompact -> IslandMode.CallExpanded
         IslandMode.TimerCompact -> IslandMode.TimerExpanded
         IslandMode.NavCompact -> IslandMode.NavExpanded
+        IslandMode.TripCompact -> IslandMode.TripExpanded
+        IslandMode.ScoreCompact -> IslandMode.ScoreExpanded
         else -> null
     }
     val collapsesTo: IslandMode? = when (mode) {
@@ -259,6 +278,8 @@ fun DynamicIsland(
         IslandMode.CallExpanded -> if (c?.incoming == false) IslandMode.CallCompact else null
         IslandMode.TimerExpanded -> IslandMode.TimerCompact
         IslandMode.NavExpanded -> IslandMode.NavCompact
+        IslandMode.TripExpanded -> IslandMode.TripCompact
+        IslandMode.ScoreExpanded -> IslandMode.ScoreCompact
         else -> null
     }
 
@@ -344,8 +365,9 @@ fun DynamicIsland(
     val squish by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "squish")
 
     val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
-        mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact
+        mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact || mode == IslandMode.TripCompact || mode == IslandMode.ScoreCompact
     val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
+        mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded ||
         (mode == IslandMode.CallExpanded && c?.incoming == false)
     val haptic = { if (settings.haptics) onHaptic() }
 
@@ -368,6 +390,8 @@ fun DynamicIsland(
             Activity.Call -> model.openCall()
             Activity.Nav -> model.openNav()
             Activity.Timer -> model.openTimer()
+            Activity.Trip -> model.openTrip()
+            Activity.Score -> model.openScore()
             Activity.Media -> {
                 model.openMediaApp()
                 model.collapse()
@@ -396,8 +420,26 @@ fun DynamicIsland(
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { open(secondary) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    BubbleContent(secondary, m, t, n)
+                    BubbleContent(secondary, m, t, n, model)
                 }
+            }
+
+            // ---- privacy dot (mic orange, camera green, screen recording red), like iOS --
+            if (privacy != IslandModel.Privacy.None && h <= pillH + 1.dp) {
+                val dotColor = when (privacy) {
+                    IslandModel.Privacy.ScreenRecord -> Red
+                    IslandModel.Privacy.Camera -> Green
+                    else -> Orange
+                }
+                val beyond = if (bubble > 0.01f) (BubbleGap + pillH) * bubble else 0.dp
+                Box(
+                    Modifier
+                        .padding(top = top + pillH / 2 - 3.dp)
+                        .offset(x = centerOffset + w / 2 + beyond + 9.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
             }
 
             // ---- the island ----------------------------------------------------------
@@ -485,6 +527,9 @@ fun DynamicIsland(
                                     IslandMode.CallCompact, IslandMode.CallExpanded -> open(Activity.Call)
                                     IslandMode.TimerCompact, IslandMode.TimerExpanded -> open(Activity.Timer)
                                     IslandMode.NavCompact, IslandMode.NavExpanded -> open(Activity.Nav)
+                                    IslandMode.TripCompact, IslandMode.TripExpanded -> open(Activity.Trip)
+                                    IslandMode.ScoreCompact, IslandMode.ScoreExpanded -> open(Activity.Score)
+                                    is IslandMode.Alert -> if (mode.alert is IslandAlert.LowBattery) model.openBatterySaver()
                                     else -> Unit
                                 }
                             },
@@ -543,7 +588,8 @@ private fun IslandContent(
     cameraRoom: Dp,
 ) {
     val big = shown is IslandMode.MediaExpanded || shown is IslandMode.CallExpanded || shown is IslandMode.TimerExpanded ||
-        shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek
+        shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek ||
+        shown is IslandMode.TripExpanded || shown is IslandMode.ScoreExpanded
     Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
                         IslandMode.Idle -> IdleContent()
@@ -558,6 +604,10 @@ private fun IslandContent(
                         IslandMode.AlarmExpanded -> t?.let { AlarmExpanded(it, model) }
                         IslandMode.NavCompact -> n?.let { NavCompact(it) }
                         IslandMode.NavExpanded -> n?.let { NavExpanded(it) }
+                        IslandMode.TripCompact -> model.trip.value?.let { TripCompact(it) }
+                        IslandMode.TripExpanded -> model.trip.value?.let { TripExpanded(it) }
+                        IslandMode.ScoreCompact -> model.score.value?.let { ScoreCompact(it) }
+                        IslandMode.ScoreExpanded -> model.score.value?.let { ScoreExpanded(it) }
                         IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
                     }
     }
@@ -565,7 +615,7 @@ private fun IslandContent(
 
 /** What the little side bubble shows for the second activity. */
 @Composable
-private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.TimerInfo?, n: NotificationHub.NavInfo?) {
+private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.TimerInfo?, n: NotificationHub.NavInfo?, model: IslandModel) {
     val s = LocalPill.current
     when (which) {
         Activity.Media -> {
@@ -576,6 +626,11 @@ private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.Tim
         Activity.Timer -> TimerGlyph(Orange, Modifier.size(s * 0.55f))
         Activity.Nav -> NavArrow(n, Modifier.size(s * 0.6f))
         Activity.Call -> PhoneGlyph(Green, Modifier.size(s * 0.5f))
+        Activity.Trip -> model.trip.value?.icon?.let { bmp ->
+            val img = remember(bmp) { bmp.asImageBitmap() }
+            Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(s - 8.dp).clip(CircleShape))
+        }
+        Activity.Score -> Text(model.score.value?.let { "${it.scoreA}-${it.scoreB}" }.orEmpty(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -711,6 +766,14 @@ private fun AlertContent(alert: IslandAlert) {
             Modifier.fillMaxSize().padding(top = (s - 4.dp).coerceAtLeast(0.dp), bottom = 4.dp),
             contentAlignment = Alignment.Center,
         ) { FaceScanGlyph(success = alert.success, modifier = Modifier.size(32.dp)) }
+        is IslandAlert.LowBattery -> CompactSplit(
+            leading = { Text("Low Battery", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1) },
+            trailing = {
+                Text("${alert.level}%", color = Red, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(6.dp))
+                BatteryGlyph(alert.level / 100f, Red, Modifier.size(s * 0.78f, s * 0.38f))
+            },
+        )
         is IslandAlert.Focus -> CompactSplit(
             leading = {
                 FocusGlyph(alert.glyph, Color(alert.color), Modifier.size(s * 0.55f))
@@ -789,6 +852,116 @@ private fun FaceScanGlyph(success: Boolean, modifier: Modifier) {
             val second = ((k - 0.4f) / 0.6f).coerceIn(0f, 1f)
             drawLine(Color.White, a, a + (b - a) * first, strokeWidth = st * 1.2f, cap = StrokeCap.Round)
             if (second > 0f) drawLine(Color.White, b, b + (e - b) * second, strokeWidth = st * 1.2f, cap = StrokeCap.Round)
+        }
+    }
+}
+
+// ---- deliveries, rides & scores --------------------------------------------------------
+
+@Composable
+private fun TripIcon(t: NotificationHub.TripInfo, size: Dp) {
+    val img = remember(t.icon) { t.icon?.asImageBitmap() }
+    if (img != null) Image(img, null, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    else Box(Modifier.size(size).clip(CircleShape).background(Green))
+}
+
+@Composable
+private fun TripCompact(t: NotificationHub.TripInfo) {
+    val s = LocalPill.current
+    CompactSplit(
+        leading = { TripIcon(t, s - 9.dp) },
+        trailing = {
+            Text(
+                t.eta ?: if (t.isRide) "On the way" else "On its way",
+                color = Green,
+                fontSize = compactSp(),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        padding = 6.dp,
+    )
+}
+
+@Composable
+private fun TripExpanded(t: NotificationHub.TripInfo) {
+    Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TripIcon(t, 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.text, color = Grey, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            t.eta?.let {
+                Spacer(Modifier.width(8.dp))
+                Text(it, color = Green, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        // Progress like Apple's delivery Live Activities: a track with a moving dot.
+        val prog = t.progress
+        if (prog != null) {
+            Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+                val y = size.height / 2
+                val bar = 5.dp.toPx()
+                drawRoundRect(Color.White.copy(alpha = 0.18f), Offset(0f, y - bar / 2), Size(size.width, bar), CornerRadius(bar / 2))
+                drawRoundRect(Green, Offset(0f, y - bar / 2), Size(size.width * prog, bar), CornerRadius(bar / 2))
+                drawCircle(Color.White, 6.dp.toPx(), Offset(size.width * prog, y))
+            }
+        }
+    }
+}
+
+/** Short team names for the compact view ("Chicago Bears" → "CHI"). */
+private fun abbreviate(team: String): String {
+    val words = team.trim().split(' ').filter { it.isNotBlank() }
+    return when {
+        words.isEmpty() -> "?"
+        words.size == 1 -> words[0].take(3).uppercase()
+        else -> words[0].take(3).uppercase()
+    }
+}
+
+@Composable
+private fun ScoreCompact(sc: NotificationHub.ScoreInfo) {
+    CompactSplit(
+        leading = {
+            Text(abbreviate(sc.teamA), color = Grey, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(5.dp))
+            Text(sc.scoreA, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.Bold, style = Tabular)
+        },
+        trailing = {
+            Text(sc.scoreB, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.Bold, style = Tabular)
+            Spacer(Modifier.width(5.dp))
+            Text(abbreviate(sc.teamB), color = Grey, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
+        },
+    )
+}
+
+@Composable
+private fun ScoreExpanded(sc: NotificationHub.ScoreInfo) {
+    Column(
+        Modifier.fillMaxSize().padding(start = 22.dp, end = 22.dp, top = 8.dp, bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(sc.teamA, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("${sc.scoreA}  –  ${sc.scoreB}", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, style = Tabular)
+            Text(
+                sc.teamB,
+                color = Color.White,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (sc.status.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(sc.status, color = Red, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

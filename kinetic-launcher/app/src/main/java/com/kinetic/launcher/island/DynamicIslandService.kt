@@ -89,6 +89,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
+        shake = ShakeDetector(this).also { it.start() }
         KineticSettings.init(this)
         com.kinetic.launcher.FocusModes.init(this)
         model = IslandModel(this, scope)
@@ -109,6 +111,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || !::model.isInitialized) return
         val pkg = event.packageName?.toString() ?: return
         model.setForeground(pkg)
+        // Focus app triggers (e.g. Gaming while a game is open).
+        com.kinetic.launcher.FocusTriggers.onForegroundApp(this, pkg)
     }
 
     override fun onInterrupt() = Unit
@@ -128,6 +132,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
+        shake?.stop()
         removeIsland()
         if (::model.isInitialized) model.stop()
         scope.cancel()
@@ -300,7 +306,14 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         view = null
     }
 
+    private var shake: ShakeDetector? = null
+
     companion object {
+        @Volatile
+        private var instance: DynamicIslandService? = null
+
+        /** Locks the phone (double-tap on the wallpaper). False if the island service is off. */
+        fun lockScreen(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) ?: false
 
         /** True once the user has switched the island on in Accessibility settings. */
         fun isEnabled(context: Context): Boolean {

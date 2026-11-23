@@ -141,6 +141,8 @@ fun AppDrawer(
     onSortAlphabetical: () -> Unit,
     onUseMyLayout: () -> Unit,
     onDrag: (Float) -> Unit,
+    /** Bumped to open the drawer straight into search (three-finger tap). */
+    searchSignal: Int = 0,
     /** True when the app has notifications (draws the spinning ring). */
     hasNotification: (AppEntry) -> Boolean = { false },
     /** Opens Android's Notification access page for Kinetic. */
@@ -160,6 +162,7 @@ fun AppDrawer(
     modifier: Modifier = Modifier,
 ) {
     var searching by remember { mutableStateOf(false) }
+    LaunchedEffect(searchSignal) { if (searchSignal > 0) searching = true }
     var query by remember { mutableStateOf("") }
     val currentOnDrag by rememberUpdatedState(onDrag)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
@@ -490,6 +493,13 @@ private fun rankApps(apps: List<AppEntry>, query: String, labelFor: (AppEntry) -
         }
         score to e
     }.sortedWith(compareBy({ it.first }, { labelFor(it.second).lowercase() })).map { it.second }
+        .ifEmpty {
+            // Nothing matched as typed: forgive typos ("spotfy", "whatsap", "ytm").
+            apps.mapNotNull { e -> Fuzzy.score(q, labelFor(e)).takeIf { it > 0 }?.let { it to e } }
+                .sortedByDescending { it.first }
+                .map { it.second }
+                .take(8)
+        }
 }
 
 /**

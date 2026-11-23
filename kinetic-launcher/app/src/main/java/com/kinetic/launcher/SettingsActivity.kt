@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +36,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +79,22 @@ class SettingsActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         resumeTick.intValue++
+    }
+
+    /** Pick which app a shake opens. */
+    private fun pickShakeApp() {
+        val la = getSystemService(android.content.pm.LauncherApps::class.java)
+        val apps = la.getActivityList(null, android.os.Process.myUserHandle())
+            .map { it.applicationInfo.packageName to it.label.toString() }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Shake opens…")
+            .setItems(apps.map { it.second }.toTypedArray()) { _, i ->
+                KineticSettings.setString(this, KineticSettings.SHAKE_APP, apps[i].first)
+                KineticSettings.setString(this, KineticSettings.SHAKE_ACTION, "app")
+            }
+            .show()
     }
 
     @Composable
@@ -132,6 +152,9 @@ class SettingsActivity : ComponentActivity() {
                 ) { DynamicIslandService.openSettings(this@SettingsActivity) }
             }
 
+            // ---- updates ------------------------------------------------------------------------
+            Section("Updates") { UpdatesSection() }
+
             // ---- focus & wallpaper ------------------------------------------------------------
             Section("Personalise") {
                 val focus by FocusModes.active.collectAsState()
@@ -185,6 +208,39 @@ class SettingsActivity : ComponentActivity() {
                 )
             }
 
+            // ---- looks & gestures ----------------------------------------------------------
+            Section("Icons & pages") {
+                ChoiceRow(
+                    "Icon style",
+                    listOf("default" to "Normal", "tinted" to "Tinted", "glass" to "Glass", "mono" to "Mono"),
+                    s.iconStyle,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.ICON_STYLE, it) }
+                ChoiceRow(
+                    "Page transition",
+                    listOf("depth" to "Depth", "flat" to "Flat", "cube" to "Cube", "carousel" to "Carousel", "fade" to "Fade"),
+                    s.pageTransition,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.PAGE_TRANSITION, it) }
+            }
+            Section("Gestures") {
+                SwitchRow("Double-tap to lock", "Double-tap empty wallpaper to turn the screen off (needs the Dynamic Island switch)", s.doubleTapLock, bool(KineticSettings.DOUBLE_TAP_LOCK))
+                SwitchRow("Multi-finger shortcuts", "Two fingers down: Focus · three-finger tap: search & Commands", s.multiFinger, bool(KineticSettings.MULTI_FINGER))
+                ChoiceRow(
+                    "Shake to…",
+                    listOf("off" to "Off", "flashlight" to "Flashlight", "camera" to "Camera", "search" to "Search", "focus" to "Focus", "app" to "An app…"),
+                    s.shakeAction,
+                ) { choice ->
+                    if (choice == "app") pickShakeApp() else KineticSettings.setString(this@SettingsActivity, KineticSettings.SHAKE_ACTION, choice)
+                }
+                if (s.shakeAction == "app" && s.shakeApp.isNotBlank()) {
+                    Text(
+                        "Opens " + runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(s.shakeApp, 0)) }.getOrDefault(s.shakeApp),
+                        color = Subtle,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(start = 16.dp, bottom = 10.dp),
+                    )
+                }
+            }
+
             // ---- wallpaper ----------------------------------------------------------------
             Section("Wallpaper reactions") {
                 SwitchRow("Music glow", "Ribbons pick up the album's colours while music plays", s.wpMusicGlow, bool(WallpaperSignals.KEY_MUSIC_GLOW))
@@ -200,6 +256,70 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
+/** Version, "Check now", and a one-tap install when GitHub has a newer build. */
+@Composable
+private fun SettingsActivity.UpdatesSection() {
+    val state by Updater.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { Updater.check(this@UpdatesSection, force = false, minIntervalMs = 10 * 60_000L) }
+    val installed = remember { Updater.installedCode(this) }
+    val (subtitle, action) = when (val st = state) {
+        Updater.State.Idle, Updater.State.UpToDate -> "Build $installed · up to date" to "Check now"
+        Updater.State.Checking -> "Checking GitHub…" to null
+        is Updater.State.Available -> "Build ${st.release.code} is ready (you have $installed)" to "Update"
+        is Updater.State.Downloading -> "Downloading… ${(st.progress * 100).toInt()}%" to null
+        is Updater.State.Installing -> "Installing — confirm Android's prompt" to null
+        is Updater.State.Failed -> st.message to "Try again"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Kinetic updates", color = Color.White, fontSize = 16.sp)
+            Text(subtitle, color = Subtle, fontSize = 13.sp)
+        }
+        if (action != null) {
+            Text(
+                action,
+                color = Color.Black,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (state is Updater.State.Available) Good else Accent)
+                    .clickable {
+                        scope.launch {
+                            val st = state
+                            if (st is Updater.State.Available) Updater.downloadAndInstall(this@UpdatesSection, st.release)
+                            else Updater.check(this@UpdatesSection, force = true)
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+    }
+    val st = state
+    if (st is Updater.State.Available && st.release.notes.isNotBlank()) {
+        Text(
+            st.release.notes.take(400),
+            color = Subtle,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
+    }
+    if (!Updater.canInstall(this)) {
+        Text(
+            "First time: allow Kinetic to install updates ›",
+            color = Accent,
+            fontSize = 13.sp,
+            modifier = Modifier.clickable { Updater.openInstallPermission(this) }.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+}
+
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Text(title, color = Accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp))
@@ -210,6 +330,33 @@ private fun Section(title: String, content: @Composable () -> Unit) {
             .background(Card)
             .padding(vertical = 4.dp),
     ) { content() }
+}
+
+/** A row of pill choices. */
+@Composable
+private fun ChoiceRow(title: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text(title, color = Color.White, fontSize = 16.sp)
+        Row(
+            Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { (id, label) ->
+                val on = id == selected
+                Text(
+                    label,
+                    color = if (on) Color.Black else Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (on) Accent else Color(0xFF232A3D))
+                        .clickable { onSelect(id) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable

@@ -29,6 +29,16 @@ object KineticSettings {
         val notificationRings: Boolean = true,
         val iconSizeDp: Int = 60,
         val haptics: Boolean = true,
+        /** "default", "tinted", "glass" or "mono". */
+        val iconStyle: String = "default",
+        /** "depth" (default), "flat", "cube", "carousel" or "fade". */
+        val pageTransition: String = "depth",
+        // Gestures
+        val doubleTapLock: Boolean = true,
+        val multiFinger: Boolean = true,
+        /** "off", "flashlight", "camera", "search", "focus" or "app". */
+        val shakeAction: String = "off",
+        val shakeApp: String = "",
         // Wallpaper reactions (keys shared with the wallpaper)
         val wpMusicGlow: Boolean = true,
         val wpUnlockRipple: Boolean = true,
@@ -50,6 +60,12 @@ object KineticSettings {
     const val RINGS = "notification_rings"
     const val ICON_SIZE = "icon_size_dp"
     const val HAPTICS = "haptics"
+    const val ICON_STYLE = "icon_style"
+    const val PAGE_TRANSITION = "page_transition"
+    const val DOUBLE_TAP_LOCK = "double_tap_lock"
+    const val MULTI_FINGER = "multi_finger"
+    const val SHAKE_ACTION = "shake_action"
+    const val SHAKE_APP = "shake_app"
 
     private val _values = MutableStateFlow(Values())
     val values: StateFlow<Values> = _values.asStateFlow()
@@ -74,6 +90,11 @@ object KineticSettings {
         prefs?.edit()?.putBoolean(key, value)?.apply()
     }
 
+    fun setString(context: Context, key: String, value: String) {
+        init(context)
+        prefs?.edit()?.putString(key, value)?.apply()
+    }
+
     fun setInt(context: Context, key: String, value: Int) {
         init(context)
         prefs?.edit()?.putInt(key, value)?.apply()
@@ -91,6 +112,12 @@ object KineticSettings {
         notificationRings = p.getBoolean(RINGS, true),
         iconSizeDp = p.getInt(ICON_SIZE, 60),
         haptics = p.getBoolean(HAPTICS, true),
+        iconStyle = p.getString(ICON_STYLE, "default") ?: "default",
+        pageTransition = p.getString(PAGE_TRANSITION, "depth") ?: "depth",
+        doubleTapLock = p.getBoolean(DOUBLE_TAP_LOCK, true),
+        multiFinger = p.getBoolean(MULTI_FINGER, true),
+        shakeAction = p.getString(SHAKE_ACTION, "off") ?: "off",
+        shakeApp = p.getString(SHAKE_APP, "") ?: "",
         wpMusicGlow = p.getBoolean(WallpaperSignals.KEY_MUSIC_GLOW, true),
         wpUnlockRipple = p.getBoolean(WallpaperSignals.KEY_UNLOCK_RIPPLE, true),
         wpAppRipples = p.getBoolean(WallpaperSignals.KEY_APP_RIPPLES, true),

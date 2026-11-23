@@ -88,6 +88,55 @@ object NotificationHub {
         val postedAt: Long,
     )
 
+    /** A delivery or ride on its way (Uber, DoorDash, Lyft…), from their live notification. */
+    data class TripInfo(
+        val key: String,
+        val packageName: String,
+        val isRide: Boolean,
+        val title: String,
+        val text: String,
+        /** 0..1 when the app shows a progress bar. */
+        val progress: Float?,
+        /** "6 min" if the notification mentions minutes. */
+        val eta: String?,
+        val icon: Bitmap?,
+        val contentIntent: PendingIntent?,
+    )
+
+    /** A live game score from a sports app's notification. */
+    data class ScoreInfo(
+        val key: String,
+        val packageName: String,
+        val teamA: String,
+        val scoreA: String,
+        val teamB: String,
+        val scoreB: String,
+        val status: String,
+        val contentIntent: PendingIntent?,
+    )
+
+    private val _trip = MutableStateFlow<TripInfo?>(null)
+    val trip: StateFlow<TripInfo?> = _trip.asStateFlow()
+
+    private val _score = MutableStateFlow<ScoreInfo?>(null)
+    val score: StateFlow<ScoreInfo?> = _score.asStateFlow()
+
+    private val _recording = MutableStateFlow(false)
+    /** The screen is being recorded (Samsung's screen recorder or similar). */
+    val recording: StateFlow<Boolean> = _recording.asStateFlow()
+
+    internal fun setTrip(t: TripInfo?) {
+        _trip.value = t
+    }
+
+    internal fun setScore(s: ScoreInfo?) {
+        _score.value = s
+    }
+
+    internal fun setRecording(on: Boolean) {
+        _recording.value = on
+    }
+
     private val _timer = MutableStateFlow<TimerInfo?>(null)
     val timer: StateFlow<TimerInfo?> = _timer.asStateFlow()
 
@@ -188,6 +237,9 @@ class KineticNotificationListener : NotificationListenerService() {
         NotificationHub.setCall(active.firstOrNull { it.notification.category == Notification.CATEGORY_CALL }?.let(::callInfo))
         NotificationHub.setTimer(if (settings.islandTimers) active.firstNotNullOfOrNull(::timerInfo) else null)
         NotificationHub.setNav(if (settings.islandNavigation) active.firstNotNullOfOrNull(::navInfo) else null)
+        NotificationHub.setTrip(active.firstNotNullOfOrNull(::tripInfo))
+        NotificationHub.setScore(active.sortedByDescending { it.postTime }.firstNotNullOfOrNull(::scoreInfo))
+        NotificationHub.setRecording(active.any(::isScreenRecording))
         NotificationHub.setPlayingPackage(
             active.firstOrNull { it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) }?.packageName
         )
@@ -237,6 +289,80 @@ class KineticNotificationListener : NotificationListenerService() {
             contentIntent = n.contentIntent,
             actions = actions,
         )
+    }
+
+    // ---- deliveries & rides ---------------------------------------------------------------
+
+    private fun tripInfo(sbn: StatusBarNotification): NotificationHub.TripInfo? {
+        val pkg = sbn.packageName
+        val ride = pkg in RIDE_PACKAGES
+        if (!ride && pkg !in DELIVERY_PACKAGES) return null
+        val n = sbn.notification
+        val extras = n.extras
+        val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val prog = extras.getInt(Notification.EXTRA_PROGRESS, 0)
+        // Their live trackers are ongoing (or show a progress bar); promos aren't.
+        if (!sbn.isOngoing && max <= 0) return null
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = (extras.getCharSequence(Notification.EXTRA_TEXT) ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT))?.toString().orEmpty()
+        if (title.isBlank() && text.isBlank()) return null
+        val eta = MINUTES.find("$title $text")?.let { "${it.groupValues[1]} min" }
+        val icon = runCatching {
+            (n.getLargeIcon()?.loadDrawable(this) ?: packageManager.getApplicationIcon(pkg)).toBitmap(96, 96)
+        }.getOrNull()
+        return NotificationHub.TripInfo(
+            key = sbn.key,
+            packageName = pkg,
+            isRide = ride,
+            title = title.ifBlank { appName(pkg) },
+            text = text,
+            progress = if (max > 0) (prog.toFloat() / max).coerceIn(0f, 1f) else null,
+            eta = eta,
+            icon = icon,
+            contentIntent = n.contentIntent,
+        )
+    }
+
+    // ---- live scores --------------------------------------------------------------------
+
+    private fun scoreInfo(sbn: StatusBarNotification): NotificationHub.ScoreInfo? {
+        if (sbn.packageName !in SPORTS_PACKAGES) return null
+        if (System.currentTimeMillis() - sbn.postTime > 4 * 3600_000L) return null
+        val extras = sbn.notification.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val sub = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
+        for (line in listOf(title, text)) {
+            val dash = SCORE_DASH.find(line)
+            val comma = if (dash == null) SCORE_COMMA.find(line) else null
+            val g = (dash ?: comma ?: continue).groupValues
+            // "A 21 - 17 B" → scores are groups 2 and 3; "A 21, B 17" → groups 2 and 4.
+            val (teamA, scoreA, teamB, scoreB) = if (dash != null) listOf(g[1], g[2], g[4], g[3]) else listOf(g[1], g[2], g[3], g[4])
+            val status = listOf(if (line == title) text else title, sub).firstOrNull { it.isNotBlank() }.orEmpty()
+            return NotificationHub.ScoreInfo(
+                key = sbn.key,
+                packageName = sbn.packageName,
+                teamA = teamA.trim(),
+                scoreA = scoreA,
+                teamB = teamB.trim(),
+                scoreB = scoreB,
+                status = status.take(40),
+                contentIntent = sbn.notification.contentIntent,
+            )
+        }
+        return null
+    }
+
+    // ---- screen recording ---------------------------------------------------------------
+
+    private fun isScreenRecording(sbn: StatusBarNotification): Boolean {
+        if (!sbn.isOngoing) return false
+        val pkg = sbn.packageName
+        if (!(pkg.contains("smartcapture") || pkg.contains("screenrecord") || pkg == "com.android.systemui")) return false
+        val extras = sbn.notification.extras
+        val all = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty() + " " +
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()).lowercase()
+        return "record" in all
     }
 
     // ---- navigation ---------------------------------------------------------------------
@@ -327,6 +453,23 @@ class KineticNotificationListener : NotificationListenerService() {
     private companion object {
         val CLOCK_PACKAGES = setOf("com.sec.android.app.clockpackage", "com.google.android.deskclock", "com.android.deskclock")
         val NAV_PACKAGES = setOf("com.google.android.apps.maps", "com.waze", "com.google.android.apps.mapslite")
+        val RIDE_PACKAGES = setOf("com.ubercab", "me.lyft.android")
+        val DELIVERY_PACKAGES = setOf(
+            "com.ubercab.eats", "com.dd.doordash", "com.grubhub.android", "com.instacart.client",
+            "com.postmates.android", "com.amazon.mShop.android.shopping", "com.gopuff.consumer", "com.mcdonalds.app",
+            "com.chipotle.ordering", "com.starbucks.mobilecard", "com.dominospizza",
+        )
+        val SPORTS_PACKAGES = setOf(
+            "com.espn.score_center", "com.fivemobile.thescore", "com.yahoo.mobile.client.android.sportacular",
+            "com.gotv.nflgamecenter.us.lite", "com.nbaimd.gametime.nba2011", "com.bamnetworks.mobile.android.gameday.atbat",
+            "com.mobilefootie.wc2010", "de.motain.iliga", "com.google.android.googlequicksearchbox", "com.cbssports.sportscaster",
+            "com.foxsports.android", "com.nhl.gc1112.free",
+        )
+        val MINUTES = Regex("""(\d{1,3})\s*(?:min|mins|minutes)\b""", RegexOption.IGNORE_CASE)
+        // "Bears 21 - 17 Packers"
+        val SCORE_DASH = Regex("""([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3})\s*[-–]\s*(\d{1,3})\s+([A-Za-z][A-Za-z .'&]{1,24})""")
+        // "Bears 21, Packers 17"
+        val SCORE_COMMA = Regex("""([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3}),\s*([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3})""")
         val TIME_TEXT = Regex("""\b\d{1,2}:\d{2}(:\d{2})?\b""")
         val DISTANCE = Regex("""\d+(\.\d+)?\s?(ft|mi|m|km|yd)\b""", RegexOption.IGNORE_CASE)
     }

@@ -65,8 +65,14 @@ object KineticCommands {
     private val YOUTUBE = Regex("""^(?:youtube|yt|watch)\s+(.+)$|^(.+?)\s+on youtube$""", RegexOption.IGNORE_CASE)
     private val TORCH = Regex("""^(?:turn\s+)?(?:the\s+)?(?:flashlight|torch|flash)\s*(on|off)?$|^(?:turn\s+)?(on|off)\s+(?:the\s+)?(?:flashlight|torch)$""", RegexOption.IGNORE_CASE)
 
+    private val VERBS = listOf(
+        "call", "ring", "phone", "dial", "text", "message", "tell", "email", "route", "directions", "navigate",
+        "drive", "timer", "alarm", "play", "youtube", "watch", "flashlight", "torch",
+    )
+
     fun parse(input: String): Parsed? {
-        val q = input.trim()
+        // Forgive a typo in the first word ("rout to ohare", "cal mom", "tiemr 5 min").
+        val q = Fuzzy.fixFirstWord(input, VERBS)
         if (q.length < 3) return null
         CALL.matchEntire(q)?.let { return Parsed.Call(it.groupValues[1].trim()) }
         TEXT_MARKED.matchEntire(q)?.let { return Parsed.Text(it.groupValues[1].trim(), it.groupValues[2].trim()) }
@@ -242,9 +248,38 @@ object KineticCommands {
     private fun hasContacts(context: Context) =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
-    /** (name, number, label like "Mobile") of the best matching contact. */
+    /** (name, number, label like "Mobile") of the best matching contact — typos forgiven. */
     private fun findPhone(context: Context, who: String): Triple<String, String, String?>? {
         if (!hasContacts(context)) return null
+        findPhoneExact(context, who)?.let { return it }
+        // No direct match ("call mon"): find the closest name and try that.
+        val closest = closestContactName(context, who) ?: return null
+        return findPhoneExact(context, closest)
+    }
+
+    private fun closestContactName(context: Context, who: String): String? = try {
+        context.contentResolver.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            arrayOf(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY),
+            ContactsContract.Contacts.HAS_PHONE_NUMBER + "=1", null, null,
+        )?.use { c ->
+            var best: String? = null
+            var bestD = Int.MAX_VALUE
+            while (c.moveToNext()) {
+                val name = c.getString(0) ?: continue
+                val d = (name.split(' ') + name).minOf { Fuzzy.distance(who, it, 2) }
+                if (d < bestD) {
+                    bestD = d
+                    best = name
+                }
+            }
+            best?.takeIf { bestD <= maxOf(1, Fuzzy.allowance(who)) }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun findPhoneExact(context: Context, who: String): Triple<String, String, String?>? {
         val uri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(who))
         return try {
             context.contentResolver.query(

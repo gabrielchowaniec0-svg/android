@@ -73,6 +73,8 @@ class MainActivity : FragmentActivity() {
     private val widgetQueue = ArrayDeque<Pair<AppWidgetProviderInfo, MyPhoneLayout.WidgetSlot>>()
 
     private val prefs by lazy { getSharedPreferences("kinetic_activity", MODE_PRIVATE) }
+    /** Bumped when something asks Kinetic to open search (e.g. a shake). */
+    private val openSearchSignal = androidx.compose.runtime.mutableIntStateOf(0)
     private val myLayoutPending = mutableStateOf(false)
 
     private val bindWidget = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -113,8 +115,10 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         KineticSettings.init(this)
+        KineticApp.init(this)
         FocusModes.init(this)
         FocusScheduler.scheduleNext(this)
+        FocusTriggers.registerPlaces(this)
 
         // 4 columns like One UI Home; the 7th row doubles as the dock.
         // Same geometry as One UI on the S25 Ultra: 14dp side margins, 4 equal columns, no gaps.
@@ -168,11 +172,12 @@ class MainActivity : FragmentActivity() {
                 }
                 // A new icon size rebuilds the home screen so every icon picks it up.
                 CompositionLocalProvider(LocalIconWave provides wave) {
-                    key(settings.iconSizeDp) {
+                    key(settings.iconSizeDp, settings.iconStyle) {
                         KineticHome(
                             deps = deps,
                             activity = this,
                             homePressSignal = homePressSignal.intValue,
+                            openSearchSignal = openSearchSignal.intValue,
                             unlockPhase = unlockPhase.value,
                             onUnlockFinished = { unlockPhase.value = UnlockPhase.NONE },
                             onRequestWidget = ::requestWidget,
@@ -238,6 +243,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_SEARCH, false)) openSearchSignal.intValue++
         // Home button pressed while we're already the home screen.
         if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
             homePressSignal.intValue++
@@ -382,11 +388,13 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private companion object {
-        const val REQUEST_CONFIGURE_WIDGET = 1001
-        const val STATE_PENDING_WIDGET = "pending_widget"
-        const val KEY_MY_LAYOUT_VERSION = "my_phone_layout_version"
-        const val UNLOCK_WINDOW_MS = 2000L
-        const val UNLOCK_WAIT_MS = 800L
+    companion object {
+        /** Opens Kinetic straight into search (shake action, Commands). */
+        const val EXTRA_OPEN_SEARCH = "kinetic_open_search"
+        private const val REQUEST_CONFIGURE_WIDGET = 1001
+        private const val STATE_PENDING_WIDGET = "pending_widget"
+        private const val KEY_MY_LAYOUT_VERSION = "my_phone_layout_version"
+        private const val UNLOCK_WINDOW_MS = 2000L
+        private const val UNLOCK_WAIT_MS = 800L
     }
 }

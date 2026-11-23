@@ -65,6 +65,8 @@ sealed interface IslandAlert {
     data class Lock(val open: Boolean) : IslandAlert
     /** Face ID–style scan while the lock screen is waiting; [success] = recognised. */
     data class Scan(val success: Boolean) : IslandAlert
+    /** Battery just dropped to 15% (when One UI warns too). */
+    data class LowBattery(val level: Int) : IslandAlert
     /** A Focus was switched on or off. */
     data class Focus(val name: String, val glyph: com.kinetic.launcher.FocusModes.Glyph, val color: Int, val on: Boolean) : IslandAlert
 }
@@ -89,6 +91,46 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     val call: StateFlow<NotificationHub.CallInfo?> get() = NotificationHub.call
     val timer: StateFlow<NotificationHub.TimerInfo?> get() = NotificationHub.timer
     val nav: StateFlow<NotificationHub.NavInfo?> get() = NotificationHub.nav
+    val trip: StateFlow<NotificationHub.TripInfo?> get() = NotificationHub.trip
+    val score: StateFlow<NotificationHub.ScoreInfo?> get() = NotificationHub.score
+
+    /** Privacy dot next to the island, like iOS: what's using the mic / camera / screen. */
+    enum class Privacy { None, Mic, Camera, ScreenRecord }
+
+    private val _privacy = MutableStateFlow(Privacy.None)
+    val privacy: StateFlow<Privacy> = _privacy.asStateFlow()
+    private var micOn = false
+    private val camerasInUse = HashSet<String>()
+
+    private fun updatePrivacy() {
+        _privacy.value = when {
+            NotificationHub.recording.value -> Privacy.ScreenRecord
+            camerasInUse.isNotEmpty() -> Privacy.Camera
+            micOn -> Privacy.Mic
+            else -> Privacy.None
+        }
+    }
+
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private val recordingCallback = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
+            micOn = !configs.isNullOrEmpty()
+            updatePrivacy()
+        }
+    }
+    private val cameraManager = context.getSystemService(android.hardware.camera2.CameraManager::class.java)
+    private val cameraCallback = object : android.hardware.camera2.CameraManager.AvailabilityCallback() {
+        override fun onCameraAvailable(cameraId: String) {
+            camerasInUse -= cameraId
+            updatePrivacy()
+        }
+        override fun onCameraUnavailable(cameraId: String) {
+            camerasInUse += cameraId
+            updatePrivacy()
+        }
+    }
+
+    private var lastBattery = -1
 
     private val _peek = MutableStateFlow<NotificationHub.MessagePeek?>(null)
     /** A message dropping down from the island right now. */
@@ -185,6 +227,16 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                         _alert.value = null
                     }
                 }
+                Intent.ACTION_BATTERY_CHANGED -> {
+                    val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                    val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100)
+                    val plugged = intent.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+                    if (level < 0 || scale <= 0) return
+                    val pct = level * 100 / scale
+                    // Warn as it crosses 15% (the same moment One UI does), only when unplugged.
+                    if (lastBattery > 15 && pct <= 15 && !plugged) showAlert(IslandAlert.LowBattery(pct))
+                    lastBattery = pct
+                }
                 Intent.ACTION_SCREEN_OFF -> {
                     alertJob?.cancel()
                     _alert.value = null
@@ -206,11 +258,17 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_BATTERY_CHANGED)
                 addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
         listenForSessions()
+        // Privacy dots.
+        runCatching { audio.registerAudioRecordingCallback(recordingCallback, main) }
+        micOn = runCatching { audio.activeRecordingConfigurations.isNotEmpty() }.getOrDefault(false)
+        runCatching { cameraManager.registerAvailabilityCallback(cameraCallback, main) }
+        scope.launch { NotificationHub.recording.collect { updatePrivacy() } }
         // Switching a Focus shows its name and icon, like iOS.
         scope.launch {
             var last: String? = com.kinetic.launcher.FocusModes.active.value?.id
@@ -246,6 +304,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
 
     fun stop() {
         runCatching { context.unregisterReceiver(receiver) }
+        runCatching { audio.unregisterAudioRecordingCallback(recordingCallback) }
+        runCatching { cameraManager.unregisterAvailabilityCallback(cameraCallback) }
         runCatching { sessions.removeOnActiveSessionsChangedListener(sessionsListener) }
         controller?.unregisterCallback(controllerCallback)
         controller = null
@@ -307,13 +367,34 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         collapse()
     }
 
+    fun openTrip() {
+        trip.value?.contentIntent?.let { sendPending(context, it) }
+        collapse()
+    }
+
+    fun openScore() {
+        score.value?.contentIntent?.let { sendPending(context, it) }
+        collapse()
+    }
+
+    fun openBatterySaver() {
+        try {
+            context.startActivity(Intent(android.provider.Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+        }
+        alertJob?.cancel()
+        _alert.value = null
+    }
+
     fun openNav() {
         nav.value?.contentIntent?.let { sendPending(context, it) }
         collapse()
     }
 
     fun expand() {
-        if (_media.value == null && call.value == null && timer.value == null && nav.value == null) return
+        if (_media.value == null && call.value == null && timer.value == null && nav.value == null &&
+            trip.value == null && score.value == null
+        ) return
         _expanded.value = true
         scheduleCollapse()
     }
@@ -345,6 +426,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     is IslandAlert.Charging -> 3000
                     is IslandAlert.Lock -> if (alert.open) 1300 else 2500
                     is IslandAlert.Scan -> if (alert.success) 750 else 4000
+                    is IslandAlert.LowBattery -> 5000
                     else -> 2200
                 }
             )

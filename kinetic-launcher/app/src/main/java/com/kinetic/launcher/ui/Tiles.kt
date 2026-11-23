@@ -42,6 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -148,7 +154,7 @@ fun AppTile(
             .notificationRing(ring)
             .depth3D(SquircleShape, elevation = 5.dp)
         if (icon != null) {
-            Image(bitmap = icon, contentDescription = label, modifier = iconModifier)
+            Image(bitmap = icon, contentDescription = label, modifier = iconModifier.iconStyle(), colorFilter = iconStyleFilter())
         } else {
             Box(iconModifier.background(Color(0xFF2E4066)))
         }
@@ -356,4 +362,64 @@ fun Modifier.jiggle(enabled: Boolean): Modifier {
         label = "angle",
     )
     return this.graphicsLayer { rotationZ = angle }
+}
+
+
+// ---- icon styles (Settings ▸ Home screen ▸ Icon style) ----------------------------------
+
+/** Tint colour for "tinted" icons: the wallpaper's highlight colour. */
+private val tintColor: Color by lazy { Color(0xFF8FA6D8) }
+
+/**
+ * Recolours icons for the chosen style:
+ *  - tinted: one colour, like iOS 18's tinted icons (taken from the wallpaper)
+ *  - glass: pale, see-through and frosted, like iOS 26's clear icons
+ *  - mono: black and white
+ */
+@Composable
+fun iconStyleFilter(): ColorFilter? {
+    val style = KineticSettings.current.iconStyle
+    val tint = remember(style) {
+        val look = com.kinetic.wallpaper.WallpaperStyles.load(
+            com.kinetic.wallpaper.WallpaperSignals.prefs(com.kinetic.launcher.KineticApp.context ?: return@remember tintColor)
+        )
+        Color(look.glint)
+    }
+    return remember(style, tint) {
+        when (style) {
+            "tinted" -> ColorFilter.colorMatrix(
+                ColorMatrix(
+                    floatArrayOf(
+                        0.30f * tint.red * 1.3f, 0.59f * tint.red * 1.3f, 0.11f * tint.red * 1.3f, 0f, -18f,
+                        0.30f * tint.green * 1.3f, 0.59f * tint.green * 1.3f, 0.11f * tint.green * 1.3f, 0f, -18f,
+                        0.30f * tint.blue * 1.3f, 0.59f * tint.blue * 1.3f, 0.11f * tint.blue * 1.3f, 0f, -18f,
+                        0f, 0f, 0f, 1f, 0f,
+                    )
+                )
+            )
+            "glass" -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.25f) })
+            "mono" -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+            else -> null
+        }
+    }
+}
+
+/** Glass icons are a little see-through with a frosted rim and a top shine. */
+fun Modifier.iconStyle(): Modifier {
+    if (KineticSettings.current.iconStyle != "glass") return this
+    return this
+        .graphicsLayer { alpha = 0.78f }
+        .drawWithContent {
+            drawContent()
+            val r = size.minDimension * 0.28f
+            drawRoundRect(
+                brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.Transparent), endY = size.height * 0.55f),
+                cornerRadius = CornerRadius(r),
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.55f),
+                cornerRadius = CornerRadius(r),
+                style = Stroke(width = 1.2.dp.toPx()),
+            )
+        }
 }
