@@ -104,7 +104,7 @@ class WidgetHostManager(context: Context) {
 
     private companion object {
         const val HOST_ID = 0x4B4E54 // "KNT"
-        const val CELL_WIDTH_DP = 72f
-        const val CELL_HEIGHT_DP = 100f
+        const val CELL_WIDTH_DP = 95f
+        const val CELL_HEIGHT_DP = 110f
     }
 }

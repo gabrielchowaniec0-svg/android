@@ -112,8 +112,12 @@ Phone and computer must be on the **same network**. For Android 13+:
   your default phone, messages, browser, camera and gallery apps go along the
   bottom row.
 - **Swipe left/right** to move between home pages.
-- **Swipe up anywhere** to open all apps (search at the top). Long‑press an app
-  there for: Add to home screen, folders, Rename, Hide, App info.
+- **Swipe up anywhere** to open all apps, One UI–style: it follows your finger,
+  the wallpaper softens behind it, apps are in 4‑column pages you swipe
+  sideways, and **Search** is the pill at the bottom. Swipe down to close.
+  Long‑press an app for: Add to home screen, folders, Rename, Hide, App info.
+- **⋮ menu** (top right of the app list): show hidden apps, **Sort A–Z**, and
+  **Import layout from One UI Home**.
 - **Swipe down anywhere** to pull down the normal Android notification shade.
 - Icons are **frozen**. To edit, **press and hold empty wallpaper for about a
   second** (`EDIT_HOLD_MS` in `HomeScreen.kt`). In edit mode:
@@ -124,6 +128,15 @@ Phone and computer must be on the **same network**. For Android 13+:
     **Delete page** (empty pages only) and **Done**. Back also exits.
 - The first time you add a widget, Android asks you to allow Kinetic to create
   widgets. Tap **Allow**, and tick "always" if offered.
+
+**Bringing over your One UI Home layout**
+- Open the app list ▸ **⋮** ▸ **Import layout from One UI Home**. If Samsung
+  allows it, Kinetic copies your home pages, dock, folders and app‑drawer order
+  (newly installed apps go at the end, like One UI). Widgets can't be copied
+  between launchers; re‑add them from edit mode ▸ **Widgets**.
+- Samsung protects that layout with its own READ_SETTINGS permission. If your
+  One UI version reserves it for system apps, Kinetic shows a message saying so
+  and you'll need to arrange things by hand in edit mode.
 
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the

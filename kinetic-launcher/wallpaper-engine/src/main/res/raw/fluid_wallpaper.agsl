@@ -6,6 +6,7 @@
 uniform float2 iResolution;   // surface size in pixels
 uniform float  iTime;         // seconds since the engine started
 uniform float2 iTouch;        // smoothed touch point in pixels (drifts to 0,0 when idle)
+uniform float  iFocus;        // 0 = normal, 1 = softened/dimmed behind the app drawer
 
 const float PI = 3.14159265;
 
@@ -69,16 +70,17 @@ half4 main(float2 fragCoord) {
     half3 col = mix(topCol, bottomCol, half(smoothstep(-0.55, 0.55, uv.y)));
 
     // layered ribbons, each a cool slate/indigo ink
-    float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16);
-    float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11);
-    float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20);
+    float soft = 1.0 + iFocus * 1.6;              // wider, blurrier ribbons
+    float r1 = ribbon(p,        0.0, 2.3, 0.35, 0.16 * soft);
+    float r2 = ribbon(p * 1.15, 1.7, 3.1, 0.28, 0.11 * soft);
+    float r3 = ribbon(p * 0.85, 4.0, 1.7, 0.45, 0.20 * soft);
 
     col += half3(0.12, 0.17, 0.33) * half(r1);
     col += half3(0.18, 0.26, 0.42) * half(r2);
     col += half3(0.08, 0.12, 0.22) * half(r3);
 
     // specular rim: a thin bright edge where ribbons cross
-    float rim = r1 * r2 + r2 * r3;
+    float rim = (r1 * r2 + r2 * r3) * (1.0 - iFocus);
     col += half3(0.35, 0.42, 0.60) * half(pow(rim, 2.0) * 0.9);
 
     // touch bloom — soft cool highlight that falls off with distance
@@ -90,11 +92,11 @@ half4 main(float2 fragCoord) {
 
     // fine film grain to suppress AMOLED banding in the dark gradient
     float g = fbm(fragCoord * 0.9 + iTime * 15.0);
-    col += half3(half((g - 0.5) * 0.025));
+    col += half3(half((g - 0.5) * 0.025 * (1.0 - iFocus)));
 
     // gentle vignette to seat the composition
     float vig = smoothstep(1.2, 0.2, length(uv));
-    col *= half(mix(0.70, 1.0, vig));
+    col *= half(mix(0.70, 1.0, vig) * (1.0 - 0.35 * iFocus));
 
     return half4(clamp(col, 0.0, 1.0), 1.0);
 }

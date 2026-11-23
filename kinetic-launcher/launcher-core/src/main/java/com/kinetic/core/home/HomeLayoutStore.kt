@@ -57,7 +57,37 @@ data class HomePage(val id: String, val items: List<HomeItem>)
 /** A folder in the all-apps drawer. */
 data class DrawerFolder(val id: String, val name: String, val appKeys: List<String>)
 
-data class HomeLayout(val pages: List<HomePage>, val drawerFolders: List<DrawerFolder>)
+/**
+ * [drawerOrder] is the custom app-drawer order ("app:<key>" / "folder:<id>").
+ * Empty means alphabetical.
+ */
+data class HomeLayout(
+    val pages: List<HomePage>,
+    val drawerFolders: List<DrawerFolder>,
+    val drawerOrder: List<String> = emptyList(),
+)
+
+/** A home-screen item read from another launcher, at its original page/cell. */
+sealed interface ImportedHomeItem {
+    val page: Int
+    val x: Int
+    val y: Int
+
+    data class App(override val page: Int, override val x: Int, override val y: Int, val appKey: String) : ImportedHomeItem
+    data class Folder(
+        override val page: Int,
+        override val x: Int,
+        override val y: Int,
+        val name: String,
+        val appKeys: List<String>,
+    ) : ImportedHomeItem
+}
+
+/** An app-drawer entry read from another launcher, in its original order. */
+sealed interface ImportedDrawerEntry {
+    data class App(val appKey: String) : ImportedDrawerEntry
+    data class Folder(val name: String, val appKeys: List<String>) : ImportedDrawerEntry
+}
 
 /**
  * The user's home screen layout: which apps/folders/widgets sit where on which
@@ -72,7 +102,7 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
     var isFresh: Boolean = !prefs.contains(KEY_LAYOUT)
         private set
 
-    private val _layout = MutableStateFlow(load())
+    private val _layout = MutableStateFlow(normalize(load()))
     val layout: StateFlow<HomeLayout> = _layout.asStateFlow()
 
     // ---- placement queries -------------------------------------------------
@@ -218,9 +248,78 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
     // ---- drawer folders --------------------------------------------------------
 
     fun createDrawerFolder(name: String, appKey: String): Boolean = update { l ->
-        l.copy(drawerFolders = l.drawerFolders
-            .map { it.copy(appKeys = it.appKeys - appKey) }
-            .filter { it.appKeys.isNotEmpty() } + DrawerFolder(newId(), name, listOf(appKey)))
+        val folder = DrawerFolder(newId(), name, listOf(appKey))
+        // In a custom order, the new folder takes the app's place.
+        val order = if (l.drawerOrder.isEmpty()) l.drawerOrder else {
+            val i = l.drawerOrder.indexOf("app:$appKey")
+            if (i >= 0) l.drawerOrder.toMutableList().apply { this[i] = "folder:${folder.id}" }
+            else l.drawerOrder + "folder:${folder.id}"
+        }
+        l.copy(
+            drawerFolders = l.drawerFolders
+                .map { it.copy(appKeys = it.appKeys - appKey) }
+                .filter { it.appKeys.isNotEmpty() } + folder,
+            drawerOrder = order,
+        )
+    }
+
+    /** Saves a custom app-drawer order ("app:<key>" / "folder:<id>"). */
+    fun setDrawerOrder(order: List<String>): Boolean = update { it.copy(drawerOrder = order.distinct()) }
+
+    /** Back to alphabetical. */
+    fun clearDrawerOrder(): Boolean = update { it.copy(drawerOrder = emptyList()) }
+
+    /**
+     * Replaces the home screen and drawer with a layout read from another launcher.
+     * Dock apps go on the bottom row of page 1. Items that don't fit this grid move
+     * to the nearest free cell. Existing Kinetic widgets are kept.
+     */
+    fun importLayout(home: List<ImportedHomeItem>, dock: List<String>, drawer: List<ImportedDrawerEntry>) {
+        val old = _layout.value
+        val pageCount = maxOf(1, (home.maxOfOrNull { it.page } ?: 0) + 1)
+        var l = HomeLayout(List(pageCount) { HomePage(newId(), emptyList()) }, emptyList(), emptyList())
+
+        fun put(pageIndex: Int, x: Int, y: Int, make: (Float, Float) -> HomeItem) {
+            val p = l.pages[pageIndex]
+            val spot = if (fits(p.items, null, x.toFloat(), y.toFloat(), 1, 1)) x.toFloat() to y.toFloat()
+            else findFree(p.items, 1, 1)
+            l = if (spot != null) l.replacePage(pageIndex, p.copy(items = p.items + make(spot.first, spot.second)))
+            else l.placeFrom(pageIndex, 1, 1, make)
+        }
+
+        dock.distinct().take(columns).forEachIndexed { i, key ->
+            put(0, i, rows - 1) { x, y -> HomeItem.App(newId(), key, x, y) }
+        }
+        home.sortedWith(compareBy<ImportedHomeItem>({ it.page }, { it.y }, { it.x })).forEach { item ->
+            val page = item.page.coerceIn(0, l.pages.lastIndex)
+            when (item) {
+                is ImportedHomeItem.App -> put(page, item.x, item.y) { x, y -> HomeItem.App(newId(), item.appKey, x, y) }
+                is ImportedHomeItem.Folder -> if (item.appKeys.isNotEmpty()) {
+                    put(page, item.x, item.y) { x, y -> HomeItem.Folder(newId(), item.name, item.appKeys, x, y) }
+                }
+            }
+        }
+        old.pages.flatMap { it.items }.filterIsInstance<HomeItem.Widget>().forEach { w ->
+            l = l.placeFrom(0, w.spanX, w.spanY) { x, y -> w.copy(cellX = x, cellY = y) }
+        }
+
+        val folders = mutableListOf<DrawerFolder>()
+        val order = mutableListOf<String>()
+        drawer.forEach { e ->
+            when (e) {
+                is ImportedDrawerEntry.App -> order += "app:${e.appKey}"
+                is ImportedDrawerEntry.Folder -> if (e.appKeys.isNotEmpty()) {
+                    val f = DrawerFolder(newId(), e.name, e.appKeys.distinct())
+                    folders += f
+                    order += "folder:${f.id}"
+                }
+            }
+        }
+        l = l.copy(drawerFolders = folders, drawerOrder = order.distinct())
+
+        isFresh = false
+        _layout.value = l
+        save(l)
     }
 
     fun moveToDrawerFolder(folderId: String, appKey: String): Boolean = update { l ->
@@ -253,7 +352,16 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
             drawerFolders = l.drawerFolders
                 .map { f -> f.copy(appKeys = f.appKeys.filter { it in installedKeys }) }
                 .filter { it.appKeys.isNotEmpty() },
-        )
+        ).let { pruned ->
+            val folderIds = pruned.drawerFolders.mapTo(HashSet()) { it.id }
+            pruned.copy(drawerOrder = pruned.drawerOrder.filter { entry ->
+                when {
+                    entry.startsWith("app:") -> entry.removePrefix("app:") in installedKeys
+                    entry.startsWith("folder:") -> entry.removePrefix("folder:") in folderIds
+                    else -> false
+                }
+            })
+        }
     }
 
     /** First run only: puts [appKeys] along the bottom row of page 1, like a dock. */
@@ -273,6 +381,29 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
     }
 
     // ---- internals ---------------------------------------------------------------
+
+    /** Moves items that don't fit the current grid (e.g. after it shrank from 5 to 4 columns). */
+    private fun normalize(l: HomeLayout): HomeLayout {
+        var out = l.copy(pages = l.pages.map { it.copy(items = emptyList()) })
+        var changed = false
+        l.pages.forEachIndexed { pageIndex, page ->
+            page.items.forEach { item ->
+                val sx = item.spanX.coerceIn(1, columns)
+                val sy = item.spanY.coerceIn(1, rows)
+                val resized = if (item is HomeItem.Widget && (sx != item.spanX || sy != item.spanY)) item.copy(spanX = sx, spanY = sy) else item
+                val target = out.pages[pageIndex]
+                if (fits(target.items, null, resized.cellX, resized.cellY, sx, sy)) {
+                    out = out.replacePage(pageIndex, target.copy(items = target.items + resized))
+                    if (resized !== item) changed = true
+                } else {
+                    changed = true
+                    out = out.placeFrom(pageIndex, sx, sy) { x, y -> resized.movedTo(x, y) }
+                }
+            }
+        }
+        if (changed) save(out)
+        return if (changed) out else l
+    }
 
     private fun update(transform: (HomeLayout) -> HomeLayout): Boolean {
         val current = _layout.value
@@ -337,6 +468,7 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                 })
             }
         })
+        root.put("drawerOrder", JSONArray(l.drawerOrder))
         prefs.edit().putString(KEY_LAYOUT, root.toString()).apply()
     }
 
@@ -381,7 +513,8 @@ class HomeLayoutStore(context: Context, val columns: Int, val rows: Int) {
                 val f = foldersJson.getJSONObject(i)
                 DrawerFolder(f.optString("id").ifEmpty { newId() }, f.optString("name", "Folder"), f.optJSONArray("keys").toStringList())
             }
-            if (pages.isEmpty()) emptyLayout() else HomeLayout(pages, folders)
+            val order = root.optJSONArray("drawerOrder").toStringList()
+            if (pages.isEmpty()) emptyLayout() else HomeLayout(pages, folders, order)
         } catch (e: Exception) {
             emptyLayout()
         }

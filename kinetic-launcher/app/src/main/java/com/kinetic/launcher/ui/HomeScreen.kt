@@ -8,11 +8,9 @@ import android.util.SizeF
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +49,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -70,6 +72,7 @@ import com.kinetic.core.apps.AppRepository
 import com.kinetic.core.home.DrawerFolder
 import com.kinetic.core.home.HomeItem
 import com.kinetic.core.home.HomeLayoutStore
+import com.kinetic.core.home.LauncherImporter
 import com.kinetic.core.widgets.WidgetHostManager
 import com.kinetic.launcher.defaultHomeKeys
 import com.kinetic.lockscreen.BiometricUnlockBridge
@@ -80,8 +83,10 @@ import com.kinetic.lockscreen.UnlockTransitionController
 import com.kinetic.lockscreen.UnlockWidget
 import com.kinetic.lockscreen.rememberUnlockController
 import com.kinetic.security.StealthCustomizationManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /** How long you hold empty wallpaper before the home screen unlocks for editing. */
@@ -113,6 +118,7 @@ fun KineticHome(
     onRequestWidget: (AppWidgetProviderInfo, Int) -> Unit,
     onOpenWallpaperPicker: () -> Unit,
     onExpandNotifications: () -> Unit,
+    onWallpaperFocus: (Boolean) -> Unit,
 ) {
     val config = deps.config
     val scope = rememberCoroutineScope()
@@ -137,6 +143,27 @@ fun KineticHome(
     val pagerState = rememberPagerState(pageCount = { layout.pages.size })
     val controller = rememberUnlockController()
     val bridge = remember(activity) { BiometricUnlockBridge(activity, scope) }
+
+    // 0 = closed, 1 = open. Follows the finger while dragging, springs when released.
+    val drawerProgress = remember { Animatable(0f) }
+    val drawerShowing by remember { derivedStateOf { drawerProgress.value > 0f } }
+    val drawerMostlyOpen by remember { derivedStateOf { drawerProgress.value > 0.15f } }
+    val drawerSpring = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow) }
+    val dragRangePx = with(density) { 360.dp.toPx() }
+
+    fun openDrawer() {
+        drawerOpen = true
+        scope.launch { drawerProgress.animateTo(1f, drawerSpring) }
+    }
+
+    fun closeDrawer() {
+        drawerOpen = false
+        scope.launch { drawerProgress.animateTo(0f, drawerSpring) }
+    }
+
+    fun dragDrawerBy(dy: Float) {
+        scope.launch { drawerProgress.snapTo((drawerProgress.value - dy / dragRangePx).coerceIn(0f, 1f)) }
+    }
 
     fun labelFor(e: AppEntry): String = masks[e.packageName]?.overrideLabel ?: e.label
     fun isHidden(e: AppEntry): Boolean = e.packageName in privateApps
@@ -310,7 +337,75 @@ fun KineticHome(
         }
     }
 
+    // ---- app drawer contents -------------------------------------------------------
+
+    /** Drawer slots in the user's custom order (if any), else folders first then A–Z. */
+    fun drawerEntries(): List<DrawerEntry> {
+        val visibleApps = allApps.orEmpty().filter { privateRevealed || !isHidden(it) }
+        val foldered = layout.drawerFolders.flatMapTo(HashSet()) { it.appKeys }
+        val folderEntries = LinkedHashMap<String, DrawerEntry.Folder>()
+        layout.drawerFolders.forEach { f ->
+            val members = f.appKeys.mapNotNull { appsByKey[it] }.filter { privateRevealed || !isHidden(it) }
+            if (members.isNotEmpty()) folderEntries[f.id] = DrawerEntry.Folder(f, members)
+        }
+        val loose = visibleApps.filter { it.key !in foldered }
+        if (layout.drawerOrder.isEmpty()) return folderEntries.values.toList() + loose.map { DrawerEntry.App(it) }
+
+        val looseByKey = loose.associateBy { it.key }
+        val placed = HashSet<String>()
+        val out = mutableListOf<DrawerEntry>()
+        layout.drawerOrder.forEach { token ->
+            val entry: DrawerEntry? = when {
+                token.startsWith("app:") -> looseByKey[token.removePrefix("app:")]?.let { DrawerEntry.App(it) }
+                token.startsWith("folder:") -> folderEntries[token.removePrefix("folder:")]
+                else -> null
+            }
+            if (entry != null && placed.add(entry.key)) out += entry
+        }
+        // Anything not in the saved order (e.g. newly installed apps) goes at the end, like One UI.
+        folderEntries.values.forEach { if (placed.add(it.key)) out += it }
+        loose.forEach { val e = DrawerEntry.App(it); if (placed.add(e.key)) out += e }
+        return out
+    }
+
+    fun startImport() {
+        val apps = allApps
+        if (apps == null) {
+            toast("Apps are still loading — try again in a moment")
+            return
+        }
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { LauncherImporter.read(activity, apps) }
+            menu = when (result) {
+                is LauncherImporter.Result.Success -> {
+                    deps.layout.importLayout(result.home, result.dock, result.drawer)
+                    pagerState.scrollToPage(0)
+                    val notes = buildList {
+                        add("Imported ${result.appsImported} apps from ${result.source}, in the same order.")
+                        if (result.widgetsSkipped > 0) {
+                            add("${result.widgetsSkipped} widget(s) can't be copied between launchers — add them again from edit mode ▸ Widgets.")
+                        }
+                        if (result.unmatched > 0) add("${result.unmatched} shortcut(s) didn't match an installed app and were skipped.")
+                    }
+                    MenuSpec("Layout imported", emptyList(), notes.joinToString("\n\n"))
+                }
+                is LauncherImporter.Result.Failed -> MenuSpec("Couldn't import layout", emptyList(), result.reason)
+            }
+        }
+    }
+
+    fun importConfirmMenu() = MenuSpec(
+        title = "Import from One UI Home?",
+        actions = listOf("Import" to fun() { startImport() }),
+        message = "Replaces Kinetic's home screen and app-drawer order with your One UI Home layout. " +
+            "Widgets you've added in Kinetic are kept.",
+    )
+
     // ---- effects ---------------------------------------------------------------
+
+    // Soften the live wallpaper behind the drawer, folders and widget picker (One UI–style blur).
+    val wallpaperFocused = drawerMostlyOpen || openFolder != null || widgetPickerOpen
+    LaunchedEffect(wallpaperFocused) { onWallpaperFocus(wallpaperFocused) }
 
     LaunchedEffect(allApps) {
         val list = allApps ?: return@LaunchedEffect
@@ -325,7 +420,7 @@ fun KineticHome(
         menu = null
         widgetPickerOpen = false
         openFolder = null
-        drawerOpen = false
+        closeDrawer()
         editMode = false
         if (pagerState.pageCount > 0) pagerState.animateScrollToPage(0)
     }
@@ -352,7 +447,7 @@ fun KineticHome(
         when {
             widgetPickerOpen -> widgetPickerOpen = false
             openFolder != null -> openFolder = null
-            drawerOpen -> drawerOpen = false
+            drawerOpen -> closeDrawer()
             editMode -> editMode = false
         }
     }
@@ -370,19 +465,42 @@ fun KineticHome(
             .pointerInput(gesturesEnabled) {
                 if (!gesturesEnabled) return@pointerInput
                 var total = 0f
+                var mode = 0 // 0 = undecided, 1 = pulling up the drawer, 2 = notification shade
                 detectVerticalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = {
-                        if (total < -swipeThresholdPx) drawerOpen = true
-                        else if (total > swipeThresholdPx) currentExpandNotifications()
+                    onDragStart = {
+                        total = 0f
+                        mode = 0
                     },
+                    onDragEnd = {
+                        when (mode) {
+                            1 -> if (drawerProgress.value > 0.25f) openDrawer() else closeDrawer()
+                            2 -> if (total > swipeThresholdPx) currentExpandNotifications()
+                        }
+                    },
+                    onDragCancel = { if (mode == 1) closeDrawer() },
                 ) { change, dragAmount ->
                     change.consume()
                     total += dragAmount
+                    if (mode == 0) mode = if (dragAmount < 0f) 1 else 2
+                    if (mode == 1) dragDrawerBy(dragAmount)
                 }
             }
     ) {
-        Column(Modifier.fillMaxSize().systemBarsPadding()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // Read in the draw phase, so dragging the drawer doesn't recompose the home screen.
+                    val p = drawerProgress.value
+                    alpha = 1f - p
+                    val s = 1f - 0.06f * p
+                    scaleX = s
+                    scaleY = s
+                    val r = 24.dp.toPx() * p
+                    renderEffect = if (r > 0.5f) BlurEffect(r, r) else null
+                }
+                .systemBarsPadding()
+        ) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (unlockPhase != UnlockPhase.NONE && !editMode) {
                     val pageIndex = pagerState.currentPage
@@ -432,7 +550,7 @@ fun KineticHome(
                     canDeletePage = layout.pages.size > 1 && currentPage?.items?.isEmpty() == true,
                     onAddApps = {
                         drawerPickMode = true
-                        drawerOpen = true
+                        openDrawer()
                     },
                     onAddWidget = { widgetPickerOpen = true },
                     onWallpaper = onOpenWallpaperPicker,
@@ -446,22 +564,21 @@ fun KineticHome(
             }
         }
 
-        AnimatedVisibility(
-            visible = drawerOpen,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-        ) {
-            val folderedKeys = layout.drawerFolders.flatMapTo(HashSet()) { it.appKeys }
+        if (drawerShowing) {
+            // Dim layer; the wallpaper itself softens via onWallpaperFocus.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .drawBehind { drawRect(Color.Black.copy(alpha = 0.3f * drawerProgress.value)) }
+            )
             AppDrawer(
-                apps = allApps.orEmpty().filter { privateRevealed || !isHidden(it) },
-                folders = layout.drawerFolders.map { f ->
-                    f to f.appKeys.mapNotNull { appsByKey[it] }.filter { privateRevealed || !isHidden(it) }
-                },
-                folderedKeys = folderedKeys,
+                entries = drawerEntries(),
+                searchable = allApps.orEmpty().filter { privateRevealed || !isHidden(it) },
                 labelFor = { labelFor(it) },
                 isHidden = { isHidden(it) },
                 pickMode = drawerPickMode,
                 privateRevealed = privateRevealed,
+                customOrder = layout.drawerOrder.isNotEmpty(),
                 onAppClick = { e ->
                     if (drawerPickMode) {
                         if (deps.layout.addApp(pagerState.currentPage, e.key)) toast("Added ${labelFor(e)}")
@@ -469,12 +586,23 @@ fun KineticHome(
                     } else {
                         deps.apps.launch(e)
                     }
-                    drawerOpen = false
+                    closeDrawer()
                 },
                 onAppLongPress = { e -> menu = drawerAppMenu(e, null) },
                 onFolderClick = { f -> openFolder = FolderRef.Drawer(f.id) },
                 onTogglePrivate = { if (privateRevealed) privateRevealed = false else revealPrivate() },
-                onClose = { drawerOpen = false },
+                onSortAlphabetical = { deps.layout.clearDrawerOrder() },
+                onImportLayout = { menu = importConfirmMenu() },
+                onDrag = { dy -> dragDrawerBy(dy) },
+                onDragEnd = { if (drawerProgress.value < 0.75f) closeDrawer() else openDrawer() },
+                modifier = Modifier.graphicsLayer {
+                    val p = drawerProgress.value
+                    alpha = p
+                    translationY = (1f - p) * 96.dp.toPx()
+                    val s = 0.94f + 0.06f * p
+                    scaleX = s
+                    scaleY = s
+                },
             )
         }
 
@@ -524,7 +652,7 @@ fun KineticHome(
                         onAppClick = { e ->
                             deps.apps.launch(e)
                             openFolder = null
-                            drawerOpen = false
+                            closeDrawer()
                         },
                         onAppLongPress = { e -> menu = drawerAppMenu(e, folder) },
                         onRename = {

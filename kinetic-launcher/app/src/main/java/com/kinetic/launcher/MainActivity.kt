@@ -85,7 +85,8 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val config = GridConfig(columns = 5, rows = 6, halfSnap = true)
+        // 4 columns like One UI Home; the 7th row doubles as the dock.
+        val config = GridConfig(columns = 4, rows = 7, halfSnap = true)
         deps = HomeDeps(
             apps = AppRepository(this),
             layout = HomeLayoutStore(this, config.columns, config.rows),
@@ -119,6 +120,7 @@ class MainActivity : FragmentActivity() {
                     onRequestWidget = ::requestWidget,
                     onOpenWallpaperPicker = ::openWallpaperPicker,
                     onExpandNotifications = ::expandNotifications,
+                    onWallpaperFocus = ::setWallpaperFocus,
                 )
             }
         }
@@ -235,6 +237,18 @@ class MainActivity : FragmentActivity() {
     private fun expandNotifications() {
         if (!SystemGestures.expandNotifications(this)) {
             Toast.makeText(this, "Couldn't open notifications on this device", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Tells Kinetic's live wallpaper to soften (drawer open) or return to normal. */
+    private fun setWallpaperFocus(focused: Boolean) {
+        val token = window?.decorView?.windowToken ?: return
+        runCatching {
+            WallpaperManager.getInstance(this).sendWallpaperCommand(
+                token,
+                if (focused) FluidWallpaperService.ACTION_FOCUS_ON else FluidWallpaperService.ACTION_FOCUS_OFF,
+                0, 0, 0, null,
+            )
         }
     }
 
