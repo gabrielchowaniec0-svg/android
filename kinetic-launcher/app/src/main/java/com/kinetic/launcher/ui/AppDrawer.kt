@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kinetic.core.apps.AppEntry
+import com.kinetic.core.apps.SquircleShape
 import com.kinetic.core.home.DrawerFolder
 
 // Same as One UI on the S25 Ultra: 4 columns × 6 rows per page, ~101dp per row.
