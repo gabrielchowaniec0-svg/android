@@ -63,7 +63,7 @@ private val Warn = Color(0xFFFF9F0A)
 class SettingsActivity : ComponentActivity() {
 
     @Deprecated("Simple permission result for the living wallpaper's location")
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         @Suppress("DEPRECATION")
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 41) {
