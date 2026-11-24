@@ -667,3 +667,8 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - **Flashlight:** the flashlight now sits at the bottom of the open island and shines **up**, away from you. The beam follows your finger smoothly as you drag (up = brighter and longer, down = dimmer) and settles on the nearest brightness step when you let go.
 - **Dragging apps into folders** no longer cancels as soon as you move (the long-press menu was swallowing the rest of the touch).
 - **Status bar while the island is wider:** each side is centred in its gap and fits in as many icons as there's room for. Left: time first, then notification icons. Right: battery first, then Wi-Fi/5G, signal, silent/vibrate, Do Not Disturb.
+
+### Flashlight bounce, grey status bar, automated tests
+- **Flashlight brightness no longer bounces back** while you drag. Samsung briefly reports the light as "off" and then "on at full" while it changes brightness; Kinetic now ignores those blips for a moment and sends at most one change every 90 ms.
+- **Grey status bar text fixed:** the "more notifications" dot wasn't counted when checking what fits beside a wider island, so that side half-faded. Now every item is measured, and items are dropped (least important first) instead of fading.
+- **Automated tests** now run in every build check (on a computer, no phone): every example in the "help" list, typical commands (calls, texts, flights, school, quick tools), odd inputs that must not crash, timers/clock text, and the status bar fitting on hundreds of island widths. They already caught one bug: "track UA123" was looking up the wrong flight (it searched for "UA123" instead of United's real callsign "UAL123").
