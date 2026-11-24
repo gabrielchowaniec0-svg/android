@@ -506,8 +506,10 @@ fun DynamicIsland(
             morphTo = null
             dragging = false
             settleTick++
+            // The fade back runs on its own scope: clearing the pull restarts this effect,
+            // which used to cut the fade short and leave the island's content invisible.
+            scope.launch { morph.animateTo(0f, tween(160)) }
             model.clearPull()
-            morph.animateTo(0f, tween(160))
         }
     }
     // If the island changes shape on its own mid-pull (a call, a notification…), drop the pull.
@@ -517,6 +519,18 @@ fun DynamicIsland(
             dragging = false
             settleTick++
             morph.snapTo(0f)
+        }
+    }
+    // Safety net: whenever nothing is being pulled, the content is always fully visible
+    // and the island always settles to its real size.
+    LaunchedEffect(dragging, mode, pull) {
+        if (!dragging && pull == null) {
+            kotlinx.coroutines.delay(400)
+            if (!dragging && model.pull.value == null) {
+                if (morph.value != 0f) morph.snapTo(0f)
+                if (morphTo != null) morphTo = null
+                settleTick++
+            }
         }
     }
 

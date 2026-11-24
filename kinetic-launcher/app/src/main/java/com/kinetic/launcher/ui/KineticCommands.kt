@@ -96,6 +96,7 @@ object KineticCommands {
         // Your own shortcuts ("m" → "call mom") are expanded first.
         val input = com.kinetic.launcher.KineticApp.context?.let { Commands3.shortcut(it, written) } ?: written
         // Forgive a typo in the first word ("rout to ohare", "cal mom", "tiemr 5 min").
+        if (input.trim() == "?") return Parsed.Three(Commands3.Cmd.Tool("help"), input)
         val q = Fuzzy.fixFirstWord(input, VERBS)
         if (q.length < 3) return null
         // Your own command chains come first ("gaming mode").

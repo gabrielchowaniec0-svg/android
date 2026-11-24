@@ -457,6 +457,7 @@ class SettingsActivity : ComponentActivity() {
             Section("S Pen") {
                 SwitchRow("Write on the home screen", "Write \"mom\", \"timer 10 min\" or an app's name anywhere with the S Pen", s.penInk, bool(KineticSettings.PEN_INK))
                 LinkRow("Shapes", "Draw a heart, circle, check, star or triangle to run a command", on = false) { editShapes() }
+                LinkRow("All commands", "Everything you can write, with Try buttons", on = false) { startActivity(Intent(this@SettingsActivity, com.kinetic.launcher.ui.HelpActivity::class.java)) }
                 LinkRow("Command chains", "One name runs several commands (also works typed in search)", on = false) { editChains() }
                 LinkRow("Writing shortcuts", "Short words for long commands (\u201Cm\u201D → call mom)", on = false) { editShortcuts() }
             }
