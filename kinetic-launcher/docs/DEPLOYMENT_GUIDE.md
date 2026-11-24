@@ -454,3 +454,24 @@ Press **Volume Up, Up, Down, Down** quickly (within about half a second between 
 - It doesn't run during calls or with the screen off. Apps that block screenshots (banking apps, for example) still come out black.
 - How it's safe without a code: the screenshot is locked with a "drop box" key that can only lock, not unlock. The key that opens it is itself locked inside the Vault.
 - If the gesture does nothing after updating, switch the Dynamic Island off and on again in Accessibility. Android asks once more because it now also handles the volume keys.
+
+## S Pen writing, living wallpaper & plane spotter
+
+### Write on the home screen (S Pen)
+Pull out the S Pen and write anywhere on the home screen. Pause for a moment and Kinetic reads it:
+- A **command** runs straight away: "mom" (calls if it matches a contact command like "call mom"), "timer 10 min", "flashlight", "planes", "route to O'Hare".
+- An **app's name** opens that app ("spotify", "maps").
+- **Anything else** opens search with what you wrote.
+
+Fingers work exactly as before, and tapping an icon with the pen still opens it. Only pen *strokes* become ink. Handwriting is read on the phone itself. The first time, Kinetic downloads Google's English handwriting model (about 20 MB). Switch it off under Settings ▸ S Pen.
+
+### Living wallpaper
+Settings ▸ Living wallpaper:
+- **Rain when it's raining:** streaks fall and the colours cool when it's raining where you are. This uses your rough location and the free Open-Meteo weather service, checked every 30 minutes.
+- **Battery tide:** a glowing waterline. Full battery means high tide. It turns green while charging and red when low.
+- **Fireflies:** one firefly drifts around for each app with unread notifications.
+
+### Plane spotter
+Open it from the app list ⋮ ▸ Plane spotter, or write/type "planes". Point the camera at a plane. When it lines up with the circle, it locks on and shows the flight number, airline, where it's flying from and to, altitude, speed, distance and aircraft type. If nothing is in view, it tells you which way to turn to find the nearest plane.
+
+It uses your location, the compass and live flight data from the community networks adsb.lol / adsb.fi, plus routes from adsbdb.com. If labels drift sideways, the compass needs calibrating: wave the phone in a figure 8. Some small private planes don't share a route.

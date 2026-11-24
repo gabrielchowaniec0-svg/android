@@ -118,6 +118,9 @@ object WallpaperStyles {
         shader.setFloatUniform("iGlow", 0f, 0f, 0f, 0f)
         shader.setFloatUniform("iCalm", 0f)
         shader.setFloatUniform("iDim", 0f)
+        shader.setFloatUniform("iRain", 0f)
+        shader.setFloatUniform("iTide", -1f, 0f, 0f)
+        shader.setFloatUniform("iFlies", 0f)
     }
 
     private fun r(c: Int) = ((c shr 16) and 0xFF) / 255f
@@ -141,6 +144,9 @@ object WallpaperStyles {
         uniform float4 iGlow;
         uniform float  iCalm;
         uniform float  iDim;
+        uniform float  iRain;
+        uniform float3 iTide;
+        uniform float  iFlies;
         uniform float3 iColA;
         uniform float3 iColB;
         uniform float3 iColC;
@@ -214,6 +220,50 @@ object WallpaperStyles {
             return v / max(length(v), 0.001);
         }
 
+        // ---- living wallpaper: weather, battery and notifications -------------------
+
+        // Thin, slanted rain streaks drifting down. [scale] = density, [speed] = fall speed.
+        float rainLayer(float2 uv, float scale, float speed, float seed) {
+            float2 q = float2((uv.x + uv.y * 0.12) * scale, uv.y * scale * 0.22 - iTime * speed);
+            float2 id = floor(q);
+            float2 f = fract(q);
+            float h = hash21(id + seed);
+            if (h < 0.78) return 0.0;
+            float x = abs(f.x - 0.5 - (h - 0.89) * 2.0);
+            float streak = smoothstep(0.05, 0.0, x);
+            return streak * smoothstep(0.0, 0.35, f.y) * smoothstep(1.0, 0.6, f.y);
+        }
+
+        float3 living(float2 uv, float3 col) {
+            // Rain: cooler, a little darker, with falling streaks.
+            if (iRain > 0.01) {
+                col = mix(col, col * float3(0.80, 0.88, 1.0), 0.45 * iRain);
+                float r = rainLayer(uv, 34.0, 2.6, 0.0) + 0.6 * rainLayer(uv, 52.0, 3.4, 7.3);
+                col += float3(0.62, 0.74, 0.95) * r * 0.32 * iRain;
+            }
+            // Battery tide: a softly glowing waterline. Full battery = high tide.
+            if (iTide.x >= 0.0) {
+                float yl = 0.47 - iTide.x * 0.86 + 0.006 * sin(uv.x * 16.0 + iTime * 1.3) + 0.004 * sin(uv.x * 31.0 - iTime * 2.1);
+                float3 tint = iTide.y > 0.5 ? float3(0.35, 0.95, 0.55) : (iTide.x <= 0.2 ? float3(1.0, 0.42, 0.35) : iColC);
+                float below = smoothstep(yl - 0.004, yl + 0.012, uv.y);
+                col = mix(col, col * 0.92 + tint * 0.05, below * 0.55);
+                col += tint * exp(-abs(uv.y - yl) * 140.0) * 0.30;
+            }
+            // Fireflies: one per app with unread notifications.
+            for (int i = 0; i < 8; i++) {
+                if (float(i) >= iFlies) break;
+                float fi = float(i);
+                float t = iTime * (0.18 + 0.03 * fi);
+                float2 pos = float2(
+                    0.20 * sin(t + fi * 2.39) + 0.04 * sin(t * 2.7 + fi),
+                    0.36 * sin(t * 0.71 + fi * 1.71) + 0.05 * cos(t * 1.9 + fi * 3.1));
+                float d = length(uv - pos);
+                float pulse = 0.55 + 0.45 * sin(iTime * (1.6 + 0.2 * fi) + fi * 4.0);
+                col += float3(1.0, 0.86, 0.45) * (exp(-d * d * 9000.0) * 0.9 + exp(-d * 42.0) * 0.10) * pulse;
+            }
+            return col;
+        }
+
     """.trimIndent() + "\n"
 
     private val MAIN = """
@@ -236,6 +286,8 @@ object WallpaperStyles {
                 float2 t = (iTouch - 0.5 * iResolution) / iResolution.y;
                 col += iColC * 0.45 * exp(-length(uv - t) * 6.0) * 0.6;
             }
+            // living wallpaper (rain, battery tide, fireflies)
+            col = living(uv, col);
             // film grain
             float g = hash21(fragCoord + fract(iTime * 7.0) * 113.0);
             col += (g - 0.5) * 0.07 * iGrain * (1.0 - iFocus);

@@ -23,6 +23,10 @@ object WallpaperSignals {
     const val KEY_CHARGING_WAVE = "wp_charging_wave"
     const val KEY_BATTERY_CALM = "wp_battery_calm"
     const val KEY_ICON_WAVE = "wp_icon_wave"
+    // Living wallpaper: information drawn into the wallpaper itself.
+    const val KEY_WEATHER_RAIN = "wp_weather_rain"
+    const val KEY_BATTERY_TIDE = "wp_battery_tide"
+    const val KEY_FIREFLIES = "wp_fireflies"
 
     enum class Kind { App, Unlock, Notification, Charging }
 
@@ -71,6 +75,16 @@ object WallpaperSignals {
         val r = Ripple(x, y, color, strength, kind)
         listeners.forEach { it.onRipple(r) }
     }
+
+    // ---- living wallpaper ---------------------------------------------------------------
+
+    /** 0 = dry, 1 = heavy rain right now (from the weather, set by the launcher). */
+    @Volatile
+    var rain: Float = 0f
+
+    /** Apps with unread notifications (each one is a firefly), 0–8. */
+    @Volatile
+    var fireflies: Int = 0
 
     /** 0 = normal, 1 = fully dimmed (set by the active Focus). */
     @Volatile

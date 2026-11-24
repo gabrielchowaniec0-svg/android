@@ -62,6 +62,16 @@ private val Warn = Color(0xFFFF9F0A)
 /** Kinetic's settings: Dynamic Island, home screen, wallpaper reactions and permissions. */
 class SettingsActivity : ComponentActivity() {
 
+    @Deprecated("Simple permission result for the living wallpaper's location")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        @Suppress("DEPRECATION")
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 41) {
+            LivingWallpaper.refreshNow(this)
+            recreate()
+        }
+    }
+
     /** Bumped on every resume so permission statuses refresh after visiting Android settings. */
     private val resumeTick = mutableIntStateOf(0)
 
@@ -269,6 +279,28 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Charging wave", "A green wave rises when you plug in", s.wpChargingWave, bool(WallpaperSignals.KEY_CHARGING_WAVE))
                 SwitchRow("Calm on low battery", "Slower and dimmer below 20% or in Battery Saver", s.wpBatteryCalm, bool(WallpaperSignals.KEY_BATTERY_CALM))
                 SwitchRow("Icons ride the waves", "Home icons hop as a ripple passes them", s.wpIconWave, bool(WallpaperSignals.KEY_ICON_WAVE))
+            }
+
+            // ---- living wallpaper ---------------------------------------------------------
+            Section("Living wallpaper") {
+                SwitchRow(
+                    "Rain when it's raining",
+                    if (LivingWallpaper.hasLocation(this@SettingsActivity)) "Streaks fall and colours cool when it rains where you are"
+                    else "Needs your rough location (tap to allow)",
+                    s.wpWeatherRain && LivingWallpaper.hasLocation(this@SettingsActivity),
+                ) { on ->
+                    KineticSettings.setBoolean(this@SettingsActivity, WallpaperSignals.KEY_WEATHER_RAIN, on)
+                    if (on && !LivingWallpaper.hasLocation(this@SettingsActivity)) {
+                        requestPermissions(arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION), 41)
+                    }
+                }
+                SwitchRow("Battery tide", "A glowing waterline: high tide when full, green while charging, red when low", s.wpBatteryTide, bool(WallpaperSignals.KEY_BATTERY_TIDE))
+                SwitchRow("Fireflies", "One firefly drifts for each app with unread notifications", s.wpFireflies, bool(WallpaperSignals.KEY_FIREFLIES))
+            }
+
+            // ---- S Pen ---------------------------------------------------------------------
+            Section("S Pen") {
+                SwitchRow("Write on the home screen", "Write \"mom\", \"timer 10 min\" or an app's name anywhere with the S Pen", s.penInk, bool(KineticSettings.PEN_INK))
             }
             Spacer(Modifier.height(24.dp))
         }
