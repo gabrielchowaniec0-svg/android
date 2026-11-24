@@ -314,7 +314,9 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     }
                     return@setOnTouchListener true
                 }
-                if (!pulling && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && !model.replying.value) {
+                // While the flashlight is on, up/down drags set its brightness instead of pulling the island.
+                val torchOn = TorchLive.state.value != null
+                if (!pulling && !torchOn && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && !model.replying.value) {
                     pulling = true
                     // Not a tap or a hold any more.
                     val cancel = MotionEvent.obtain(screen).apply { action = MotionEvent.ACTION_CANCEL }
@@ -327,7 +329,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     tracker?.computeCurrentVelocity(1000)
                     val vy = tracker?.yVelocity ?: 0f
                     val lastDy = if (dy == 0f) lastMoveDy else dy
-                    if (pulling || kotlin.math.abs(lastDy) > 4 * density || kotlin.math.abs(vy) > 400 * density) {
+                    if (!torchOn && (pulling || kotlin.math.abs(lastDy) > 4 * density || kotlin.math.abs(vy) > 400 * density)) {
                         model.pullEnd(lastDy, vy, cancelled = true)
                     }
                     if (!pulling) v.dispatchTouchEvent(screen)

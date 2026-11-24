@@ -133,7 +133,7 @@ private val LocalPill = compositionLocalOf { 35.dp }
 private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 
 /** Things that can live in the island, most important first. */
-private enum class Activity { Call, Nav, Live, Trip, Timer, Score, Media }
+private enum class Activity { Call, Torch, Nav, Live, Trip, Timer, Score, Media }
 
 private sealed interface IslandMode {
     data object Idle : IslandMode
@@ -155,6 +155,9 @@ private sealed interface IslandMode {
     data object Peek : IslandMode
     /** Kinetic's own live things (stopwatch, Focus, up next, planes, flights). */
     data object LiveCompact : IslandMode
+    /** iOS 18 flashlight: a torch icon, and a top-down flashlight with its beam when open. */
+    data object TorchCompact : IslandMode
+    data object TorchExpanded : IslandMode
     data object LiveExpanded : IslandMode
     /** A notification as a small pill: app icon + a couple of words. */
     data object PeekCompact : IslandMode
@@ -202,6 +205,7 @@ fun DynamicIsland(
     val expanded by model.expanded.collectAsState()
     val lives by LiveHub.lives.collectAsState()
     val lv = lives.firstOrNull()
+    val torch by TorchLive.state.collectAsState()
 
     val c = call
     val m = media
@@ -211,6 +215,7 @@ fun DynamicIsland(
 
     val activities = buildList {
         if (c != null) add(Activity.Call)
+        if (torch != null) add(Activity.Torch)
         if (n != null) add(Activity.Nav)
         if (lv != null) add(Activity.Live)
         if (trip != null) add(Activity.Trip)
@@ -239,6 +244,7 @@ fun DynamicIsland(
             Activity.Call -> IslandMode.CallExpanded
             Activity.Nav -> IslandMode.NavExpanded
             Activity.Live -> IslandMode.LiveExpanded
+            Activity.Torch -> IslandMode.TorchExpanded
             Activity.Timer -> IslandMode.TimerExpanded
             Activity.Trip -> IslandMode.TripExpanded
             Activity.Score -> IslandMode.ScoreExpanded
@@ -247,6 +253,7 @@ fun DynamicIsland(
         primary == Activity.Call -> IslandMode.CallCompact
         primary == Activity.Nav -> IslandMode.NavCompact
         primary == Activity.Live -> IslandMode.LiveCompact
+        primary == Activity.Torch -> IslandMode.TorchCompact
         primary == Activity.Timer -> IslandMode.TimerCompact
         primary == Activity.Trip -> IslandMode.TripCompact
         primary == Activity.Score -> IslandMode.ScoreCompact
@@ -293,6 +300,8 @@ fun DynamicIsland(
         IslandMode.NavExpanded -> fullW to ExpandedNavH + cameraRoom
         IslandMode.TripCompact, IslandMode.ScoreCompact -> (CompactW + 40.dp) to pillH
         IslandMode.LiveCompact -> (CompactW + 40.dp) to pillH
+        IslandMode.TorchCompact -> (restW + pillH * 1.5f) to pillH
+        IslandMode.TorchExpanded -> minOf(fullW, 236.dp) to 232.dp + cameraRoom
         IslandMode.LiveExpanded -> fullW to (if (lv?.actions.isNullOrEmpty()) 96.dp else 136.dp) + cameraRoom
         IslandMode.TripExpanded -> fullW to 118.dp + cameraRoom
         IslandMode.ScoreExpanded -> fullW to 104.dp + cameraRoom
@@ -311,6 +320,7 @@ fun DynamicIsland(
         IslandMode.NavCompact -> IslandMode.NavExpanded
         IslandMode.TripCompact -> IslandMode.TripExpanded
         IslandMode.LiveCompact -> IslandMode.LiveExpanded
+        IslandMode.TorchCompact -> IslandMode.TorchExpanded
         IslandMode.ScoreCompact -> IslandMode.ScoreExpanded
         IslandMode.PeekCompact -> IslandMode.Peek
         else -> null
@@ -322,6 +332,7 @@ fun DynamicIsland(
         IslandMode.NavExpanded -> IslandMode.NavCompact
         IslandMode.TripExpanded -> IslandMode.TripCompact
         IslandMode.LiveExpanded -> IslandMode.LiveCompact
+        IslandMode.TorchExpanded -> IslandMode.TorchCompact
         IslandMode.ScoreExpanded -> IslandMode.ScoreCompact
         else -> null
     }
@@ -445,9 +456,9 @@ fun DynamicIsland(
 
     val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
         mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact || mode == IslandMode.TripCompact || mode == IslandMode.ScoreCompact ||
-        mode == IslandMode.PeekCompact || mode == IslandMode.LiveCompact
+        mode == IslandMode.PeekCompact || mode == IslandMode.LiveCompact || mode == IslandMode.TorchCompact
     val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
-        mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded || mode == IslandMode.LiveExpanded ||
+        mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded || mode == IslandMode.LiveExpanded || mode == IslandMode.TorchExpanded ||
         (mode == IslandMode.CallExpanded && c?.incoming == false)
     val haptic = { if (settings.haptics) onHaptic() }
 
@@ -470,6 +481,7 @@ fun DynamicIsland(
             Activity.Call -> model.openCall()
             Activity.Nav -> model.openNav()
             Activity.Live -> lv?.onTap?.invoke() ?: if (expanded) model.collapse() else model.expand()
+            Activity.Torch -> if (!expanded) model.expand()
             Activity.Timer -> model.openTimer()
             Activity.Trip -> model.openTrip()
             Activity.Score -> model.openScore()
@@ -558,7 +570,7 @@ fun DynamicIsland(
             run {
                 val bubbleExtra = if (secondary != null && bubble > 0.01f) (BubbleGap + pillH) * bubble else 0.dp
                 val cx = screenWidth / 2 + centerOffset
-                KineticStatusBar(screenWidth, top, pillH, cx - w / 2, cx + w / 2 + bubbleExtra)
+                KineticStatusBar(screenWidth, top, pillH, cx - w / 2, cx + w / 2 + bubbleExtra, busy = mode != IslandMode.Idle)
             }
             // ---- the bubble for a second activity --------------------------------------
             if (bubble > 0.01f && secondary != null) {
@@ -670,6 +682,7 @@ fun DynamicIsland(
                                     IslandMode.TimerCompact, IslandMode.TimerExpanded -> open(Activity.Timer)
                                     IslandMode.NavCompact, IslandMode.NavExpanded -> open(Activity.Nav)
                                     IslandMode.LiveCompact, IslandMode.LiveExpanded -> open(Activity.Live)
+                                    IslandMode.TorchCompact -> { haptic(); open(Activity.Torch) }
                                     IslandMode.TripCompact, IslandMode.TripExpanded -> open(Activity.Trip)
                                     IslandMode.ScoreCompact, IslandMode.ScoreExpanded -> open(Activity.Score)
                                     is IslandMode.Alert -> when (mode.alert) {
@@ -736,7 +749,8 @@ private fun IslandContent(
 ) {
     val big = shown is IslandMode.MediaExpanded || shown is IslandMode.CallExpanded || shown is IslandMode.TimerExpanded ||
         shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek ||
-        shown is IslandMode.TripExpanded || shown is IslandMode.ScoreExpanded || shown is IslandMode.LiveExpanded
+        shown is IslandMode.TripExpanded || shown is IslandMode.ScoreExpanded || shown is IslandMode.LiveExpanded ||
+        shown is IslandMode.TorchExpanded
     Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
                         IslandMode.Idle -> IdleContent()
@@ -759,6 +773,8 @@ private fun IslandContent(
                         IslandMode.PeekCompact -> p?.let { PeekCompactContent(it) }
                         IslandMode.LiveCompact -> LiveHub.lives.value.firstOrNull()?.let { LiveCompactContent(it) }
                         IslandMode.LiveExpanded -> LiveHub.lives.value.firstOrNull()?.let { LiveExpandedContent(it) }
+                        IslandMode.TorchCompact -> TorchLive.state.value?.let { TorchCompactContent(it) }
+                        IslandMode.TorchExpanded -> TorchLive.state.value?.let { TorchExpandedContent(it, model) }
                     }
     }
 }
@@ -776,6 +792,7 @@ private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.Tim
         Activity.Timer -> TimerGlyph(Orange, Modifier.size(s * 0.55f))
         Activity.Nav -> NavArrow(n, Modifier.size(s * 0.6f))
         Activity.Live -> LiveHub.lives.value.firstOrNull()?.let { l -> Text(l.icon, color = Color(l.accent), fontSize = 13.sp, maxLines = 1) }
+        Activity.Torch -> TorchGlyph(TorchLive.state.value?.on == true, Modifier.size(s * 0.42f, s * 0.6f))
         Activity.Call -> PhoneGlyph(Green, Modifier.size(s * 0.5f))
         Activity.Trip -> model.trip.value?.icon?.let { bmp ->
             val img = remember(bmp) { bmp.asImageBitmap() }
@@ -2043,3 +2060,165 @@ private fun clock(ms: Long): String {
     val seconds = total % 60
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
+
+
+// ---- flashlight (iOS 18 style) ------------------------------------------------------------
+
+/** The SF-Symbols-like flashlight: head at the top, body below, a little switch. */
+@Composable
+private fun TorchGlyph(on: Boolean, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val c = if (on) Color.White else Grey
+        // Head (wider, at the top) narrowing into the body.
+        val head = Path().apply {
+            moveTo(w * 0.08f, 0f)
+            lineTo(w * 0.92f, 0f)
+            lineTo(w * 0.92f, h * 0.16f)
+            lineTo(w * 0.72f, h * 0.36f)
+            lineTo(w * 0.28f, h * 0.36f)
+            lineTo(w * 0.08f, h * 0.16f)
+            close()
+        }
+        drawPath(head, c)
+        drawRoundRect(c, Offset(w * 0.28f, h * 0.33f), Size(w * 0.44f, h * 0.67f), CornerRadius(w * 0.1f))
+        drawCircle(if (on) Color(0xFF1C1C1E) else Color(0xFF3A3A3C), w * 0.09f, Offset(w * 0.5f, h * 0.58f))
+    }
+}
+
+@Composable
+private fun TorchCompactContent(t: TorchLive.Torch) {
+    val s = LocalPill.current
+    CompactSplit(
+        leading = { TorchGlyph(t.on, Modifier.size(s * 0.36f, s * 0.56f)) },
+        trailing = {},
+        padding = 12.dp,
+    )
+}
+
+/**
+ * Open: a flashlight seen from above, shining down. The beam reaches further the
+ * brighter it is. Drag up/down anywhere to change brightness; tap the flashlight to
+ * switch it off or on.
+ */
+@Composable
+private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val target = if (t.on) t.level.toFloat() / t.max else 0f
+    val frac by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 380f), label = "torch")
+    val glow by animateFloatAsState(if (t.on) 1f else 0f, tween(250), label = "torchOn")
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(t.max) {
+                var startLevel = 1
+                var acc = 0f
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        startLevel = TorchLive.state.value?.level ?: 1
+                        acc = 0f
+                    },
+                ) { change, dy ->
+                    change.consume()
+                    acc += dy
+                    model.touched()
+                    val cur = TorchLive.state.value ?: return@detectVerticalDragGestures
+                    if (!cur.on || cur.max <= 1) return@detectVerticalDragGestures
+                    // Dragging down stretches the beam (brighter); up shortens it.
+                    val step = size.height * 0.6f / cur.max
+                    val l = (startLevel + (acc / step).roundToIntSafe()).coerceIn(1, cur.max)
+                    if (l != cur.level) {
+                        TorchLive.setLevel(l)
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                    }
+                }
+            },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2
+            val bodyTop = 10.dp.toPx()
+            val bodyW = 30.dp.toPx()
+            val headW = 46.dp.toPx()
+            val bodyH = 44.dp.toPx()
+            val headH = 16.dp.toPx()
+            val lensY = bodyTop + bodyH + headH
+            // ---- the beam ----
+            if (glow > 0.01f) {
+                val reach = 46.dp.toPx() + (h - lensY - 58.dp.toPx()) * frac
+                val endY = lensY + reach
+                val endHalf = w * 0.36f
+                val bulge = 22.dp.toPx() + 10.dp.toPx() * frac
+                val beam = Path().apply {
+                    moveTo(cx - headW * 0.42f, lensY)
+                    lineTo(cx - endHalf, endY)
+                    quadraticTo(cx, endY + bulge * 2, cx + endHalf, endY)
+                    lineTo(cx + headW * 0.42f, lensY)
+                    close()
+                }
+                drawPath(
+                    beam,
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = (0.55f + 0.3f * frac) * glow),
+                            Color.White.copy(alpha = (0.12f + 0.12f * frac) * glow),
+                        ),
+                        startY = lensY, endY = endY + bulge,
+                    ),
+                )
+                // The curved edge where the light lands (the part you drag).
+                val edge = Path().apply {
+                    moveTo(cx - endHalf, endY)
+                    quadraticTo(cx, endY + bulge * 2, cx + endHalf, endY)
+                }
+                drawPath(edge, Color.White.copy(alpha = 0.95f * glow), style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
+            }
+            // ---- the flashlight, from above (body, then the head and lens pointing down) ----
+            val metal = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                listOf(Color(0xFF8E8E93), Color(0xFFE5E5EA), Color(0xFF8E8E93)),
+                startX = cx - headW / 2, endX = cx + headW / 2,
+            )
+            drawRoundRect(metal, Offset(cx - bodyW / 2, bodyTop), Size(bodyW, bodyH), CornerRadius(7.dp.toPx()))
+            val head = Path().apply {
+                moveTo(cx - bodyW / 2, bodyTop + bodyH - 2.dp.toPx())
+                lineTo(cx + bodyW / 2, bodyTop + bodyH - 2.dp.toPx())
+                lineTo(cx + headW / 2, bodyTop + bodyH + headH * 0.6f)
+                lineTo(cx + headW / 2, lensY)
+                lineTo(cx - headW / 2, lensY)
+                lineTo(cx - headW / 2, bodyTop + bodyH + headH * 0.6f)
+                close()
+            }
+            drawPath(head, metal)
+            // Lens: glows when on.
+            drawRoundRect(
+                Color(0xFFFFF4D6).copy(alpha = 0.25f + 0.75f * glow),
+                Offset(cx - headW * 0.42f, lensY - 4.dp.toPx()), Size(headW * 0.84f, 5.dp.toPx()), CornerRadius(2.5.dp.toPx()),
+            )
+            // Switch.
+            drawCircle(if (glow > 0.5f) Color.White else Color(0xFF48484A), 5.dp.toPx(), Offset(cx, bodyTop + bodyH * 0.45f))
+        }
+        // Tap the flashlight itself to switch it off / on.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .size(76.dp, 84.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        TorchLive.toggle()
+                        model.touched()
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                    }
+                },
+        )
+        if (!t.on) {
+            Text(
+                "Tap to turn on", color = Grey, fontSize = 13.sp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
+            )
+        }
+    }
+}
+
+private fun Float.roundToIntSafe(): Int = kotlin.math.round(this).toInt()

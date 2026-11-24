@@ -460,8 +460,10 @@ private fun DrawerPage(
                                 badgePackage = entry.app.packageName,
                                 onClick = { onAppClick(entry.app) },
                                 onLongClick = { onAppLongPress(entry.app) },
+                                dragKey = "drawer:" + entry.app.key,
                             )
                             is DrawerEntry.Folder -> FolderTile(
+                                modifier = Modifier.folderDropTarget("drawer:" + entry.folder.id),
                                 name = entry.folder.name,
                                 icons = entry.members.map { it.icon },
                                 tileSize = DRAWER_ICON,

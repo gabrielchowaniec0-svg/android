@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -442,6 +443,24 @@ fun KineticHome(
             }
         }
 
+    // ---- uninstalling ------------------------------------------------------------
+
+    /** Apps that came with the phone can't be uninstalled (only updates/disabling, in App info). */
+    fun canUninstall(e: AppEntry): Boolean = e.packageName != activity.packageName && runCatching {
+        val ai = activity.packageManager.getApplicationInfo(e.packageName, 0)
+        (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+    }.getOrDefault(false)
+
+    /** Android's own "Uninstall this app?" dialog. */
+    fun uninstall(e: AppEntry) {
+        runCatching {
+            activity.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_DELETE, android.net.Uri.parse("package:" + e.packageName))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { toast("Couldn't uninstall ${labelFor(e)}") }
+    }
+
     // ---- menus ----------------------------------------------------------------
 
     fun movePageActions(pageIndex: Int, itemId: String): List<Pair<String, () -> Unit>> = buildList {
@@ -462,17 +481,18 @@ fun KineticHome(
         val folders = layout.pages.getOrNull(pageIndex)?.items?.filterIsInstance<HomeItem.Folder>().orEmpty()
         val actions = mutableListOf<Pair<String, () -> Unit>>()
         actions += "Remove from home screen" to fun() { deps.layout.removeItem(pageIndex, item.id) }
-        actions += "New folder with this app" to fun() {
-            prompt = PromptSpec("Folder name", "Folder") { name ->
-                deps.layout.createFolder(pageIndex, item.id, name.ifBlank { "Folder" })
+        if (folders.isEmpty()) {
+            // (To put it in an existing folder, hold the app and drag it onto the folder.)
+            actions += "New folder with this app" to fun() {
+                prompt = PromptSpec("Folder name", "Folder") { name ->
+                    deps.layout.createFolder(pageIndex, item.id, name.ifBlank { "Folder" })
+                }
             }
-        }
-        folders.forEach { f ->
-            actions += "Add to \"${f.name}\"" to fun() { deps.layout.addToFolder(pageIndex, item.id, f.id) }
         }
         actions += movePageActions(pageIndex, item.id)
         actions += lockAction(entry)
         actions += "App info" to fun() { deps.apps.openAppInfo(entry) }
+        if (canUninstall(entry)) actions += "Uninstall" to fun() { uninstall(entry) }
         return MenuSpec(labelFor(entry), actions)
     }
 
@@ -535,9 +555,6 @@ fun KineticHome(
                 deps.layout.createDrawerFolder(name.ifBlank { "Folder" }, e.key)
             }
         }
-        layout.drawerFolders.filter { it.id != inFolder?.id }.forEach { f ->
-            actions += "Move to \"${f.name}\"" to fun() { deps.layout.moveToDrawerFolder(f.id, e.key) }
-        }
         if (inFolder != null) {
             actions += "Remove from folder" to fun() { deps.layout.removeFromDrawerFolder(inFolder.id, e.key) }
         }
@@ -557,6 +574,7 @@ fun KineticHome(
         }
         actions += lockAction(e)
         actions += "App info" to fun() { deps.apps.openAppInfo(e) }
+        if (canUninstall(e)) actions += "Uninstall" to fun() { uninstall(e) }
         return MenuSpec(labelFor(e), actions)
     }
 
@@ -564,7 +582,13 @@ fun KineticHome(
 
     fun quickActions(q: QuickMenuState): List<Pair<String, () -> Unit>> {
         val e = q.entry
-        return when (val src = q.source) {
+        val uninstallAction: List<Pair<String, () -> Unit>> = if (canUninstall(e)) listOf(
+            "Uninstall" to fun() {
+                quickMenu = null
+                uninstall(e)
+            },
+        ) else emptyList()
+        return uninstallAction + when (val src = q.source) {
             is QuickSource.Home -> listOf(
                 "App info" to fun() {
                     quickMenu = null
@@ -632,12 +656,13 @@ fun KineticHome(
                             editMode -> fun() { menu = appItemMenu(pageIndex, item, entry) }
                             else -> fun() { launchApp(entry) }
                         },
-                        // Icons stay frozen; long-press shows shortcuts instead of moving them.
+                        // Long-press shows shortcuts; keep holding and drag to drop it into a folder.
                         onLongClick = if (interactive && !editMode) {
                             fun() { quickMenu = QuickMenuState(entry, TapOrigin.rect, QuickSource.Home(pageIndex, item.id)) }
                         } else {
                             null
                         },
+                        dragKey = if (interactive && !editMode) "home:$pageIndex:${item.id}" else null,
                     )
                 }
                 content
@@ -651,8 +676,10 @@ fun KineticHome(
                     editMode -> fun() { menu = folderMenu(pageIndex, item) }
                     else -> fun() { openHomeFolder(pageIndex, item.id) }
                 }
+                val drop = if (interactive && !editMode) Modifier.folderDropTarget("home:$pageIndex:${item.id}") else Modifier
                 if (item.isLarge) {
                     LargeFolderTile(
+                        modifier = drop,
                         name = item.name,
                         icons = members.map { it.icon },
                         rings = members.map { hasNotification(it) },
@@ -669,6 +696,7 @@ fun KineticHome(
                     )
                 } else {
                     FolderTile(
+                        modifier = drop,
                         name = item.name,
                         icons = members.map { it.icon },
                         jiggle = interactive && editMode,
@@ -1338,6 +1366,38 @@ fun KineticHome(
             )
         }
 
+        // Hold an app and drag it onto a folder to put it inside.
+        val dragView = androidx.compose.ui.platform.LocalView.current
+        DisposableEffect(Unit) {
+            AppDrag.onStart = {
+                quickMenu = null
+                dragView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            }
+            AppDrag.onHoverChange = { dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) }
+            AppDrag.onDrop = drop@{ dragKey, folderKey ->
+                if (dragKey.startsWith("home:") && folderKey.startsWith("home:")) {
+                    val d = dragKey.split(':', limit = 3)
+                    val f = folderKey.split(':', limit = 3)
+                    val page = d.getOrNull(1)?.toIntOrNull() ?: return@drop
+                    if (f.getOrNull(1)?.toIntOrNull() != page) return@drop
+                    if (deps.layout.addToFolder(page, d[2], f[2])) {
+                        dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                    } else {
+                        toast("Couldn't add it to that folder")
+                    }
+                } else if (dragKey.startsWith("drawer:") && folderKey.startsWith("drawer:")) {
+                    if (deps.layout.moveToDrawerFolder(folderKey.removePrefix("drawer:"), dragKey.removePrefix("drawer:"))) {
+                        dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                    }
+                }
+            }
+            onDispose {
+                AppDrag.onStart = null
+                AppDrag.onHoverChange = null
+                AppDrag.onDrop = null
+            }
+        }
+
         quickMenu?.let { q ->
             QuickMenu(
                 anchor = q.anchor,
@@ -1368,6 +1428,8 @@ fun KineticHome(
                 },
             )
         }
+
+        AppDragLayer()
 
         if (stickies.isNotEmpty() && pagerState.currentPage == 0 && drawerProgress.value < 0.05f) {
             StickyNotesLayer(stickies, onRemove = { com.kinetic.launcher.pen.StickyNotes.remove(activity, it) })

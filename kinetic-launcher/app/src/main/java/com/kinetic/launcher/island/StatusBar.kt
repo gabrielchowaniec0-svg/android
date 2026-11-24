@@ -381,7 +381,7 @@ object StatusBarData {
  * where the island's edges are right now (they change every frame while it morphs).
  */
 @Composable
-fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, islandRight: Dp) {
+fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, islandRight: Dp, busy: Boolean = false) {
     val st by StatusBarData.state.collectAsState()
     val settings by com.kinetic.launcher.KineticSettings.values.collectAsState()
     if (!settings.statusBar || !st.systemBarShown) return
@@ -418,9 +418,13 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
     val leftA = with(density) { ((leftEar.toPx() - leftW) / 10.dp.toPx()).coerceIn(0f, 1f) }
     val rightA = with(density) { ((rightEar.toPx() - rightW) / 10.dp.toPx()).coerceIn(0f, 1f) }
 
+    // While the island is showing something, only the time and battery stay, each
+    // centred in the space between the island and the screen edge.
+    val centred by androidx.compose.animation.core.animateFloatAsState(if (busy) 1f else 0f, tween(260), label = "sbBusy")
+    val extras = if (busy) 0f else 1f - centred
     Box(Modifier.fillMaxWidth().padding(top = top).height(pillH)) {
         // ---- left: time (carrier on the lock screen) + notification icons ----
-        Box(Modifier.offset(x = side).width(leftEar).fillMaxHeight().alpha(leftA), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.offset(x = side).width(leftEar).fillMaxHeight().alpha(leftA), contentAlignment = androidx.compose.ui.BiasAlignment(-1f + centred, 0f)) {
             Row(
                 Modifier.wrapContentWidth(unbounded = true).onSizeChanged { leftW = it.width },
                 verticalAlignment = Alignment.CenterVertically,
@@ -431,47 +435,51 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
                     }
                 } else {
                     Text(time, color = tint, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, letterSpacing = 0.2.sp)
-                    if (icons.isNotEmpty()) Spacer(Modifier.width(8.dp))
-                    icons.take(3).forEachIndexed { i, bmp ->
-                        val img = remember(bmp) { bmp.asImageBitmap() }
-                        if (i > 0) Spacer(Modifier.width(6.dp))
-                        Image(img, null, colorFilter = ColorFilter.tint(tint.copy(alpha = 0.85f)), modifier = Modifier.size(14.dp))
-                    }
-                    if (more) {
-                        Spacer(Modifier.width(6.dp))
-                        Canvas(Modifier.size(4.dp)) { drawCircle(tint.copy(alpha = 0.85f)) }
+                    if (extras > 0.01f) Row(Modifier.alpha(extras), verticalAlignment = Alignment.CenterVertically) {
+                        if (icons.isNotEmpty()) Spacer(Modifier.width(8.dp * extras))
+                        icons.take(3).forEachIndexed { i, bmp ->
+                            val img = remember(bmp) { bmp.asImageBitmap() }
+                            if (i > 0) Spacer(Modifier.width(6.dp))
+                            Image(img, null, colorFilter = ColorFilter.tint(tint.copy(alpha = 0.85f)), modifier = Modifier.size(14.dp))
+                        }
+                        if (more) {
+                            Spacer(Modifier.width(6.dp))
+                            Canvas(Modifier.size(4.dp)) { drawCircle(tint.copy(alpha = 0.85f)) }
+                        }
                     }
                 }
             }
         }
         // ---- right: signal, network, sound, battery ----
-        Box(Modifier.offset(x = islandRight + gap).width(rightEar).fillMaxHeight().alpha(rightA), contentAlignment = Alignment.CenterEnd) {
+        Box(Modifier.offset(x = islandRight + gap).width(rightEar).fillMaxHeight().alpha(rightA), contentAlignment = androidx.compose.ui.BiasAlignment(1f - centred, 0f)) {
             Row(
                 Modifier.wrapContentWidth(unbounded = true).onSizeChanged { rightW = it.width },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (st.dnd) {
-                    MoonGlyph(tint, Modifier.size(12.dp))
-                    Spacer(Modifier.width(7.dp))
-                }
-                if (st.ringer != AudioManager.RINGER_MODE_NORMAL) {
-                    if (st.ringer == AudioManager.RINGER_MODE_VIBRATE) VibrateGlyph(tint, Modifier.size(13.dp))
-                    else MuteGlyph(tint, Modifier.size(13.dp))
-                    Spacer(Modifier.width(7.dp))
-                }
-                if (st.airplane) {
-                    Text("✈", color = tint, fontSize = 13.sp)
-                    Spacer(Modifier.width(5.dp))
-                } else {
-                    SignalBars(st.signal, tint, Modifier.size(16.dp, 11.dp))
-                    Spacer(Modifier.width(6.dp))
-                }
-                if (st.wifi >= 0) {
-                    WifiGlyph(st.wifi, tint, Modifier.size(16.dp, 12.dp))
-                    Spacer(Modifier.width(7.dp))
-                } else if (!st.airplane && st.net != null) {
-                    Text(st.net!!, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Spacer(Modifier.width(7.dp))
+                if (extras > 0.01f) Row(Modifier.alpha(extras), verticalAlignment = Alignment.CenterVertically) {
+                    if (st.dnd) {
+                        MoonGlyph(tint, Modifier.size(12.dp))
+                        Spacer(Modifier.width(7.dp))
+                    }
+                    if (st.ringer != AudioManager.RINGER_MODE_NORMAL) {
+                        if (st.ringer == AudioManager.RINGER_MODE_VIBRATE) VibrateGlyph(tint, Modifier.size(13.dp))
+                        else MuteGlyph(tint, Modifier.size(13.dp))
+                        Spacer(Modifier.width(7.dp))
+                    }
+                    if (st.airplane) {
+                        Text("✈", color = tint, fontSize = 13.sp)
+                        Spacer(Modifier.width(5.dp))
+                    } else {
+                        SignalBars(st.signal, tint, Modifier.size(16.dp, 11.dp))
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    if (st.wifi >= 0) {
+                        WifiGlyph(st.wifi, tint, Modifier.size(16.dp, 12.dp))
+                        Spacer(Modifier.width(7.dp))
+                    } else if (!st.airplane && st.net != null) {
+                        Text(st.net!!, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Spacer(Modifier.width(7.dp))
+                    }
                 }
                 BatteryPill(st.battery, tint, dark)
             }

@@ -561,8 +561,9 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             openPeekActions()
             return
         }
+        // Kinetic's own live things (stopwatch, Focus, flashlight…) can open too.
         if (_media.value == null && call.value == null && timer.value == null && nav.value == null &&
-            trip.value == null && score.value == null
+            trip.value == null && score.value == null && LiveHub.lives.value.isEmpty() && TorchLive.state.value == null
         ) return
         _expanded.value = true
         scheduleCollapse()
