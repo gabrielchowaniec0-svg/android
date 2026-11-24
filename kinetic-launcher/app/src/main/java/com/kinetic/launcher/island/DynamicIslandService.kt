@@ -253,39 +253,56 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             title = "Kinetic Dynamic Island touch"
         }
         touchParams = tp
-        // A pull that starts on the island counts wherever the finger goes after that.
-        // (The island's own drag follows the finger; this makes sure a fast pull that
-        // leaves the island still opens it.)
+        // Pulls are tracked here, for the whole gesture: once a finger that started on
+        // the island moves up or down, it's a pull wherever it goes (fast or slow), and
+        // the island's own tap/hold handling is told to stand down.
+        var downX = 0f
         var downY = 0f
-        var pulled = false
-        val pullPx = 44 * density
+        var pulling = false
+        var tracker: android.view.VelocityTracker? = null
+        val slop = 10 * density
         val t = View(this).apply {
             setOnTouchListener { _, e ->
                 if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
                     // A tap anywhere outside the island folds it back up.
                     model.collapse()
                     if (!model.replying.value) model.dismissPeek()
-                } else {
+                    return@setOnTouchListener true
+                }
+                val screen = MotionEvent.obtain(e).apply { offsetLocation(e.rawX - e.x, e.rawY - e.y) }
+                if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+                    downX = e.rawX
+                    downY = e.rawY
+                    pulling = false
+                    tracker?.recycle()
+                    tracker = android.view.VelocityTracker.obtain()
+                }
+                tracker?.addMovement(screen)
+                val dx = e.rawX - downX
+                val dy = e.rawY - downY
+                if (!pulling && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && !model.replying.value) {
+                    pulling = true
+                    // Not a tap or a hold any more.
+                    val cancel = MotionEvent.obtain(screen).apply { action = MotionEvent.ACTION_CANCEL }
+                    v.dispatchTouchEvent(cancel)
+                    cancel.recycle()
+                }
+                if (pulling) {
                     when (e.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            downY = e.rawY
-                            pulled = false
+                        MotionEvent.ACTION_MOVE -> model.pullMove(dy)
+                        MotionEvent.ACTION_UP -> {
+                            tracker?.computeCurrentVelocity(1000)
+                            model.pullEnd(dy, tracker?.yVelocity ?: 0f)
                         }
-                        MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> if (!pulled) {
-                            val dy = e.rawY - downY
-                            if (dy > pullPx) {
-                                pulled = true
-                                if (model.expandFromPull()) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            } else if (dy < -pullPx) {
-                                pulled = true
-                                model.pushUp()
-                            }
-                        }
+                        MotionEvent.ACTION_CANCEL -> model.pullEnd(0f, 0f)
                     }
-                    val ev = MotionEvent.obtain(e)
-                    ev.offsetLocation(e.rawX - e.x, e.rawY - e.y)
-                    v.dispatchTouchEvent(ev)
-                    ev.recycle()
+                } else {
+                    v.dispatchTouchEvent(screen)
+                }
+                screen.recycle()
+                if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    tracker?.recycle()
+                    tracker = null
                 }
                 true
             }

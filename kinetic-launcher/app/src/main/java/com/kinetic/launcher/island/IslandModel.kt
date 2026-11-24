@@ -364,22 +364,22 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         dismissPeek()
     }
 
-    /** A pull down that started on the island. True if it opened something. */
-    fun expandFromPull(): Boolean {
-        if (_peek.value != null) {
-            if (_peekOpen.value) return false
-            openPeekActions()
-            return true
-        }
-        if (_expanded.value) return false
-        val before = _expanded.value
-        expand()
-        return _expanded.value != before
+    /** A pull on the island: [dy] px from where it started (down is positive). */
+    data class Pull(val dy: Float, val done: Boolean = false, val vy: Float = 0f)
+
+    private val _pull = MutableStateFlow<Pull?>(null)
+    val pull: StateFlow<Pull?> = _pull.asStateFlow()
+
+    fun pullMove(dy: Float) {
+        _pull.value = Pull(dy)
     }
 
-    /** A push up that started on the island: folds it, or sends a peek away. */
-    fun pushUp() {
-        if (_peek.value != null && !_replying.value) dismissPeek() else collapse()
+    fun pullEnd(dy: Float, vy: Float) {
+        _pull.value = Pull(dy, done = true, vy = vy)
+    }
+
+    fun clearPull() {
+        if (_pull.value?.done == true) _pull.value = null
     }
 
     fun openPeek() {

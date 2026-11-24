@@ -413,6 +413,58 @@ fun DynamicIsland(
         }
     }
 
+    // ---- pulling the island (down to open, up to close) ---------------------------
+    // The touch window tracks the whole pull (even when the finger leaves the island)
+    // and reports it here; the shape follows the finger, then finishes on release.
+    val pull by model.pull.collectAsState()
+    val pullDist = with(density) { 110.dp.toPx() }
+    val flick = with(density) { 300.dp.toPx() }
+    LaunchedEffect(pull) {
+        val ps = pull ?: return@LaunchedEffect
+        if (!ps.done) {
+            if (!dragging && morphTo == null) {
+                model.touched()
+                model.touchPeek()
+                morphTo = if (ps.dy > 0) expandsTo else collapsesTo
+                dragging = morphTo != null
+            }
+            val to = morphTo ?: return@LaunchedEffect
+            val p = if (to == expandsTo) ps.dy / pullDist else -ps.dy / pullDist
+            morphStep(mode, to, p.coerceIn(0f, 1f))
+        } else {
+            val to = morphTo
+            val p = morph.value
+            val vy = ps.vy
+            val opening = to != null && to == expandsTo
+            val commit = to != null && (
+                if (opening) (p > 0.3f && vy > -flick) || vy > flick
+                else (p > 0.3f && vy < flick) || vy < -flick
+                )
+            if ((mode == IslandMode.Peek || mode == IslandMode.PeekCompact) && !replying && (ps.dy < -pullDist * 0.25f || vy < -flick)) {
+                model.dismissPeek()
+            }
+            if (commit) {
+                haptic()
+                if (opening) model.expand() else model.collapse()
+            }
+            // Always let go of the pull, so the island can never get stuck half-way.
+            morphTo = null
+            dragging = false
+            settleTick++
+            model.clearPull()
+            morph.animateTo(0f, tween(160))
+        }
+    }
+    // If the island changes shape on its own mid-pull (a call, a notification…), drop the pull.
+    LaunchedEffect(mode) {
+        if (dragging && model.pull.value == null) {
+            morphTo = null
+            dragging = false
+            settleTick++
+            morph.snapTo(0f)
+        }
+    }
+
     CompositionLocalProvider(LocalPill provides pillH) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             // ---- the bubble for a second activity --------------------------------------
@@ -469,59 +521,6 @@ fun DynamicIsland(
                     }
                     .clip(RoundedCornerShape(r))
                     .background(IslandBlack)
-                    .pointerInput(mode, expandsTo, collapsesTo) {
-                        // Pull down on a small island to open it (or push up on a big one to
-                        // close it): the shape follows your finger the whole way, then
-                        // finishes on its own when you let go.
-                        var rawY = 0f
-                        val tracker = VelocityTracker()
-                        val pullDist = with(density) { 110.dp.toPx() }
-                        val flick = with(density) { 300.dp.toPx() }
-                        fun target(): IslandMode? = when {
-                            mode == IslandMode.Peek -> null
-                            expandsTo != null -> expandsTo
-                            else -> collapsesTo
-                        }
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                rawY = 0f
-                                tracker.resetTracking()
-                                model.touched()
-                                model.touchPeek()
-                                morphTo = target()
-                                dragging = morphTo != null
-                            },
-                            onDragEnd = {
-                                val vy = tracker.calculateVelocity().y
-                                val to = morphTo
-                                val p = morph.value
-                                val opening = expandsTo != null
-                                val commit = to != null && (if (opening) (p > 0.35f && vy > -flick) || vy > flick else (p > 0.35f && vy < flick) || vy < -flick)
-                                if ((mode == IslandMode.Peek || mode == IslandMode.PeekCompact) && !replying && (rawY < -pullDist * 0.25f || vy < -flick)) model.dismissPeek()
-                                if (commit) {
-                                    haptic()
-                                    if (opening) model.expand() else model.collapse()
-                                }
-                                scope.launch { morph.animateTo(0f, tween(160)) }
-                                morphTo = null
-                                dragging = false
-                                settleTick++
-                            },
-                            onDragCancel = {
-                                morphTo = null
-                                dragging = false
-                                settleTick++
-                                scope.launch { morph.snapTo(0f) }
-                            },
-                        ) { change, dy ->
-                            change.consume()
-                            tracker.addPointerInputChange(change)
-                            rawY += dy
-                            val to = morphTo ?: return@detectVerticalDragGestures
-                            val p = if (expandsTo != null) (rawY / pullDist) else (-rawY / pullDist)
-                            morphStep(mode, to, p.coerceIn(0f, 1f))
-                        }
-                    }
                     .pointerInput(mode) {
                         detectTapGestures(
                             onPress = {
