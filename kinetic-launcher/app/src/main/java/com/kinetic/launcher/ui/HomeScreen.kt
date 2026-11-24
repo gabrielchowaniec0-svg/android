@@ -179,7 +179,6 @@ fun KineticHome(
     var drawerPickMode by remember { mutableStateOf(false) }
     var privateRevealed by remember { mutableStateOf(false) }
     var askingCode by remember { mutableStateOf(false) }
-    var controlCenter by remember { mutableStateOf(false) }
     /** An app that needs the Kinetic code, waiting to be opened. */
     var pendingLaunch by remember { mutableStateOf<AppEntry?>(null) }
     val lockPrefs = remember { com.kinetic.wallpaper.WallpaperSignals.prefs(activity) }
@@ -442,6 +441,12 @@ fun KineticHome(
                 }
             }
         }
+
+    /** Android's own Quick Settings (falls back to the notification shade). */
+    fun openQuickSettings() {
+        val ok = com.kinetic.launcher.island.DynamicIslandService.globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+        if (!ok) onExpandNotifications()
+    }
 
     // ---- uninstalling ------------------------------------------------------------
 
@@ -1034,7 +1039,7 @@ fun KineticHome(
             .pointerInput(gesturesEnabled) {
                 if (!gesturesEnabled) return@pointerInput
                 var total = 0f
-                var mode = 0 // 0 = undecided, 1 = pulling up the drawer, 2 = notification shade, 3 = Control Center
+                var mode = 0 // 0 = undecided, 1 = pulling up the drawer, 2 = notification shade, 3 = Android's Quick Settings
                 var shadeOpened = false
                 var fromTopRight = false
                 val velocity = VelocityTracker()
@@ -1043,7 +1048,7 @@ fun KineticHome(
                         total = 0f
                         mode = 0
                         shadeOpened = false
-                        // Like iPhone: from the top-right corner, a swipe down opens Control Center.
+                        // From the top-right corner, a swipe down opens Android's Quick Settings (toggles).
                         fromTopRight = start.x > size.width * 0.62f && start.y < size.height * 0.22f
                         velocity.resetTracking()
                     },
@@ -1059,7 +1064,7 @@ fun KineticHome(
                                 else -> closeDrawer(vy)
                             }
                             2 -> if (!shadeOpened && (vy > flingVelocityPx || total > swipeThresholdPx)) currentExpandNotifications()
-                            3 -> if (!shadeOpened && vy > flingVelocityPx) controlCenter = true
+                            3 -> if (!shadeOpened && vy > flingVelocityPx) openQuickSettings()
                         }
                     },
                     onDragCancel = { if (mode == 1) closeDrawer() },
@@ -1070,7 +1075,7 @@ fun KineticHome(
                     if (mode == 0) mode = if (dragAmount < 0f) 1 else if (fromTopRight) 3 else 2
                     if (mode == 3 && !shadeOpened && total > swipeThresholdPx * 0.6f) {
                         shadeOpened = true
-                        controlCenter = true
+                        openQuickSettings()
                     }
                     if (mode == 1) dragDrawerBy(dragAmount)
                     // Open the shade mid-swipe, the moment it's clearly a pull down.
@@ -1435,7 +1440,6 @@ fun KineticHome(
             StickyNotesLayer(stickies, onRemove = { com.kinetic.launcher.pen.StickyNotes.remove(activity, it) })
         }
         InkLayer(ink)
-        if (controlCenter) ControlCenter(onDismiss = { controlCenter = false })
         menu?.let { spec -> ActionMenu(spec, onDismiss = { menu = null }) }
         prompt?.let { spec -> TextPrompt(spec, onDismiss = { prompt = null }) }
         if (askingCode) {
