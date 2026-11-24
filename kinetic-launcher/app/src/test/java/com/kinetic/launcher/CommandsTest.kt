@@ -91,6 +91,17 @@ class CommandsTest {
     }
 
     @Test
+    fun secureVideo() {
+        for (t in listOf("secure video", "record a secure video", "private video", "record video to the vault")) {
+            val p = KineticCommands.parse(t)
+            assertTrue("$t -> $p", p is Parsed.Act && p.action == com.kinetic.launcher.ui.Assistant.Action.SecureVideo)
+        }
+        // A normal video is still a normal video.
+        val normal = KineticCommands.parse("record a video")
+        assertTrue("$normal", normal is Parsed.Act && normal.action == com.kinetic.launcher.ui.Assistant.Action.Video)
+    }
+
+    @Test
     fun durations() {
         assertEquals(600, KineticCommands.parseDuration("10 min"))
         assertEquals(3600, KineticCommands.parseDuration("1 hour"))

@@ -228,6 +228,7 @@ class HelpActivity : ComponentActivity() {
                         ex("photos from yesterday", "Or today / last week"),
                         ex("take a screenshot", "Screenshot"),
                         ex("secure screenshot", "Straight into the Vault"),
+                        ex("secure video", "Record a video straight into the Vault"),
                         ex("start video recording", "Camera in video mode"),
                     ),
                 ),

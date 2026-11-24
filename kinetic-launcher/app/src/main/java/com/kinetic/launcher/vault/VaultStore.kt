@@ -99,11 +99,18 @@ class VaultStore(context: Context, private val key: SecretKey, private val decoy
             var tmp = raw
             try {
                 f.inputStream().buffered().use { i -> raw.outputStream().use { o -> VaultCrypto.dropDecrypt(app, key, i, o) } }
-                // Screenshots are PNG; intruder photos are JPEG.
-                val jpeg = raw.inputStream().use { val b = ByteArray(2); it.read(b) == 2 && b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte() }
-                tmp = File(captureDir(app), f.nameWithoutExtension + if (jpeg) ".jpg" else ".png")
+                // Screenshots are PNG, intruder photos JPEG, secure videos MP4 ("ftyp" at byte 4).
+                val head = raw.inputStream().use { val b = ByteArray(12); val n = it.read(b); if (n > 0) b.copyOf(n) else ByteArray(0) }
+                val jpeg = head.size >= 2 && head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte()
+                val mp4 = head.size >= 8 && String(head, 4, 4, Charsets.US_ASCII) == "ftyp"
+                val (ext, mime) = when {
+                    mp4 -> ".mp4" to "video/mp4"
+                    jpeg -> ".jpg" to "image/jpeg"
+                    else -> ".png" to "image/png"
+                }
+                tmp = File(captureDir(app), f.nameWithoutExtension + ext)
                 raw.renameTo(tmp)
-                if (importFile(tmp, if (jpeg) "image/jpeg" else "image/png") != null) {
+                if (importFile(tmp, mime) != null) {
                     f.delete()
                     n++
                 }

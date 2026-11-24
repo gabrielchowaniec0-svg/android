@@ -675,3 +675,11 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 
 ### Kinetic's Control Center removed
 - Kinetic's own Control Center is gone (Android's is good enough). Swiping down from the **top-right corner** of the home screen now opens **Android's Quick Settings** (the toggles) directly; swiping down anywhere else still opens the notification shade. The flashlight still shows in the island however you turn it on.
+
+### Secure video (videos straight into the Vault)
+- **No code needed to record:** write `secure video` (also "private video", "record a secure video", "record video to the vault"), or try it from the help list. A full-screen camera opens: tap the red button to record, tap again to stop. It flips between front and back cameras with ⟲. It also works over the lock screen.
+- The video is recorded into Kinetic's private storage (never the gallery), sealed with the Vault's lock, and the unsealed copy is wiped. The island says "Secure video saved to the Vault". You need your Vault code to watch it; it shows up the next time you open the Vault.
+- Leaving the camera (home button, screen off) stops and saves the recording.
+- The screen can't be screenshotted or shown in Recents while it's open.
+- **Inside the Vault:** there's also a new **Video** button next to Camera, which records with your camera app straight into the Vault.
+- The Vault needs to have been opened once before secure video works (that sets up its lock).
