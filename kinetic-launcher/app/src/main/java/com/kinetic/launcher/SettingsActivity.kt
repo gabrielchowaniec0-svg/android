@@ -166,6 +166,19 @@ class SettingsActivity : ComponentActivity() {
                 }
             }
 
+            // ---- privacy ------------------------------------------------------------------
+            Section("Privacy") {
+                val hasCode = com.kinetic.launcher.vault.VaultCrypto.isSetUp(this@SettingsActivity)
+                LinkRow("Vault", "Encrypted photos & videos, opened with your Kinetic code", on = hasCode) {
+                    com.kinetic.launcher.vault.VaultActivity.open(this@SettingsActivity)
+                }
+                if (hasCode) {
+                    LinkRow("Change Kinetic code", "The PIN or pattern for the Vault and hidden apps", on = false) {
+                        com.kinetic.launcher.vault.VaultActivity.changeCode(this@SettingsActivity)
+                    }
+                }
+            }
+
             // ---- island -------------------------------------------------------------------
             Section("Dynamic Island") {
                 SwitchRow("Show resting pill", "The black pill around the camera when nothing's going on", s.islandRestingPill, bool(KineticSettings.ISLAND_RESTING))

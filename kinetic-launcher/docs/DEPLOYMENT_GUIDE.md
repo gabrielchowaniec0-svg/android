@@ -429,3 +429,18 @@ Debug builds (Android Studio's default) are noticeably slower, especially for
 animations: the app runs with debugging hooks and isn't fully compiled. For
 day-to-day use pick **Build ▸ Select Build Variant… ▸ app: release**, then Run.
 It's signed with the same debug key, so it installs over the debug version.
+
+## Vault & the Kinetic code
+
+The Vault (drawer ⋮ ▸ Vault, or Settings ▸ Privacy ▸ Vault) keeps photos and videos encrypted inside Kinetic.
+
+- **Kinetic code.** The first time, you choose a 6-digit PIN or a pattern. It protects the Vault *and* "Show hidden apps". It's separate from your phone's lock screen. Change it under Settings ▸ Privacy ▸ Change Kinetic code.
+- **Wrong tries.** After 5 wrong tries Kinetic makes you wait 30 seconds, doubling each time (up to 15 minutes).
+- **Adding.** "Add from gallery" encrypts the photos/videos you pick, then Android asks you to confirm deleting the originals. "Camera" takes a photo that goes straight into the Vault and never appears in your gallery.
+- **Taking things out.** Open an item ▸ "Move to gallery" puts it back in Pictures/Kinetic or Movies/Kinetic.
+- **Privacy.** Screenshots and the recent-apps preview are blocked, and the Vault locks the moment you leave it.
+- **How it's protected.** Each file is encrypted with AES-256. The key is locked twice: once with your code and once with a key stored in the phone's secure hardware. A copied file is useless on another phone or without your code.
+- **⚠️ No recovery.** If you forget the code, or uninstall Kinetic / clear its data, the Vault's contents are gone for good. Keep a backup of anything important elsewhere.
+
+### Why not "just one fingerprint"?
+Android only tells an app "a fingerprint on this phone matched". It never says *which* finger, and apps can't register their own fingerprints. So Kinetic can't limit secure things to one finger. That's why the Vault and hidden apps use the Kinetic code instead of fingerprints.
