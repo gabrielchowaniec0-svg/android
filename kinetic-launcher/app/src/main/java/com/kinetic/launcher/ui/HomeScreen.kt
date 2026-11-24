@@ -182,6 +182,8 @@ fun KineticHome(
     var widgetPickerOpen by remember { mutableStateOf(false) }
     /** Bumped by the three-finger tap to open search. */
     var searchSignal by remember { mutableIntStateOf(0) }
+    /** Text to put in search when it opens (from S Pen handwriting). */
+    var searchPrefill by remember { mutableStateOf("") }
     /** Set while picking a widget to add to an existing widget's smart stack. */
     var stackTarget by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf<MenuSpec?>(null) }
@@ -304,6 +306,37 @@ fun KineticHome(
             )
         }
     }
+
+    // ---- S Pen: write on the home screen ----------------------------------------
+    // What you write runs as a Kinetic Command, opens a matching app, or searches.
+    lateinit var ink: InkState
+    fun handleInk(text: String) {
+        val parsed = KineticCommands.parse(text)
+        scope.launch {
+            val ready = parsed?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { KineticCommands.resolve(activity, it) } }
+            val allowed = ready?.permission?.let { activity.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED } ?: true
+            if (ready != null && allowed) {
+                ink.say("✎ ${ready.title}")
+                if (!ready.run(activity)) ink.say("Couldn't do “$text”")
+                return@launch
+            }
+            val apps = allApps.orEmpty().filter { privateRevealed || !isHidden(it) }
+            val squash = text.replace(" ", "").lowercase()
+            val app = apps.firstOrNull { labelFor(it).replace(" ", "").lowercase() == squash }
+                ?: apps.map { it to Fuzzy.score(text, labelFor(it)) }.filter { it.second >= 2 }.maxByOrNull { it.second }?.first
+            if (app != null && ready == null) {
+                ink.say("✎ ${labelFor(app)}")
+                launchApp(app)
+                return@launch
+            }
+            // Anything else (or a command that needs a permission first): open search with it.
+            searchPrefill = text
+            searchSignal++
+            openDrawer()
+        }
+    }
+    ink = remember { InkState(scope) { handleInk(it) } }
+    LaunchedEffect(kineticSettings.penInk) { if (kineticSettings.penInk) PenRecognizer.prepare() }
 
     // ---- menus ----------------------------------------------------------------
 
@@ -753,6 +786,8 @@ fun KineticHome(
     Box(
         Modifier
             .fillMaxSize()
+            // S Pen: write anywhere (fingers and pen taps aren't affected).
+            .penInk(gesturesEnabled && kineticSettings.penInk, ink)
             // Two fingers down: Focus. Three-finger tap: search / Commands.
             .pointerInput(gesturesEnabled, kineticSettings.multiFinger) {
                 if (!gesturesEnabled || !kineticSettings.multiFinger) return@pointerInput
@@ -1009,6 +1044,7 @@ fun KineticHome(
                 onSettings = { openSettings() },
                 onFocus = { openFocus() },
                 onVault = { com.kinetic.launcher.vault.VaultActivity.open(activity) },
+                onPlanes = { activity.startActivity(android.content.Intent(activity, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java)) },
                 onDynamicIsland = {
                     val on = DynamicIslandService.isEnabled(activity)
                     menu = MenuSpec(
@@ -1034,6 +1070,8 @@ fun KineticHome(
                 onUseMyLayout = { menu = useMyLayoutMenu() },
                 onDrag = { dy -> dragDrawerBy(dy) },
                 searchSignal = searchSignal,
+                searchPrefill = searchPrefill,
+                onSearchPrefillUsed = { searchPrefill = "" },
                 onDragEnd = { vy ->
                     when {
                         vy > flingVelocityPx -> closeDrawer(vy)          // quick flick down
@@ -1156,6 +1194,7 @@ fun KineticHome(
             )
         }
 
+        InkLayer(ink)
         menu?.let { spec -> ActionMenu(spec, onDismiss = { menu = null }) }
         prompt?.let { spec -> TextPrompt(spec, onDismiss = { prompt = null }) }
         if (askingCode) {

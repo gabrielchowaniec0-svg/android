@@ -49,6 +49,11 @@ object KineticSettings {
         val wpChargingWave: Boolean = true,
         val wpBatteryCalm: Boolean = true,
         val wpIconWave: Boolean = true,
+        val wpWeatherRain: Boolean = true,
+        val wpBatteryTide: Boolean = true,
+        val wpFireflies: Boolean = true,
+        /** S Pen: write on the home screen to run Commands / search. */
+        val penInk: Boolean = true,
     )
 
     const val ISLAND_RESTING = "island_resting"
@@ -69,6 +74,7 @@ object KineticSettings {
     const val SHAKE_ACTION = "shake_action"
     const val SHAKE_APP = "shake_app"
     const val SECURE_SCREENSHOT = "secure_screenshot"
+    const val PEN_INK = "pen_ink"
 
     private val _values = MutableStateFlow(Values())
     val values: StateFlow<Values> = _values.asStateFlow()
@@ -129,5 +135,9 @@ object KineticSettings {
         wpChargingWave = p.getBoolean(WallpaperSignals.KEY_CHARGING_WAVE, true),
         wpBatteryCalm = p.getBoolean(WallpaperSignals.KEY_BATTERY_CALM, true),
         wpIconWave = p.getBoolean(WallpaperSignals.KEY_ICON_WAVE, true),
+        wpWeatherRain = p.getBoolean(WallpaperSignals.KEY_WEATHER_RAIN, true),
+        wpBatteryTide = p.getBoolean(WallpaperSignals.KEY_BATTERY_TIDE, true),
+        wpFireflies = p.getBoolean(WallpaperSignals.KEY_FIREFLIES, true),
+        penInk = p.getBoolean(PEN_INK, true),
     )
 }

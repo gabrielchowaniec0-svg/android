@@ -143,6 +143,9 @@ fun AppDrawer(
     onDrag: (Float) -> Unit,
     /** Bumped to open the drawer straight into search (three-finger tap). */
     searchSignal: Int = 0,
+    /** Text to start the search with (S Pen handwriting). */
+    searchPrefill: String = "",
+    onSearchPrefillUsed: () -> Unit = {},
     /** True when the app has notifications (draws the spinning ring). */
     hasNotification: (AppEntry) -> Boolean = { false },
     /** Opens Android's Notification access page for Kinetic. */
@@ -155,6 +158,8 @@ fun AppDrawer(
     onFocus: () -> Unit = {},
     /** Opens the encrypted Vault. */
     onVault: () -> Unit = {},
+    /** Opens the plane spotter. */
+    onPlanes: () -> Unit = {},
     /** Package of the installed Chowaniec app, if any (search opens its pages there). */
     chowaniecPackage: String? = null,
     /** Called after search opened something outside Kinetic (a contact, a setting…). */
@@ -164,8 +169,16 @@ fun AppDrawer(
     modifier: Modifier = Modifier,
 ) {
     var searching by remember { mutableStateOf(false) }
-    LaunchedEffect(searchSignal) { if (searchSignal > 0) searching = true }
     var query by remember { mutableStateOf("") }
+    LaunchedEffect(searchSignal) {
+        if (searchSignal > 0) {
+            searching = true
+            if (searchPrefill.isNotEmpty()) {
+                query = searchPrefill
+                onSearchPrefillUsed()
+            }
+        }
+    }
     val currentOnDrag by rememberUpdatedState(onDrag)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
 
@@ -229,6 +242,7 @@ fun AppDrawer(
                     onSettings = onSettings,
                     onFocus = onFocus,
                     onVault = onVault,
+                    onPlanes = onPlanes,
                 )
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
@@ -278,6 +292,7 @@ private fun DrawerTopBar(
     onSettings: () -> Unit,
     onFocus: () -> Unit,
     onVault: () -> Unit,
+    onPlanes: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -336,6 +351,13 @@ private fun DrawerTopBar(
                     onClick = {
                         menuOpen = false
                         onVault()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Plane spotter") },
+                    onClick = {
+                        menuOpen = false
+                        onPlanes()
                     },
                 )
                 DropdownMenuItem(

@@ -83,6 +83,13 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
+    // S Pen handwriting on the home screen (runs on the phone; the ~20 MB English model downloads once).
+    implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
+    // Plane spotter camera view.
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+
     // Installs the pre-compiled start-up profile on your phone (release builds).
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))

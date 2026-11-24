@@ -37,6 +37,7 @@ object KineticCommands {
         data class YouTube(val query: String) : Parsed
         data class Torch(val on: Boolean) : Parsed
         data class Panel(val action: String, val label: String) : Parsed
+        data object Planes : Parsed
     }
 
     /** A command ready to run, shown as a card at the top of search. */
@@ -105,6 +106,8 @@ object KineticCommands {
             "wifi", "wi-fi", "internet" -> return Parsed.Panel(Settings.Panel.ACTION_INTERNET_CONNECTIVITY, "Internet")
             "volume", "sound" -> return Parsed.Panel(Settings.Panel.ACTION_VOLUME, "Volume")
             "nfc" -> return Parsed.Panel(Settings.Panel.ACTION_NFC, "NFC")
+            "plane", "planes", "plane spotter", "spot planes", "spot plane", "flights", "what plane", "whats that plane", "what's that plane" ->
+                return Parsed.Planes
         }
         return null
     }
@@ -214,6 +217,9 @@ object KineticCommands {
         }
         is Parsed.Torch -> Ready("✺", "Flashlight ${if (parsed.on) "on" else "off"}", "Camera flash", if (parsed.on) "On" else "Off") { ctx -> torch(ctx, parsed.on) }
         is Parsed.Panel -> Ready("⚙", parsed.label, "Quick settings panel", "Open") { ctx -> start(ctx, Intent(parsed.action)) }
+        Parsed.Planes -> Ready("✈", "Plane spotter", "Point your phone at a plane in the sky", "Open") { ctx ->
+            start(ctx, Intent(ctx, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java))
+        }
     }
 
     // ---- "the app you use most" --------------------------------------------------------

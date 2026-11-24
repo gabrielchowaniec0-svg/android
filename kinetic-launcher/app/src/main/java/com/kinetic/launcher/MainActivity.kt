@@ -116,6 +116,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         KineticSettings.init(this)
         KineticApp.init(this)
+        LivingWallpaper.start(this)
         FocusModes.init(this)
         FocusScheduler.scheduleNext(this)
         FocusTriggers.registerPlaces(this)

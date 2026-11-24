@@ -93,6 +93,11 @@ class FluidWallpaperService : WallpaperService() {
         private var glow = 0f
         private val glowRgb = FloatArray(3)
         private var calm = 0f
+        private var rain = 0f
+        private var flies = 0f
+        private var tideOn = false
+        private var tideLevel = 1f
+        private var tideCharging = false
         private var calmTarget = 0f
         private var lastBatteryCheck = 0L
         private var lastFrameNanos = 0L
@@ -247,6 +252,9 @@ class FluidWallpaperService : WallpaperService() {
                 val enabled = WallpaperSignals.enabled(this@FluidWallpaperService, WallpaperSignals.KEY_BATTERY_CALM)
                 val level = battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
                 val charging = battery?.isCharging == true
+                tideOn = WallpaperSignals.enabled(this@FluidWallpaperService, WallpaperSignals.KEY_BATTERY_TIDE)
+                tideLevel = level.coerceIn(0, 100) / 100f
+                tideCharging = charging
                 calmTarget = if (enabled && ((level in 1..20 && !charging) || power?.isPowerSaveMode == true)) 1f else 0f
             }
             calm += (calmTarget - calm) * 0.02f
@@ -291,6 +299,12 @@ class FluidWallpaperService : WallpaperService() {
             glowRgb[2] += ((gc and 0xFF) / 255f - glowRgb[2]) * 0.05f
             shader.setFloatUniform("iGlow", glowRgb[0], glowRgb[1], glowRgb[2], glow)
             shader.setFloatUniform("iCalm", calm)
+            // Living wallpaper: weather rain, battery tide and notification fireflies.
+            rain += (WallpaperSignals.rain - rain) * 0.01f
+            shader.setFloatUniform("iRain", rain)
+            shader.setFloatUniform("iTide", if (tideOn) tideLevel else -1f, if (tideCharging) 1f else 0f, 0f)
+            flies += (WallpaperSignals.fireflies.coerceIn(0, 8) - flies) * 0.03f
+            shader.setFloatUniform("iFlies", kotlin.math.round(flies))
             // A Focus can dim the wallpaper.
             dim += (WallpaperSignals.focusDim - dim) * 0.04f
             shader.setFloatUniform("iDim", dim)

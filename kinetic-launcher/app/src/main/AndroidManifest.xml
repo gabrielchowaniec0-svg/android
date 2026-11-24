@@ -31,6 +31,10 @@
     <!-- In-app updater: checks GitHub for a new build and installs it (you confirm). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Plane spotter: the live camera view behind the flight labels. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- Vault: pick photos/videos to move in (and remove the originals). -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -158,6 +162,14 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <!-- Plane spotter: point at a plane to see its flight. -->
+        <activity
+            android:name=".planes.PlaneSpotterActivity"
+            android:exported="false"
+            android:label="Plane spotter"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Kinetic" />
 
         <!-- Encrypted Vault (Kinetic code only; no screenshots or recents preview). -->
         <activity
