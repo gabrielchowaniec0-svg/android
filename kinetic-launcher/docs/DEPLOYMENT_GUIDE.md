@@ -661,3 +661,9 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - **Folders:** hold an app, then keep holding and **drag it onto a folder**, on the home screen or in the app list. The folder grows as you hover and the phone ticks; let go to drop it in. The "Add to…/Move to…" lists are gone from the menus.
 - **Uninstall:** in the long-press menu (and the app's full menu) for apps you installed. Phone apps that came with the phone can't be uninstalled, so they don't show it.
 - **Status bar while the island is busy:** only the time and battery stay, each centred in the space between the island and the screen edge; everything comes back when the island shrinks.
+
+### Fixes: YouTube island, flashlight beam, dragging, busy status bar
+- **YouTube playing in the background:** the island no longer disappears after a couple of seconds. YouTube's little picture-in-picture window used to count as "YouTube is open", which hides the song. Now only full-screen apps count.
+- **Flashlight:** the flashlight now sits at the bottom of the open island and shines **up**, away from you. The beam follows your finger smoothly as you drag (up = brighter and longer, down = dimmer) and settles on the nearest brightness step when you let go.
+- **Dragging apps into folders** no longer cancels as soon as you move (the long-press menu was swallowing the rest of the touch).
+- **Status bar while the island is wider:** each side is centred in its gap and fits in as many icons as there's room for. Left: time first, then notification icons. Right: battery first, then Wi-Fi/5G, signal, silent/vibrate, Do Not Disturb.

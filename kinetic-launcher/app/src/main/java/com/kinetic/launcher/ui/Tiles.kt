@@ -174,8 +174,10 @@ fun AppTile(
         modifier
             .fillMaxSize()
             .onGloballyPositioned { tileCoords = it }
-            .then(drags)
+            // Clicks outside, drag inside: after a long press the click handler swallows the
+            // rest of the touch, so the drag has to see it first (or it cancels at once).
             .then(clicks)
+            .then(drags)
             .jiggle(jiggle)
             .alpha(if (dragging) 0.25f else if (dimmed) 0.45f else 1f)
             .padding(2.dp),

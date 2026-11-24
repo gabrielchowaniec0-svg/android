@@ -2098,39 +2098,49 @@ private fun TorchCompactContent(t: TorchLive.Torch) {
 }
 
 /**
- * Open: a flashlight seen from above, shining down. The beam reaches further the
- * brighter it is. Drag up/down anywhere to change brightness; tap the flashlight to
- * switch it off or on.
+ * Open: a flashlight at the bottom shining up, away from you. The beam follows your
+ * finger as you drag (up = brighter, longer beam; down = dimmer) and settles on the
+ * nearest brightness step when you let go. Tap the flashlight to switch it off / on.
  */
 @Composable
 private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
     val view = androidx.compose.ui.platform.LocalView.current
-    val target = if (t.on) t.level.toFloat() / t.max else 0f
-    val frac by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 380f), label = "torch")
+    // While dragging, the beam follows the finger exactly; otherwise it rests on the level.
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    val levelFrac = if (t.on) t.level.toFloat() / t.max else 0f
+    val rest by animateFloatAsState(levelFrac, spring(dampingRatio = 0.75f, stiffness = 300f), label = "torch")
+    val frac = dragFrac ?: rest
     val glow by animateFloatAsState(if (t.on) 1f else 0f, tween(250), label = "torchOn")
     Box(
         Modifier
             .fillMaxSize()
             .pointerInput(t.max) {
-                var startLevel = 1
+                var start = 0f
                 var acc = 0f
                 detectVerticalDragGestures(
                     onDragStart = {
-                        startLevel = TorchLive.state.value?.level ?: 1
+                        val cur = TorchLive.state.value
+                        start = if (cur != null && cur.on) cur.level.toFloat() / cur.max else 0f
                         acc = 0f
+                        dragFrac = start
                     },
+                    onDragEnd = { dragFrac = null },
+                    onDragCancel = { dragFrac = null },
                 ) { change, dy ->
                     change.consume()
-                    acc += dy
                     model.touched()
                     val cur = TorchLive.state.value ?: return@detectVerticalDragGestures
-                    if (!cur.on || cur.max <= 1) return@detectVerticalDragGestures
-                    // Dragging down stretches the beam (brighter); up shortens it.
-                    val step = size.height * 0.6f / cur.max
-                    val l = (startLevel + (acc / step).roundToIntSafe()).coerceIn(1, cur.max)
-                    if (l != cur.level) {
-                        TorchLive.setLevel(l)
-                        view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                    if (!cur.on) return@detectVerticalDragGestures
+                    acc += dy
+                    // Up (negative dy) = brighter. The whole range is about 60% of the box.
+                    val f = (start - acc / (size.height * 0.6f)).coerceIn(1f / cur.max, 1f)
+                    dragFrac = f
+                    if (cur.max > 1) {
+                        val l = kotlin.math.round(f * cur.max).toInt().coerceIn(1, cur.max)
+                        if (l != cur.level) {
+                            TorchLive.setLevel(l)
+                            view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                        }
                     }
                 }
             },
@@ -2139,22 +2149,23 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
             val w = size.width
             val h = size.height
             val cx = w / 2
-            val bodyTop = 10.dp.toPx()
             val bodyW = 30.dp.toPx()
             val headW = 46.dp.toPx()
             val bodyH = 44.dp.toPx()
             val headH = 16.dp.toPx()
-            val lensY = bodyTop + bodyH + headH
-            // ---- the beam ----
+            val bottom = h - 12.dp.toPx()
+            val bodyTop = bottom - bodyH
+            val lensY = bodyTop - headH
+            // ---- the beam, shining up ----
             if (glow > 0.01f) {
-                val reach = 46.dp.toPx() + (h - lensY - 58.dp.toPx()) * frac
-                val endY = lensY + reach
-                val endHalf = w * 0.36f
-                val bulge = 22.dp.toPx() + 10.dp.toPx() * frac
+                val reach = 40.dp.toPx() + (lensY - 40.dp.toPx() - 6.dp.toPx()) * frac
+                val endY = lensY - reach
+                val endHalf = w * (0.24f + 0.14f * frac)
+                val bulge = 16.dp.toPx() + 12.dp.toPx() * frac
                 val beam = Path().apply {
                     moveTo(cx - headW * 0.42f, lensY)
                     lineTo(cx - endHalf, endY)
-                    quadraticTo(cx, endY + bulge * 2, cx + endHalf, endY)
+                    quadraticTo(cx, endY - bulge * 2, cx + endHalf, endY)
                     lineTo(cx + headW * 0.42f, lensY)
                     close()
                 }
@@ -2162,48 +2173,46 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
                     beam,
                     androidx.compose.ui.graphics.Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = (0.55f + 0.3f * frac) * glow),
-                            Color.White.copy(alpha = (0.12f + 0.12f * frac) * glow),
+                            Color.White.copy(alpha = (0.14f + 0.14f * frac) * glow),
+                            Color.White.copy(alpha = (0.55f + 0.35f * frac) * glow),
                         ),
-                        startY = lensY, endY = endY + bulge,
+                        startY = endY - bulge, endY = lensY,
                     ),
                 )
-                // The curved edge where the light lands (the part you drag).
+                // The bright edge where the light lands (follows your finger).
                 val edge = Path().apply {
                     moveTo(cx - endHalf, endY)
-                    quadraticTo(cx, endY + bulge * 2, cx + endHalf, endY)
+                    quadraticTo(cx, endY - bulge * 2, cx + endHalf, endY)
                 }
                 drawPath(edge, Color.White.copy(alpha = 0.95f * glow), style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
             }
-            // ---- the flashlight, from above (body, then the head and lens pointing down) ----
+            // ---- the flashlight: head and lens at the top, body below ----
             val metal = androidx.compose.ui.graphics.Brush.horizontalGradient(
                 listOf(Color(0xFF8E8E93), Color(0xFFE5E5EA), Color(0xFF8E8E93)),
                 startX = cx - headW / 2, endX = cx + headW / 2,
             )
             drawRoundRect(metal, Offset(cx - bodyW / 2, bodyTop), Size(bodyW, bodyH), CornerRadius(7.dp.toPx()))
             val head = Path().apply {
-                moveTo(cx - bodyW / 2, bodyTop + bodyH - 2.dp.toPx())
-                lineTo(cx + bodyW / 2, bodyTop + bodyH - 2.dp.toPx())
-                lineTo(cx + headW / 2, bodyTop + bodyH + headH * 0.6f)
+                moveTo(cx - bodyW / 2, bodyTop + 2.dp.toPx())
+                lineTo(cx + bodyW / 2, bodyTop + 2.dp.toPx())
+                lineTo(cx + headW / 2, bodyTop - headH * 0.6f)
                 lineTo(cx + headW / 2, lensY)
                 lineTo(cx - headW / 2, lensY)
-                lineTo(cx - headW / 2, bodyTop + bodyH + headH * 0.6f)
+                lineTo(cx - headW / 2, bodyTop - headH * 0.6f)
                 close()
             }
             drawPath(head, metal)
-            // Lens: glows when on.
             drawRoundRect(
                 Color(0xFFFFF4D6).copy(alpha = 0.25f + 0.75f * glow),
-                Offset(cx - headW * 0.42f, lensY - 4.dp.toPx()), Size(headW * 0.84f, 5.dp.toPx()), CornerRadius(2.5.dp.toPx()),
+                Offset(cx - headW * 0.42f, lensY - 1.dp.toPx()), Size(headW * 0.84f, 5.dp.toPx()), CornerRadius(2.5.dp.toPx()),
             )
-            // Switch.
-            drawCircle(if (glow > 0.5f) Color.White else Color(0xFF48484A), 5.dp.toPx(), Offset(cx, bodyTop + bodyH * 0.45f))
+            drawCircle(if (glow > 0.5f) Color.White else Color(0xFF48484A), 5.dp.toPx(), Offset(cx, bodyTop + bodyH * 0.55f))
         }
         // Tap the flashlight itself to switch it off / on.
         Box(
             Modifier
-                .align(Alignment.TopCenter)
-                .size(76.dp, 84.dp)
+                .align(Alignment.BottomCenter)
+                .size(84.dp, 88.dp)
                 .pointerInput(Unit) {
                     detectTapGestures {
                         TorchLive.toggle()
@@ -2215,7 +2224,7 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
         if (!t.on) {
             Text(
                 "Tap to turn on", color = Grey, fontSize = 13.sp,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp),
             )
         }
     }
