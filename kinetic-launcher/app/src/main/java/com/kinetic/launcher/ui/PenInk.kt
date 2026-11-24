@@ -123,8 +123,10 @@ class InkState(private val scope: CoroutineScope, private val onText: (String) -
         }
     }
 
-    fun say(text: String, millis: Long = 1800) {
-        pill = text
+    /** Shows [text] in the Dynamic Island (or, if it's off, in a pill on the home screen). */
+    fun say(text: String, millis: Long = 1800, icon: String = "✎") {
+        if (com.kinetic.launcher.island.IslandBus.say(icon, text.replace("\n", " · "))) return
+        pill = if (icon.isBlank()) text else "$icon  $text"
         pillJob?.cancel()
         pillJob = scope.launch {
             delay(millis)

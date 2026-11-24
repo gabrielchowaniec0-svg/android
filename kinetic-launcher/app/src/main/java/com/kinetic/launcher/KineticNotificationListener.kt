@@ -86,6 +86,10 @@ object NotificationHub {
         /** An action that takes typed text (Reply), if the app offers one. */
         val reply: Notification.Action?,
         val postedAt: Long,
+        /** A couple of words for the small pill: "New message", "Claude responded"… */
+        val summary: String = "",
+        /** The notification's other buttons (Mark as read, Archive…), at most 3. */
+        val actions: List<Notification.Action> = emptyList(),
     )
 
     /** A delivery or ride on its way (Uber, DoorDash, Lyft…), from their live notification. */
@@ -159,6 +163,11 @@ object NotificationHub {
         _nav.value = n
     }
 
+    /** Clears a notification (the island's Dismiss button). */
+    fun cancel(key: String) {
+        runCatching { KineticNotificationListener.instance?.cancelNotification(key) }
+    }
+
     internal fun postMessage(m: MessagePeek) {
         _message.value = m
     }
@@ -202,11 +211,13 @@ object NotificationHub {
 class KineticNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        instance = this
         NotificationHub.setConnected(true)
         refresh()
     }
 
     override fun onListenerDisconnected() {
+        if (instance === this) instance = null
         NotificationHub.set(emptySet())
         NotificationHub.setCall(null)
         NotificationHub.setTimer(null)
@@ -424,8 +435,15 @@ class KineticNotificationListener : NotificationListenerService() {
         }
 
         FocusModes.init(this)
-        val wanted = ((isChowaniec && settings.islandChowaniecPeek) || (isMessage && settings.islandAllMessagesPeek)) &&
-            FocusModes.allows(sbn.packageName)
+        // Silent / low-importance notifications don't drop down (like iOS "Deliver quietly").
+        val ranking = android.service.notification.NotificationListenerService.Ranking()
+        val quiet = runCatching { currentRanking?.getRanking(sbn.key, ranking) == true && ranking.importance < android.app.NotificationManager.IMPORTANCE_DEFAULT }.getOrDefault(false)
+        val isMedia = n.extras.getString(Notification.EXTRA_TEMPLATE)?.contains("MediaStyle") == true
+        val wanted = (
+            (isChowaniec && settings.islandChowaniecPeek) ||
+                (isMessage && settings.islandAllMessagesPeek) ||
+                (settings.islandNotifications && !quiet && !isMedia)
+            ) && sbn.packageName != packageName && FocusModes.allows(sbn.packageName)
         if (!wanted) return
         val extras = n.extras
         val title = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
@@ -446,28 +464,56 @@ class KineticNotificationListener : NotificationListenerService() {
                 contentIntent = n.contentIntent,
                 reply = n.actions?.firstOrNull { !it.remoteInputs.isNullOrEmpty() },
                 postedAt = sbn.postTime,
+                summary = summarize(n, name, title, text, isMessage),
+                actions = n.actions.orEmpty().filter { it.remoteInputs.isNullOrEmpty() && it.actionIntent != null && !it.title.isNullOrBlank() }.take(3),
             )
         )
     }
 
-    private companion object {
-        val CLOCK_PACKAGES = setOf("com.sec.android.app.clockpackage", "com.google.android.deskclock", "com.android.deskclock")
-        val NAV_PACKAGES = setOf("com.google.android.apps.maps", "com.waze", "com.google.android.apps.mapslite")
-        val RIDE_PACKAGES = setOf("com.ubercab", "me.lyft.android")
-        val DELIVERY_PACKAGES = setOf(
+    /** A couple of words for the island's small pill. */
+    private fun summarize(n: Notification, app: String, title: String, text: String, isMessage: Boolean): String {
+        if (isMessage) return "New message"
+        when (n.category) {
+            Notification.CATEGORY_EMAIL -> return "New email"
+            Notification.CATEGORY_MISSED_CALL -> return "Missed call"
+            Notification.CATEGORY_CALL -> return "Call"
+            Notification.CATEGORY_EVENT, Notification.CATEGORY_REMINDER -> return title.take(22)
+        }
+        // Otherwise the first few words of the title (or of the text, if the title is just the app's name).
+        val source = if (title.isBlank() || title.equals(app, ignoreCase = true)) text.ifBlank { title } else title
+        val words = source.replace('\n', ' ').split(' ').filter { it.isNotBlank() }
+        var out = ""
+        for (w in words) {
+            val next = if (out.isEmpty()) w else "$out $w"
+            if (next.length > 22) break
+            out = next
+        }
+        return out.ifBlank { source.take(20) }.trimEnd(',', '.', ':', ';', '-')
+    }
+
+    companion object {
+        /** The running listener (to clear a notification from the island). */
+        @Volatile
+        var instance: KineticNotificationListener? = null
+            private set
+
+        private val CLOCK_PACKAGES = setOf("com.sec.android.app.clockpackage", "com.google.android.deskclock", "com.android.deskclock")
+        private val NAV_PACKAGES = setOf("com.google.android.apps.maps", "com.waze", "com.google.android.apps.mapslite")
+        private val RIDE_PACKAGES = setOf("com.ubercab", "me.lyft.android")
+        private val DELIVERY_PACKAGES = setOf(
             "com.ubercab.eats", "com.dd.doordash", "com.grubhub.android", "com.instacart.client",
             "com.postmates.android", "com.amazon.mShop.android.shopping", "com.gopuff.consumer", "com.mcdonalds.app",
             "com.chipotle.ordering", "com.starbucks.mobilecard", "com.dominospizza",
         )
-        val SPORTS_PACKAGES = setOf(
+        private val SPORTS_PACKAGES = setOf(
             "com.espn.score_center", "com.fivemobile.thescore", "com.yahoo.mobile.client.android.sportacular",
             "com.gotv.nflgamecenter.us.lite", "com.nbaimd.gametime.nba2011", "com.bamnetworks.mobile.android.gameday.atbat",
             "com.mobilefootie.wc2010", "de.motain.iliga", "com.google.android.googlequicksearchbox", "com.cbssports.sportscaster",
             "com.foxsports.android", "com.nhl.gc1112.free",
         )
-        val MINUTES = Regex("""(\d{1,3})\s*(?:min|mins|minutes)\b""", RegexOption.IGNORE_CASE)
+        private val MINUTES = Regex("""(\d{1,3})\s*(?:min|mins|minutes)\b""", RegexOption.IGNORE_CASE)
         // "Bears 21 - 17 Packers"
-        val SCORE_DASH = Regex("""([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3})\s*[-–]\s*(\d{1,3})\s+([A-Za-z][A-Za-z .'&]{1,24})""")
+        private val SCORE_DASH = Regex("""([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3})\s*[-–]\s*(\d{1,3})\s+([A-Za-z][A-Za-z .'&]{1,24})""")
         // "Bears 21, Packers 17"
         val SCORE_COMMA = Regex("""([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3}),\s*([A-Za-z][A-Za-z .'&]{1,24}?)\s+(\d{1,3})""")
         val TIME_TEXT = Regex("""\b\d{1,2}:\d{2}(:\d{2})?\b""")

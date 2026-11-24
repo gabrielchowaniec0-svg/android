@@ -222,7 +222,7 @@ object Assistant {
             ?: apps.map { it to Fuzzy.score(name, it.second) }.filter { it.second > 0 }.maxByOrNull { it.second }?.first
             ?: return null
         val launch = pm.getLaunchIntentForPackage(best.first) ?: return null
-        return Ready("↗", "Open ${best.second}", "App", "Open") { ctx -> start(ctx, launch) }
+        return Ready("↗", "Open ${best.second}", "App", "Open", done = "Opened ${best.second}") { ctx -> start(ctx, launch) }
     }
 
     fun resolveSearch(query: String): Ready = Ready("⌕", "Search the web", query, "Search") { ctx ->
@@ -250,8 +250,8 @@ object Assistant {
     }
 
     /** An answer card. Tapping it copies the answer. */
-    private fun answer(badge: String, title: String, subtitle: String, copy: String, open: ((Context) -> Boolean)? = null) =
-        Ready(badge, title, subtitle, if (open != null) "Open" else "Copy", answer = true) { ctx ->
+    private fun answer(badge: String, title: String, subtitle: String, copy: String, open: ((Context) -> Boolean)? = null, done: String? = null) =
+        Ready(badge, title, subtitle, if (open != null) "Open" else "Copy", answer = true, done = done) { ctx ->
             if (open != null) {
                 open(ctx)
             } else {
@@ -494,7 +494,8 @@ object Assistant {
         }
         val out = fmt(v)
         val title = "$out ${label(to.key, v)}"
-        return answer("⇄", title, "${fmt(q.amount)} ${label(from.key, q.amount)}", out)
+        val fromText = "${fmt(q.amount)} ${label(from.key, q.amount)}"
+        return answer("⇄", title, fromText, out, done = "$fromText = $title")
     }
 
     private fun label(key: String, v: Double) = when (key) {
