@@ -121,6 +121,12 @@ object WallpaperStyles {
         shader.setFloatUniform("iRain", 0f)
         shader.setFloatUniform("iTide", -1f, 0f, 0f)
         shader.setFloatUniform("iFlies", 0f)
+        shader.setFloatUniform("iSnow", 0f)
+        shader.setFloatUniform("iFog", 0f)
+        shader.setFloatUniform("iWind", 0f)
+        shader.setFloatUniform("iWarm", 0f)
+        shader.setFloatUniform("iNight", 0f)
+        shader.setFloatUniform("iMoon", -1f)
     }
 
     private fun r(c: Int) = ((c shr 16) and 0xFF) / 255f
@@ -147,6 +153,12 @@ object WallpaperStyles {
         uniform float  iRain;
         uniform float3 iTide;
         uniform float  iFlies;
+        uniform float  iSnow;
+        uniform float  iFog;
+        uniform float  iWind;
+        uniform float  iWarm;
+        uniform float  iNight;
+        uniform float  iMoon;
         uniform float3 iColA;
         uniform float3 iColB;
         uniform float3 iColC;
@@ -224,7 +236,7 @@ object WallpaperStyles {
 
         // Thin, slanted rain streaks drifting down. [scale] = density, [speed] = fall speed.
         float rainLayer(float2 uv, float scale, float speed, float seed) {
-            float2 q = float2((uv.x + uv.y * 0.12) * scale, uv.y * scale * 0.22 - iTime * speed);
+            float2 q = float2((uv.x + uv.y * (0.12 + iWind * 0.35)) * scale, uv.y * scale * 0.22 - iTime * speed);
             float2 id = floor(q);
             float2 f = fract(q);
             float h = hash21(id + seed);
@@ -234,7 +246,55 @@ object WallpaperStyles {
             return streak * smoothstep(0.0, 0.35, f.y) * smoothstep(1.0, 0.6, f.y);
         }
 
+        // Soft snowflakes drifting down (and sideways with the wind).
+        float snowLayer(float2 uv, float scale, float speed, float seed) {
+            float2 q = uv * scale;
+            q.y -= iTime * speed;
+            q.x += sin(q.y * 0.7 + seed) * 0.3 - iTime * iWind * speed * 0.8;
+            float2 id = floor(q);
+            float2 f = fract(q) - 0.5;
+            float h = hash21(id + seed);
+            if (h < 0.72) return 0.0;
+            float2 o = (hash22(id + seed * 1.7) - 0.5) * 0.6;
+            float d = length(f - o);
+            return smoothstep(0.09, 0.0, d) * (0.5 + 0.5 * h);
+        }
+
+        float3 sky(float2 uv, float3 col) {
+            // Snow: a touch brighter and greyer, with flakes.
+            if (iSnow > 0.01) {
+                col = mix(col, col * 0.9 + 0.05, 0.3 * iSnow);
+                float s = snowLayer(uv, 14.0, 0.35, 0.0) + 0.7 * snowLayer(uv, 24.0, 0.22, 3.1);
+                col += float3(0.92, 0.95, 1.0) * s * 0.6 * iSnow;
+            }
+            // Fog: a slow haze rising from the bottom.
+            if (iFog > 0.01) {
+                float f = smoothstep(-0.15, 0.5, uv.y) * (0.6 + 0.4 * fbm3(uv * 3.0 + float2(iTime * 0.03, 0.0)));
+                col = mix(col, float3(0.55, 0.58, 0.62), f * 0.45 * iFog);
+            }
+            // Golden hour around sunrise and sunset; a little cooler and dimmer at night.
+            col = mix(col, col * float3(1.15, 0.92, 0.76) + float3(0.06, 0.02, 0.0), iWarm * 0.5);
+            col *= 1.0 - 0.12 * iNight;
+            // The real moon (its phase), top right, at night.
+            if (iMoon >= 0.0 && iNight > 0.01) {
+                float2 m = uv - float2(0.14, -0.36);
+                float r = 0.026;
+                float d = length(m);
+                if (d < r * 4.0) {
+                    float2 l = m / r;
+                    float k = cos(6.2831853 * iMoon);
+                    float sgn = iMoon < 0.5 ? 1.0 : -1.0;
+                    float disc = smoothstep(1.0, 0.9, length(l));
+                    float lit = smoothstep(-0.06, 0.06, sgn * l.x - k * sqrt(max(0.0, 1.0 - l.y * l.y)));
+                    col = mix(col, float3(0.93, 0.92, 0.85), disc * (0.10 + 0.78 * lit) * iNight);
+                    col += float3(0.6, 0.65, 0.8) * exp(-d * 38.0) * 0.07 * iNight;
+                }
+            }
+            return col;
+        }
+
         float3 living(float2 uv, float3 col) {
+            col = sky(uv, col);
             // Rain: cooler, a little darker, with falling streaks.
             if (iRain > 0.01) {
                 col = mix(col, col * float3(0.80, 0.88, 1.0), 0.45 * iRain);

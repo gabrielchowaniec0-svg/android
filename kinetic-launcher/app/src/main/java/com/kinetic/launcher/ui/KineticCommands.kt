@@ -42,6 +42,7 @@ object KineticCommands {
         data class Act(val action: Assistant.Action) : Parsed
         data class Ask(val question: Assistant.Question) : Parsed
         data class Search(val query: String) : Parsed
+        data class FocusTimer(val seconds: Int) : Parsed
     }
 
     /** Hidden apps (while they're hidden): "open …" never reveals them. Set by the home screen. */
@@ -261,6 +262,7 @@ object KineticCommands {
         is Parsed.Act -> Assistant.resolveAction(context, parsed.action)
         is Parsed.Ask -> Assistant.resolveQuestion(context, parsed.question)
         is Parsed.Search -> Assistant.resolveSearch(parsed.query)
+        is Parsed.FocusTimer -> Assistant.resolveFocusTimer(context, parsed.seconds)
     }
 
     // ---- "the app you use most" --------------------------------------------------------

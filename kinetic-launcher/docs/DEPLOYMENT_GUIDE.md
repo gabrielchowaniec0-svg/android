@@ -522,3 +522,8 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **Logbook:** every plane you lock onto is saved (the same flight counts once a day), with its airline, route, aircraft type and time. Tap **Logbook** for your totals, most-spotted aircraft types and recent sightings.
 - **United:** shows only United flights (United mainline plus United Express from GoJet, CommuteAir and Mesa).
 - **Radar:** a night view that doesn't need the camera. You're in the middle and the way you're facing is at the top. Planes show as glowing dots with their heading, and rings mark 10, 20 and 35 miles. Turn until a plane is straight ahead to lock onto it. It also turns on automatically if the camera isn't allowed.
+
+## Wallpaper & Focus (Batch 6)
+- **Snow, fog & wind:** snowflakes drift down when it snows, a slow haze rises when it's foggy, and rain slants (and snow drifts) with the real wind. Settings ▸ Living wallpaper.
+- **Sunset & moon:** colours warm up around your real sunrise and sunset. At night the wallpaper dims slightly and the real moon, in today's phase, glows in the top-right corner.
+- **Focus timer:** write or type "focus 25 min" (or "study 45 min", "pomodoro 25 min"). Your Study/School/Work Focus turns on, a 25-minute timer starts, and the Focus turns itself off when the time's up.
