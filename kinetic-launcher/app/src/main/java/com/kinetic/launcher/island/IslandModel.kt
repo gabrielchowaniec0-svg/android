@@ -64,7 +64,8 @@ sealed interface IslandAlert {
     /** Lock-screen padlock: [open] animates the shackle opening after you unlock. */
     data class Lock(val open: Boolean) : IslandAlert
     /** Face ID–style scan while the lock screen is waiting; [success] = recognised. */
-    data class Scan(val success: Boolean) : IslandAlert
+    /** Face scan: scanning, then a tick when it works, or a little shake if it didn't. */
+    data class Scan(val success: Boolean, val failed: Boolean = false) : IslandAlert
     /** Battery just dropped to 15% (when One UI warns too). */
     data class LowBattery(val level: Int) : IslandAlert
     /** A Focus was switched on or off. */
@@ -197,6 +198,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     private val listenerComponent = ComponentName(context, KineticNotificationListener::class.java)
     private var controller: MediaController? = null
     private var alertJob: Job? = null
+    /** Watches the real lock state after the screen wakes (see [onScreenOn]). */
+    private var unlockWatch: Job? = null
     private var collapseJob: Job? = null
     private var pausedHideJob: Job? = null
 
@@ -215,14 +218,15 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     val bm = c.getSystemService(BatteryManager::class.java)
                     showAlert(IslandAlert.Charging(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)))
                 }
-                Intent.ACTION_SCREEN_ON -> {
-                    // Face unlock starts scanning as soon as the screen wakes, so show the scan.
-                    val km = c.getSystemService(KeyguardManager::class.java)
-                    if (KineticSettings.current.islandUnlock && km.isKeyguardLocked) showAlert(IslandAlert.Scan(success = false))
-                }
+                Intent.ACTION_SCREEN_ON -> onScreenOn(c)
                 Intent.ACTION_USER_PRESENT -> {
-                    // Unlocked (face or fingerprint): the scan disappears straight away.
-                    if (_alert.value is IslandAlert.Scan || _alert.value is IslandAlert.Lock) {
+                    // On the home screen / in an app now. Let a tick that's already
+                    // showing finish (it's half a second); anything else goes straight away.
+                    unlockWatch?.cancel()
+                    val a = _alert.value
+                    if (a is IslandAlert.Scan && !a.success && !a.failed) {
+                        showAlert(IslandAlert.Scan(success = true))
+                    } else if (a is IslandAlert.Lock || (a is IslandAlert.Scan && !a.success)) {
                         alertJob?.cancel()
                         _alert.value = null
                     }
@@ -238,6 +242,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     lastBattery = pct
                 }
                 Intent.ACTION_SCREEN_OFF -> {
+                    unlockWatch?.cancel()
                     alertJob?.cancel()
                     _alert.value = null
                 }
@@ -417,6 +422,74 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    // ---- face unlock -----------------------------------------------------------------
+    //
+    // Apps can't see Samsung's face scanner, but they can see the moment the phone stops
+    // being locked. So: when the screen wakes, check ~14 times a second whether it's
+    // unlocked yet; that's when face (or fingerprint) unlock actually succeeded.
+
+    private fun onScreenOn(c: Context) {
+        if (!KineticSettings.current.islandUnlock) return
+        val km = c.getSystemService(KeyguardManager::class.java) ?: return
+        if (!km.isKeyguardLocked) return
+        unlockWatch?.cancel()
+        unlockWatch = scope.launch {
+            // Already unlocked (Smart Lock, e.g. your watch or car): no fake scan.
+            if (!km.isDeviceLocked) {
+                showAlert(IslandAlert.Lock(open = true))
+                return@launch
+            }
+            // Woken by a notification on the table or in a pocket: nobody's looking,
+            // so don't scan. Still celebrate if they unlock in the next few seconds.
+            val looking = heldUp(c)
+            if (looking) showAlert(IslandAlert.Scan(success = false))
+            val start = android.os.SystemClock.uptimeMillis()
+            val scanFor = if (looking) 3_200L else 0L
+            var failedShown = false
+            while (android.os.SystemClock.uptimeMillis() - start < 30_000L) {
+                if (!km.isDeviceLocked || !km.isKeyguardLocked) {
+                    if (!failedShown && looking) showAlert(IslandAlert.Scan(success = true))
+                    else if (km.isKeyguardLocked) showAlert(IslandAlert.Lock(open = true))
+                    return@launch
+                }
+                if (looking && !failedShown && android.os.SystemClock.uptimeMillis() - start > scanFor) {
+                    failedShown = true
+                    showAlert(IslandAlert.Scan(success = false, failed = true))
+                }
+                delay(if (android.os.SystemClock.uptimeMillis() - start < 5_000L) 70L else 200L)
+            }
+        }
+    }
+
+    /** True if the phone looks like it's held up in front of someone (not flat, not in a pocket). */
+    private suspend fun heldUp(c: Context): Boolean {
+        val sm = c.getSystemService(android.hardware.SensorManager::class.java) ?: return true
+        val acc = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) ?: return true
+        val prox = sm.getDefaultSensor(android.hardware.Sensor.TYPE_PROXIMITY)
+        var gravity: FloatArray? = null
+        var near = false
+        val listener = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                if (e.sensor.type == android.hardware.Sensor.TYPE_ACCELEROMETER) gravity = e.values.clone()
+                else near = e.values[0] < minOf(e.sensor.maximumRange, 3f)
+            }
+            override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) = Unit
+        }
+        sm.registerListener(listener, acc, android.hardware.SensorManager.SENSOR_DELAY_GAME)
+        prox?.let { sm.registerListener(listener, it, android.hardware.SensorManager.SENSOR_DELAY_GAME) }
+        try {
+            kotlinx.coroutines.withTimeoutOrNull(250L) { while (gravity == null) delay(15) }
+            delay(40) // give the proximity sensor a moment too
+        } finally {
+            sm.unregisterListener(listener)
+        }
+        if (near) return false
+        val g = gravity ?: return true
+        val z = g[2] / 9.81f
+        // Lying flat face up (~1) or face down (~-1) on a table: not being looked at.
+        return z < 0.93f && z > -0.95f
+    }
+
     /** A secure screenshot was sealed into the Vault: the padlock closes. */
     fun showVaultSaved() = showAlert(IslandAlert.Lock(open = false))
 
@@ -428,14 +501,21 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 when (alert) {
                     is IslandAlert.Charging -> 3000
                     is IslandAlert.Lock -> if (alert.open) 1300 else 2500
-                    is IslandAlert.Scan -> if (alert.success) 750 else 4000
+                    is IslandAlert.Scan -> when {
+                        alert.success -> 520
+                        alert.failed -> 900
+                        else -> 4000
+                    }
                     is IslandAlert.LowBattery -> 5000
                     else -> 2200
                 }
             )
             _alert.value = null
             // After the tick, the padlock opens.
-            if (alert is IslandAlert.Scan && alert.success) showAlert(IslandAlert.Lock(open = true))
+            // Still on the lock screen (Samsung's "stay on lock screen"): show the open padlock there.
+            if (alert is IslandAlert.Scan && alert.success && context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) {
+                showAlert(IslandAlert.Lock(open = true))
+            }
         }
     }
 

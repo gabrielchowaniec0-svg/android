@@ -765,7 +765,7 @@ private fun AlertContent(alert: IslandAlert) {
         is IslandAlert.Scan -> Box(
             Modifier.fillMaxSize().padding(top = (s - 4.dp).coerceAtLeast(0.dp), bottom = 4.dp),
             contentAlignment = Alignment.Center,
-        ) { FaceScanGlyph(success = alert.success, modifier = Modifier.size(32.dp)) }
+        ) { FaceScanGlyph(success = alert.success, failed = alert.failed, modifier = Modifier.size(32.dp)) }
         is IslandAlert.LowBattery -> CompactSplit(
             leading = { Text("Low Battery", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1) },
             trailing = {
@@ -803,7 +803,16 @@ private fun IdleContent() {
  * while scanning, then becomes a tick when you're recognised.
  */
 @Composable
-private fun FaceScanGlyph(success: Boolean, modifier: Modifier) {
+private fun FaceScanGlyph(success: Boolean, failed: Boolean = false, modifier: Modifier) {
+    // Didn't work: a quick side-to-side shake, like iPhone.
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(failed) {
+        if (failed) {
+            for (x in listOf(1f, -1f, 0.7f, -0.7f, 0.35f, 0f)) shake.animateTo(x, tween(55))
+        } else {
+            shake.snapTo(0f)
+        }
+    }
     val t = rememberInfiniteTransition(label = "scan")
     val turn by t.animateFloat(-22f, 22f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "turn")
     val pulse by t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(520), RepeatMode.Reverse), label = "pulse")
@@ -813,7 +822,8 @@ private fun FaceScanGlyph(success: Boolean, modifier: Modifier) {
     }
     Canvas(
         modifier.graphicsLayer {
-            rotationY = if (success) 0f else turn
+            rotationY = if (success || failed) 0f else turn
+            translationX = shake.value * 5f * density
             cameraDistance = 12f * density
         }
     ) {
@@ -824,7 +834,7 @@ private fun FaceScanGlyph(success: Boolean, modifier: Modifier) {
         // Corner brackets, closing in a little on success.
         val inset = w * 0.06f * k
         val len = w * 0.22f
-        val c = Color.White.copy(alpha = if (success) 1f else pulse)
+        val c = Color.White.copy(alpha = if (success || failed) 1f else pulse)
         fun corner(x: Float, y: Float, dx: Float, dy: Float) {
             drawLine(c, Offset(x, y), Offset(x + dx * len, y), strokeWidth = st, cap = StrokeCap.Round)
             drawLine(c, Offset(x, y), Offset(x, y + dy * len), strokeWidth = st, cap = StrokeCap.Round)

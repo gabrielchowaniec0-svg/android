@@ -475,3 +475,26 @@ Settings ▸ Living wallpaper:
 Open it from the app list ⋮ ▸ Plane spotter, or write/type "planes". Point the camera at a plane. When it lines up with the circle, it locks on and shows the flight number, airline, where it's flying from and to, altitude, speed, distance and aircraft type. If nothing is in view, it tells you which way to turn to find the nearest plane.
 
 It uses your location, the compass and live flight data from the community networks adsb.lol / adsb.fi, plus routes from adsbdb.com. If labels drift sideways, the compass needs calibrating: wave the phone in a figure 8. Some small private planes don't share a route.
+
+## Mini assistant (write with the S Pen or type in search)
+
+**Do things**
+- "open spotify" (typos are fine; hidden apps stay hidden)
+- "screenshot" · "secure screenshot" (straight into the Vault)
+- "record video" (camera opens in video mode; tap record) · "take a photo" · "selfie"
+- "text mom running late". Typed in search, **Send** sends it right away. Written with the pen, it opens in search first so you can check it before sending. If Android won't allow Kinetic to send texts, Messages opens with the text typed in.
+- "remind me to call grandma at 6" (labelled alarm) · "remind me to flip the laundry in 40 min" (timer)
+- "lock" · "notifications" · "quick settings" · "recent apps" · "bluetooth" · "settings" · "kinetic settings" · "wallpaper" · "focus" · "vault" · "search for …"
+
+**Ask things** (the answer appears where you wrote, or as a card in search)
+- "what's the weather" · "will it rain" · "do I need an umbrella"
+- "when's my dentist appointment" · "what's next" (asks once for calendar access)
+- "battery" · "what's the date" · "time in Tokyo"
+- "15% of 84" · "12 x 7" · "5 miles in km" · "350 F to C" · "2 cups in ml"
+- "where is UA1234": live altitude, speed, route and distance from you
+- "flip a coin" · "roll a dice" · "roll d20"
+
+## Face unlock animation
+When the screen wakes, Kinetic watches the phone's real lock state. The tick appears the moment face (or fingerprint) unlock succeeds. If you stay on the lock screen, the padlock opens there. If it hasn't worked after about 3 seconds, the face icon shakes and fades.
+
+The scan only shows when the phone is held up. It doesn't show when the phone is flat on a table or in a pocket (it uses the motion and proximity sensors). If Smart Lock already unlocked the phone, the padlock simply opens.

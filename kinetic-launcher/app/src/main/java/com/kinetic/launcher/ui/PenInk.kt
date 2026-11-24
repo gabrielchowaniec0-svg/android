@@ -7,6 +7,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -122,11 +123,11 @@ class InkState(private val scope: CoroutineScope, private val onText: (String) -
         }
     }
 
-    fun say(text: String) {
+    fun say(text: String, millis: Long = 1800) {
         pill = text
         pillJob?.cancel()
         pillJob = scope.launch {
-            delay(1800)
+            delay(millis)
             pill = null
         }
     }
@@ -202,8 +203,12 @@ fun InkLayer(state: InkState, modifier: Modifier = Modifier) {
                 state.pill.orEmpty(),
                 color = Color.White,
                 fontSize = 15.sp,
+                lineHeight = 21.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(50))
+                    .padding(horizontal = 24.dp)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(22.dp))
+                    .clickable { state.pill = null }
                     .padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }

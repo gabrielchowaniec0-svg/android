@@ -70,6 +70,28 @@ object PlaneData {
         return emptyList()
     }
 
+    /** The aircraft flying as [callsign] right now (e.g. "UAL1234"), or null if it isn't in the air. */
+    fun byCallsign(callsign: String): Plane? {
+        for (u in listOf("https://api.adsb.lol/v2/callsign/$callsign", "https://opendata.adsb.fi/api/v2/callsign/$callsign")) {
+            val ac = get(u)?.let { it.optJSONArray("ac") ?: it.optJSONArray("aircraft") } ?: continue
+            for (i in 0 until ac.length()) {
+                val a = ac.optJSONObject(i) ?: continue
+                if (!a.has("lat")) continue
+                val alt = a.opt("alt_baro").let { it as? Number }?.toInt() ?: a.optInt("alt_geom", -1)
+                if (alt <= 0) continue
+                return Plane(
+                    hex = a.optString("hex"), callsign = a.optString("flight").trim(),
+                    registration = a.optString("r").takeIf { it.isNotBlank() }, typeCode = a.optString("t").takeIf { it.isNotBlank() },
+                    lat = a.getDouble("lat"), lon = a.getDouble("lon"), altitudeFt = alt,
+                    speedKt = if (a.has("gs")) a.optDouble("gs").toInt() else null,
+                    trackDeg = if (a.has("track")) a.optDouble("track") else null,
+                )
+            }
+            return null
+        }
+        return null
+    }
+
     /** Airline and from → to for a callsign (cached). Null if unknown. */
     fun route(callsign: String): Route? {
         if (callsign.isBlank()) return null

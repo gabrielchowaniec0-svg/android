@@ -315,8 +315,20 @@ fun KineticHome(
         scope.launch {
             val ready = parsed?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { KineticCommands.resolve(activity, it) } }
             val allowed = ready?.permission?.let { activity.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED } ?: true
-            if (ready != null && allowed) {
-                ink.say("✎ ${ready.title}")
+            // Sums: "15% of 84", "12 x 7"…
+            if (parsed == null) {
+                SmartSearch.calculate(text)?.let { result ->
+                    ink.say("$text = $result", 6000)
+                    return@launch
+                }
+            }
+            if (ready != null && ready.answer && allowed) {
+                // Questions: the answer appears right where you wrote.
+                ink.say("${ready.badge}  ${ready.title}" + if (ready.subtitle.isNotBlank()) "\n${ready.subtitle}" else "", 7000)
+                return@launch
+            }
+            if (ready != null && allowed && !ready.confirm) {
+                if (!ready.quiet) ink.say("✎ ${ready.title}")
                 if (!ready.run(activity)) ink.say("Couldn't do “$text”")
                 return@launch
             }
@@ -336,6 +348,8 @@ fun KineticHome(
         }
     }
     ink = remember { InkState(scope) { handleInk(it) } }
+    // "open …" commands never reveal hidden apps.
+    LaunchedEffect(privateApps, privateRevealed) { KineticCommands.hiddenPackages = if (privateRevealed) emptySet() else privateApps.toSet() }
     LaunchedEffect(kineticSettings.penInk) { if (kineticSettings.penInk) PenRecognizer.prepare() }
 
     // ---- menus ----------------------------------------------------------------
