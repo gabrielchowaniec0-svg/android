@@ -173,6 +173,7 @@
         <!-- Plane spotter: point at a plane to see its flight. -->
         <activity
             android:name=".planes.PlaneSpotterActivity"
+            android:process=":spotter"
             android:taskAffinity=""
             android:exported="false"
             android:label="Plane spotter"
