@@ -20,7 +20,8 @@ import com.kinetic.launcher.island.IslandBus
 class PermissionActivity : ComponentActivity() {
 
     private val ask = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) retry() else IslandBus.say("✕", "Not allowed")
+        val anyway = intent.getBooleanExtra(EXTRA_ANYWAY, false)
+        if (granted || anyway) retry(confirmed = anyway) else IslandBus.say("✕", "Not allowed")
         finish()
     }
 
@@ -31,9 +32,10 @@ class PermissionActivity : ComponentActivity() {
             DND -> openPage(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
             WRITE_SETTINGS -> openPage(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
             NOTIFICATIONS -> openPage(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            USAGE -> openPage(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             else -> {
                 if (ContextCompat.checkSelfPermission(this, kind) == PackageManager.PERMISSION_GRANTED) {
-                    retry()
+                    retry(confirmed = intent.getBooleanExtra(EXTRA_ANYWAY, false))
                     finish()
                 } else {
                     ask.launch(kind)
@@ -49,7 +51,7 @@ class PermissionActivity : ComponentActivity() {
     }
 
     /** Runs the command that was waiting for this permission. */
-    private fun retry() {
+    private fun retry(confirmed: Boolean = false) {
         val cmd = intent.getStringExtra(EXTRA_RETRY).orEmpty()
         if (cmd.isBlank()) return
         val app = applicationContext
@@ -58,10 +60,11 @@ class PermissionActivity : ComponentActivity() {
             val parsed = KineticCommands.parse(cmd) ?: return@Thread
             val ready = runCatching { KineticCommands.resolve(app, parsed) }.getOrNull() ?: return@Thread
             main.post {
-                if (ready.answer) {
-                    IslandBus.say(ready.badge, ready.done ?: (ready.title + if (ready.subtitle.isNotBlank()) " · ${ready.subtitle}" else ""))
-                } else if (ready.run(app)) {
-                    if (!ready.quiet) IslandBus.say(ready.badge, ready.done ?: ready.title)
+                // Carries on in the island (asks to confirm a text, the next permission, etc.).
+                if (confirmed) {
+                    if (ready.run(app) && !ready.quiet) IslandBus.say(ready.badge, ready.done ?: ready.title)
+                } else if (!IslandFlow.handle(app, cmd, ready)) {
+                    if (ready.run(app) && !ready.quiet) IslandBus.say(ready.badge, ready.done ?: ready.title)
                 }
             }
         }.start()
@@ -70,15 +73,18 @@ class PermissionActivity : ComponentActivity() {
     companion object {
         const val EXTRA_KIND = "kind"
         const val EXTRA_RETRY = "retry"
+        /** You already confirmed (e.g. pressed Send): run it whether or not it's allowed. */
+        const val EXTRA_ANYWAY = "anyway"
         const val DND = "kinetic:dnd"
         const val WRITE_SETTINGS = "kinetic:write_settings"
         const val NOTIFICATIONS = "kinetic:notifications"
+        const val USAGE = "kinetic:usage"
 
         /** [kind] is a runtime permission (e.g. READ_CONTACTS) or one of the special kinds above. */
-        fun start(context: Context, kind: String, retry: String) {
+        fun start(context: Context, kind: String, retry: String, runAnyway: Boolean = false) {
             context.startActivity(
                 Intent(context, PermissionActivity::class.java)
-                    .putExtra(EXTRA_KIND, kind).putExtra(EXTRA_RETRY, retry)
+                    .putExtra(EXTRA_KIND, kind).putExtra(EXTRA_RETRY, retry).putExtra(EXTRA_ANYWAY, runAnyway)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
             )
         }

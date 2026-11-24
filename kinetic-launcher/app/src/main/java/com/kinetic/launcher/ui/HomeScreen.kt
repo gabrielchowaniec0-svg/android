@@ -355,6 +355,8 @@ fun KineticHome(
                 ink.say(ready.done ?: (ready.title + if (ready.subtitle.isNotBlank()) "\n${ready.subtitle}" else ""), 7000, icon = ready.badge)
                 return@launch
             }
+            // With the island on, everything happens there (confirm, allow, answer, done).
+            if (ready != null && com.kinetic.launcher.ui.IslandFlow.handle(activity, text, ready)) return@launch
             if (ready != null && allowed && !ready.confirm) {
                 if (!ready.quiet) ink.say(ready.done ?: ready.title, icon = ready.badge)
                 if (!ready.run(activity)) ink.say("Couldn't do “$text”")
@@ -378,6 +380,23 @@ fun KineticHome(
                 ) { com.kinetic.launcher.ui.PermissionActivity.start(activity, needs, text) }
                 if (asked) return@launch
             }
+            // Not a command or an app: the island offers to search for it.
+            if (ready == null && com.kinetic.launcher.island.IslandBus.ask(
+                    "✎", "\u201C$text\u201D", "Search", secondary = "Web",
+                    onSecondary = {
+                        runCatching {
+                            activity.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, text)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    },
+                ) {
+                    searchPrefill = text
+                    searchSignal++
+                    openDrawer()
+                }
+            ) return@launch
             // Anything else (or a command that needs a permission first): open search with it.
             searchPrefill = text
             searchSignal++

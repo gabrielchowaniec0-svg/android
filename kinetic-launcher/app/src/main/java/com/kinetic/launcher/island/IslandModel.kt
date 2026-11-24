@@ -72,7 +72,7 @@ sealed interface IslandAlert {
     /** A short message from elsewhere in Kinetic (S Pen answers, "Calling Mom"…). */
     data class Say(val icon: String, val text: String) : IslandAlert
     /** A message with a button, e.g. a command asking for permission. */
-    data class Ask(val icon: String, val text: String, val button: String) : IslandAlert
+    data class Ask(val icon: String, val text: String, val button: String, val secondary: String? = null) : IslandAlert
     /** Battery just dropped to 15% (when One UI warns too). */
     data class LowBattery(val level: Int) : IslandAlert
     /** A Focus was switched on or off. */
@@ -362,7 +362,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         scope.launch {
             IslandBus.asks.collect { a ->
                 askAction = a.onTap
-                showAlert(IslandAlert.Ask(a.icon, a.text, a.button))
+                askSecondary = a.onSecondary
+                showAlert(IslandAlert.Ask(a.icon, a.text, a.button, a.secondary))
             }
         }
     }
@@ -408,9 +409,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     private var askAction: (() -> Unit)? = null
 
     /** The island's button was pressed (e.g. "Allow"). */
-    fun answerAsk() {
-        val a = askAction
+    private var askSecondary: (() -> Unit)? = null
+
+    /** One of the island's buttons was pressed ([primary] = the blue one). */
+    fun answerAsk(primary: Boolean = true) {
+        val a = if (primary) askAction else askSecondary
         askAction = null
+        askSecondary = null
         alertJob?.cancel()
         _alert.value = null
         a?.invoke()
