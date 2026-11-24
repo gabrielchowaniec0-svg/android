@@ -56,7 +56,63 @@ object VaultCrypto {
     fun setUp(context: Context, code: String, kind: Kind) {
         val master = ByteArray(32).also { SecureRandom().nextBytes(it) }
         store(context, master, code, kind)
+        ensureDropBox(context, SecretKeySpec(master, "AES"))
         master.fill(0)
+    }
+
+    // ---- drop box: lets secure screenshots go IN without the code --------------------
+    //
+    // A key pair: the public half (stored openly) can only *lock* things; the private
+    // half is itself locked with the vault key. So a screenshot can be sealed while the
+    // Vault is locked, but nobody can open it again without the Kinetic code.
+
+    private val DROP_MAGIC = byteArrayOf('K'.code.toByte(), 'D'.code.toByte(), 'B'.code.toByte(), '1'.code.toByte())
+    private const val RSA = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+
+    /** True once screenshots can be dropped in without the code. */
+    fun canDrop(context: Context) = prefs(context).contains("drop_pub")
+
+    /** Creates the drop-box key pair if it doesn't exist yet (needs the unlocked vault key). */
+    fun ensureDropBox(context: Context, key: SecretKey) {
+        if (canDrop(context)) return
+        val pair = java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(3072) }.generateKeyPair()
+        prefs(context).edit()
+            .putString("drop_pub", b64(pair.public.encoded))
+            .putString("drop_priv", b64(gcmEncrypt(key, pair.private.encoded)))
+            .apply()
+    }
+
+    /** Seals [input] so only the unlocked Vault can open it. No code needed. */
+    fun dropEncrypt(context: Context, input: InputStream, output: OutputStream) {
+        val pubBytes = unb64(prefs(context).getString("drop_pub", null) ?: error("No drop box"))
+        val pub = java.security.KeyFactory.getInstance("RSA").generatePublic(java.security.spec.X509EncodedKeySpec(pubBytes))
+        val fileKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val c = Cipher.getInstance(RSA)
+        c.init(Cipher.ENCRYPT_MODE, pub)
+        val wrapped = c.doFinal(fileKey.encoded)
+        val out = DataOutputStream(output)
+        out.write(DROP_MAGIC)
+        out.writeInt(wrapped.size)
+        out.write(wrapped)
+        encryptStream(fileKey, "drop", input, out)
+        out.flush()
+    }
+
+    /** Opens a file written by [dropEncrypt], using the unlocked vault [key]. */
+    fun dropDecrypt(context: Context, key: SecretKey, input: InputStream, output: OutputStream) {
+        val privBytes = gcmDecrypt(key, unb64(prefs(context).getString("drop_priv", null) ?: error("No drop box")))
+        val priv = java.security.KeyFactory.getInstance("RSA").generatePrivate(java.security.spec.PKCS8EncodedKeySpec(privBytes))
+        privBytes.fill(0)
+        val inp = DataInputStream(input)
+        val magic = ByteArray(4)
+        inp.readFully(magic)
+        require(magic.contentEquals(DROP_MAGIC)) { "Not a drop file" }
+        val wrapped = ByteArray(inp.readInt().also { require(it in 1..2048) })
+        inp.readFully(wrapped)
+        val c = Cipher.getInstance(RSA)
+        c.init(Cipher.DECRYPT_MODE, priv)
+        val fileKey = SecretKeySpec(c.doFinal(wrapped), "AES")
+        decryptStream(fileKey, "drop", inp, output)
     }
 
     /** Changes the code (needs the current one). False if [oldCode] is wrong. */

@@ -39,6 +39,8 @@ object KineticSettings {
         /** "off", "flashlight", "camera", "search", "focus" or "app". */
         val shakeAction: String = "off",
         val shakeApp: String = "",
+        /** Volume Up, Up, Down, Down saves a screenshot straight into the Vault. */
+        val secureScreenshot: Boolean = true,
         // Wallpaper reactions (keys shared with the wallpaper)
         val wpMusicGlow: Boolean = true,
         val wpUnlockRipple: Boolean = true,
@@ -66,6 +68,7 @@ object KineticSettings {
     const val MULTI_FINGER = "multi_finger"
     const val SHAKE_ACTION = "shake_action"
     const val SHAKE_APP = "shake_app"
+    const val SECURE_SCREENSHOT = "secure_screenshot"
 
     private val _values = MutableStateFlow(Values())
     val values: StateFlow<Values> = _values.asStateFlow()
@@ -118,6 +121,7 @@ object KineticSettings {
         multiFinger = p.getBoolean(MULTI_FINGER, true),
         shakeAction = p.getString(SHAKE_ACTION, "off") ?: "off",
         shakeApp = p.getString(SHAKE_APP, "") ?: "",
+        secureScreenshot = p.getBoolean(SECURE_SCREENSHOT, true),
         wpMusicGlow = p.getBoolean(WallpaperSignals.KEY_MUSIC_GLOW, true),
         wpUnlockRipple = p.getBoolean(WallpaperSignals.KEY_UNLOCK_RIPPLE, true),
         wpAppRipples = p.getBoolean(WallpaperSignals.KEY_APP_RIPPLES, true),

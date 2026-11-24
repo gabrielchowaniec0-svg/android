@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Draws the island. Only notices which app is in front (to hide a song while you're in its app); can't read window contents. -->
+<!-- Draws the island. Only notices which app is in front (to hide a song while you're in its app); can't read window contents.
+     Also watches the volume keys (only for the secure screenshot gesture) and may take a screenshot when you do it. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRetrieveWindowContent="false"
+    android:canRequestFilterKeyEvents="true"
+    android:canTakeScreenshot="true"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:description="@string/island_description"
     android:summary="@string/island_summary"
     android:notificationTimeout="1000"
