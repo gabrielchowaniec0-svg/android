@@ -505,3 +505,10 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **My teams:** in Settings ▸ Dynamic Island ▸ My teams, type your teams (e.g. "Bears, Cubs"). Only their games show, and the island bounces with a buzz when the score changes.
 - **Island look:** Black (default), Glass (a dark see-through finish with a thin edge) or Outline (an edge in the colour of whatever is playing).
 - **Music glow:** a soft, breathing glow in the album's colours around the island while music plays.
+
+## Quick wins (Batch 1)
+- **Number badges:** a red unread count on app icons that have a notification ring. Switch it off in Settings ▸ Home ▸ Number badges.
+- **"New" folder:** apps you install wait in a New folder in the app list for a week, then join the normal list.
+- **Charging:** the island shows "Full at 11:40 PM" once Android has worked out the estimate.
+- **Earbuds & headphones:** when they connect, the island shows their name and battery (if they report it).
+- **Voice search:** hold the Search pill in the app list and say a command, an app or a question.

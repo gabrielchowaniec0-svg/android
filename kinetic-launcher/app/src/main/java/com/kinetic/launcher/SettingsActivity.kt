@@ -223,6 +223,7 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
                 SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
                 SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
+                SwitchRow("Earbuds & headphones", "Show when they connect, with their battery", s.islandEarbuds, bool(KineticSettings.ISLAND_EARBUDS))
                 SwitchRow("Music glow", "A soft glow in the album's colours while music plays", s.islandMusicGlow, bool(KineticSettings.ISLAND_MUSIC_GLOW))
                 ChoiceRow(
                     "Island look",
@@ -251,6 +252,8 @@ class SettingsActivity : ComponentActivity() {
             // ---- home ---------------------------------------------------------------------
             Section("Home screen") {
                 SwitchRow("Notification rings", "A spinning ring around apps with notifications", s.notificationRings, bool(KineticSettings.RINGS))
+                SwitchRow("Number badges", "A red count on apps with unread notifications", s.badges, bool(KineticSettings.BADGES))
+                SwitchRow("\u201CNew\u201D folder", "Newly installed apps wait in a New folder in the app list for a week", s.newAppsFolder, bool(KineticSettings.NEW_APPS_FOLDER))
                 SwitchRow("Haptics", "Little vibrations for the island and edit mode", s.haptics, bool(KineticSettings.HAPTICS))
                 SliderRow(
                     "Icon size",
