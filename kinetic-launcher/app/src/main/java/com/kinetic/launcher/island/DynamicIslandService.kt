@@ -129,7 +129,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     /** Volume keys: watches for the secure screenshot gesture (Up, Up, Down, Down). */
     override fun onKeyEvent(event: KeyEvent): Boolean =
-        secureShot?.onKey(event) ?: false
+        secureShot?.onKey(event)?.takeIf { it } ?: VolumeHud.onKey(this, event)
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)

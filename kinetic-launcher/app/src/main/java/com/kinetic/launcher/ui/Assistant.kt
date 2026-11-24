@@ -244,13 +244,19 @@ object Assistant {
         return Ready("☾", "Focus for $len", (mode?.name ?: "Focus") + " turns off by itself when the time's up", "Start", done = "Focus · $len") { ctx ->
             if (mode != null) com.kinetic.launcher.FocusModes.turnOn(ctx, mode.id)
             com.kinetic.launcher.FocusEndReceiver.schedule(ctx, seconds)
-            start(
-                ctx,
-                Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
-                    .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds)
-                    .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "Focus")
-                    .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true),
-            )
+            if (com.kinetic.launcher.island.DynamicIslandService.isRunning) {
+                // The island shows a ring that empties, and celebrates at the end.
+                com.kinetic.launcher.island.FocusLive.start(ctx, seconds, mode?.name ?: "Focus", mode?.color ?: 0)
+                true
+            } else {
+                start(
+                    ctx,
+                    Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
+                        .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds)
+                        .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "Focus")
+                        .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true),
+                )
+            }
         }
     }
 
@@ -555,7 +561,7 @@ object Assistant {
 
     // ---- flights --------------------------------------------------------------------------
 
-    private val AIRLINE = mapOf(
+    internal val AIRLINE = mapOf(
         "UA" to "UAL", "AA" to "AAL", "DL" to "DAL", "WN" to "SWA", "B6" to "JBU", "AS" to "ASA", "NK" to "NKS", "F9" to "FFT",
         "G4" to "AAY", "HA" to "HAL", "SY" to "SCX", "AC" to "ACA", "WS" to "WJA", "AM" to "AMX", "BA" to "BAW", "VS" to "VIR",
         "LH" to "DLH", "AF" to "AFR", "KL" to "KLM", "LO" to "LOT", "AY" to "FIN", "SK" to "SAS", "IB" to "IBE", "EI" to "EIN",

@@ -75,6 +75,10 @@ sealed interface IslandAlert {
     data class Ask(val icon: String, val text: String, val button: String, val secondary: String? = null) : IslandAlert
     /** Battery just dropped to 15% (when One UI warns too). */
     data class LowBattery(val level: Int) : IslandAlert
+    /** Volume or brightness slider ([kind]: "volume", "ring", "call", "brightness"). */
+    data class Level(val kind: String, val percent: Int) : IslandAlert
+    /** Confetti and a message (homework done, Focus finished…). */
+    data class Celebrate(val icon: String, val text: String) : IslandAlert
     /** A Focus was switched on or off. */
     data class Focus(val name: String, val glyph: com.kinetic.launcher.FocusModes.Glyph, val color: Int, val on: Boolean) : IslandAlert
 }
@@ -330,6 +334,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             var last: String? = com.kinetic.launcher.FocusModes.active.value?.id
             com.kinetic.launcher.FocusModes.active.collect { m ->
                 if (m?.id == last) return@collect
+                // A Focus switched off some other way ends its ring too.
+                if (m == null) com.kinetic.launcher.island.FocusLive.clear(context)
                 val shown = m ?: com.kinetic.launcher.FocusModes.modes.value.firstOrNull { it.id == last }
                 last = m?.id
                 if (shown != null) showAlert(IslandAlert.Focus(shown.name, shown.glyph, shown.color, on = m != null))
@@ -359,6 +365,9 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         scope.launch {
             IslandBus.says.collect { s -> showAlert(IslandAlert.Say(s.icon, s.text)) }
         }
+        scope.launch { IslandBus.levels.collect { l -> showAlert(IslandAlert.Level(l.kind, l.percent)) } }
+        scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(c.icon, c.text)) } }
+        LiveFeatures.start(context, scope)
         scope.launch {
             IslandBus.asks.collect { a ->
                 askAction = a.onTap
@@ -380,6 +389,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     fun stop() {
+        LiveFeatures.stop(context)
         runCatching { context.unregisterReceiver(receiver) }
         runCatching { audio.unregisterAudioRecordingCallback(recordingCallback) }
         runCatching { cameraManager.unregisterAvailabilityCallback(cameraCallback) }
@@ -670,6 +680,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     is IslandAlert.Say -> (2600L + alert.text.length * 45L).coerceAtMost(7000L)
                     is IslandAlert.Earbuds -> 3500
                     is IslandAlert.Ask -> 9000
+                    is IslandAlert.Level -> 1500
+                    is IslandAlert.Celebrate -> 3200
                     else -> 2200
                 }
             )

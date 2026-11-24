@@ -82,7 +82,7 @@ class HelpActivity : ComponentActivity() {
                         item(key = "h_" + g.title) {
                             Text("${g.icon}  ${g.title}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp))
                         }
-                        items(g.items, key = { g.title + it.write }) { ex -> CommandRow(ex) }
+                        items(g.items, key = { g.title + it.write + it.what }) { ex -> CommandRow(ex) }
                     }
                     if (shown.isEmpty()) item { Text("No command matches “$q”", color = Color(0x99FFFFFF), modifier = Modifier.padding(20.dp)) }
                 }
@@ -182,8 +182,8 @@ class HelpActivity : ComponentActivity() {
                         ex("my schedule tomorrow", "Or any weekday: “schedule friday”"),
                         ex("timer 10 min", "Starts a timer"),
                         ex("alarm 7am", "Sets an alarm"),
-                        ex("stopwatch", "Then “lap” and “stop”"),
-                        ex("focus 30 min", "A Focus session"),
+                        ex("stopwatch", "Counts live in the island; then lap and stop"),
+                        ex("focus 30 min", "A Focus session with a ring in the island"),
                         ex("time in Tokyo", "The time somewhere else"),
                         ex("time zones: Chicago, London, Tokyo", "Several places at once"),
                         ex("days until christmas", "Days until something"),
@@ -207,6 +207,9 @@ class HelpActivity : ComponentActivity() {
                     listOf(
                         ex("planes", "Planes flying near you"),
                         ex("what's that plane", "Point the camera at it"),
+                        ex("plane watch", "Planes flying over you pop up in the island (1 hour)"),
+                        ex("track UA123", "Follow a flight live in the island until it lands"),
+                        ex("stop tracking", "Stops following the flight"),
                         ex("metar KORD", "Airport weather, in plain English too"),
                         ex("flight UA123", "A flight's status"),
                         ex("phonetic Gabriel", "Golf Alpha Bravo…"),

@@ -611,3 +611,16 @@ New commands:
 
 ## Island fix
 - The island's contents could fade out and stay invisible after pulling it open or closed (leaving an empty black pill or box). The fade-back no longer gets cut short, and a safety check restores the contents whenever nothing is being pulled.
+
+## Island: live activities, sliders and celebrations
+- **Live stopwatch**: `stopwatch` now counts live in the island. Pull it down for **Lap** and **Stop** (or write `lap` / `stop`).
+- **Focus ring**: `focus 30 min` shows a ring that empties in the island (pull down for **End now**). When it finishes: a chime and confetti.
+- **Up next**: 15 minutes before a calendar event, the island counts down to it (pull down for **Open** / **Hide**). Settings → Island → Up next.
+- **Volume slider**: the volume buttons show Kinetic's slider in the island instead of One UI's panel (calls still use One UI's). Settings → Island → Volume slider.
+- **Brightness slider**: shows when brightness changes while auto-brightness is off (with auto-brightness on it would pop up all day).
+- **Rain alerts**: "Rain starting in about 15 min" (checked every 20 minutes while the screen is on, at most once every 3 hours). Settings → Island → Rain alerts.
+- **Plane watch**: `plane watch` — for the next hour, planes passing within about 4 miles pop up with their route and altitude (tap to open the plane spotter). `plane watch off` stops it.
+- **Track a flight**: `track UA123` — follows it live (climbing / cruising / landing soon, altitude, speed) and celebrates when it lands. `stop tracking` ends it.
+- **Celebrations**: confetti when you finish homework (`done math`), a Focus session, a flashcard deck, or a tracked flight lands.
+- **Progress bars** now have a ring around the app icon, and a "✓ done" when they finish.
+- Already there from earlier: charging, earbuds, silent/vibrate and low-battery pop-ups.

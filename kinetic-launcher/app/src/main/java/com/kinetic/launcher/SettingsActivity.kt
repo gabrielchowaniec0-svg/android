@@ -342,6 +342,10 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
                 SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
                 SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
+                SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
+                SwitchRow("Brightness slider", "Changing brightness shows it in the island (when auto-brightness is off)", s.islandBrightness, bool(KineticSettings.ISLAND_BRIGHTNESS))
+                SwitchRow("Up next", "Your next calendar event counts down 15 minutes before", s.islandUpNext, bool(KineticSettings.ISLAND_UP_NEXT))
+                SwitchRow("Rain alerts", "\u201CRain in 15 min\u201D when it's about to rain where you are", s.islandRain, bool(KineticSettings.ISLAND_RAIN))
                 SwitchRow("Earbuds & headphones", "Show when they connect, with their battery", s.islandEarbuds, bool(KineticSettings.ISLAND_EARBUDS))
                 SwitchRow("Music glow", "A soft glow in the album's colours while music plays", s.islandMusicGlow, bool(KineticSettings.ISLAND_MUSIC_GLOW))
                 ChoiceRow(

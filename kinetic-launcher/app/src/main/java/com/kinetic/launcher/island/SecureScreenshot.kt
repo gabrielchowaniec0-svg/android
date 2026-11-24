@@ -94,9 +94,12 @@ class SecureScreenshot(
             audio.mode == AudioManager.MODE_NORMAL
 
     private fun adjust(direction: Int, showUi: Boolean) {
+        // With the island's volume slider on, the island shows the level instead of One UI.
+        val island = showUi && VolumeHud.enabled()
         runCatching {
-            audio.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, if (showUi) AudioManager.FLAG_SHOW_UI else 0)
+            audio.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, if (showUi && !island) AudioManager.FLAG_SHOW_UI else 0)
         }
+        if (island) VolumeHud.show(service)
     }
 
     /** Takes a secure screenshot now (also used by the "secure screenshot" command). */

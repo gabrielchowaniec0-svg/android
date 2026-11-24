@@ -561,13 +561,17 @@ object MoreCommands {
         val s = AudioManager.STREAM_MUSIC
         val before = a.getStreamVolume(s)
         Commands3.rememberUndo("volume") { c -> c.getSystemService(AudioManager::class.java).setStreamVolume(s, before, AudioManager.FLAG_SHOW_UI) }
+        // With the island's slider on, the island shows the level instead of One UI.
+        val island = com.kinetic.launcher.island.VolumeHud.enabled()
+        val ui = if (island) 0 else AudioManager.FLAG_SHOW_UI
         when (p) {
-            -1 -> a.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
-            -2 -> a.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
-            -3 -> repeat(2) { a.adjustStreamVolume(s, AudioManager.ADJUST_RAISE, if (it == 1) AudioManager.FLAG_SHOW_UI else 0) }
-            -4 -> repeat(2) { a.adjustStreamVolume(s, AudioManager.ADJUST_LOWER, if (it == 1) AudioManager.FLAG_SHOW_UI else 0) }
-            else -> a.setStreamVolume(s, (a.getStreamMaxVolume(s) * p / 100f).roundToInt(), AudioManager.FLAG_SHOW_UI)
+            -1 -> a.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, ui)
+            -2 -> a.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, ui)
+            -3 -> repeat(2) { a.adjustStreamVolume(s, AudioManager.ADJUST_RAISE, if (it == 1) ui else 0) }
+            -4 -> repeat(2) { a.adjustStreamVolume(s, AudioManager.ADJUST_LOWER, if (it == 1) ui else 0) }
+            else -> a.setStreamVolume(s, (a.getStreamMaxVolume(s) * p / 100f).roundToInt(), ui)
         }
+        if (island) com.kinetic.launcher.island.VolumeHud.show(context, AudioManager.STREAM_MUSIC)
         return true
     }
 
@@ -602,7 +606,14 @@ object MoreCommands {
             -2 -> now - 50
             else -> (p * 255 / 100)
         }.coerceIn(1, 255)
-        return runCatching { Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, target); true }.getOrDefault(false)
+        return runCatching {
+            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, target)
+            // (With auto-brightness off, the island's brightness watcher shows it already.)
+            if (Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1) {
+                com.kinetic.launcher.island.IslandBus.level("brightness", com.kinetic.launcher.island.LiveFeatures.brightnessPercent(context))
+            }
+            true
+        }.getOrDefault(false)
     }
 
     // ---- contacts & location ---------------------------------------------------------------------

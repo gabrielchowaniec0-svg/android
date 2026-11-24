@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -132,7 +133,7 @@ private val LocalPill = compositionLocalOf { 35.dp }
 private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 
 /** Things that can live in the island, most important first. */
-private enum class Activity { Call, Nav, Trip, Timer, Score, Media }
+private enum class Activity { Call, Nav, Live, Trip, Timer, Score, Media }
 
 private sealed interface IslandMode {
     data object Idle : IslandMode
@@ -152,6 +153,9 @@ private sealed interface IslandMode {
     data object ScoreCompact : IslandMode
     data object ScoreExpanded : IslandMode
     data object Peek : IslandMode
+    /** Kinetic's own live things (stopwatch, Focus, up next, planes, flights). */
+    data object LiveCompact : IslandMode
+    data object LiveExpanded : IslandMode
     /** A notification as a small pill: app icon + a couple of words. */
     data object PeekCompact : IslandMode
 }
@@ -196,6 +200,8 @@ fun DynamicIsland(
     val peekOpen by model.peekOpen.collectAsState()
     val alert by model.alert.collectAsState()
     val expanded by model.expanded.collectAsState()
+    val lives by LiveHub.lives.collectAsState()
+    val lv = lives.firstOrNull()
 
     val c = call
     val m = media
@@ -206,6 +212,7 @@ fun DynamicIsland(
     val activities = buildList {
         if (c != null) add(Activity.Call)
         if (n != null) add(Activity.Nav)
+        if (lv != null) add(Activity.Live)
         if (trip != null) add(Activity.Trip)
         if (t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm) add(Activity.Timer)
         if (score != null) add(Activity.Score)
@@ -231,6 +238,7 @@ fun DynamicIsland(
         expanded -> when (primary) {
             Activity.Call -> IslandMode.CallExpanded
             Activity.Nav -> IslandMode.NavExpanded
+            Activity.Live -> IslandMode.LiveExpanded
             Activity.Timer -> IslandMode.TimerExpanded
             Activity.Trip -> IslandMode.TripExpanded
             Activity.Score -> IslandMode.ScoreExpanded
@@ -238,6 +246,7 @@ fun DynamicIsland(
         }
         primary == Activity.Call -> IslandMode.CallCompact
         primary == Activity.Nav -> IslandMode.NavCompact
+        primary == Activity.Live -> IslandMode.LiveCompact
         primary == Activity.Timer -> IslandMode.TimerCompact
         primary == Activity.Trip -> IslandMode.TripCompact
         primary == Activity.Score -> IslandMode.ScoreCompact
@@ -254,6 +263,10 @@ fun DynamicIsland(
         is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
             is IslandAlert.Earbuds -> ChargingW to pillH
+            // A slider under the camera.
+            is IslandAlert.Level -> ChargingW to (pillH + 24.dp)
+            // Confetti and a message below the camera.
+            is IslandAlert.Celebrate -> minOf(fullW, maxOf(ChargingW, (60 + md.alert.text.length * 8).dp)) to (pillH + 40.dp)
             // A message with a button, hanging below the camera.
             is IslandAlert.Ask -> fullW to (pillH + if (md.alert.text.length > 38) 106.dp else 88.dp)
             // Face ID: a small rounded square hanging just below the camera
@@ -279,6 +292,8 @@ fun DynamicIsland(
         IslandMode.AlarmExpanded -> fullW to ExpandedAlarmH + cameraRoom
         IslandMode.NavExpanded -> fullW to ExpandedNavH + cameraRoom
         IslandMode.TripCompact, IslandMode.ScoreCompact -> (CompactW + 40.dp) to pillH
+        IslandMode.LiveCompact -> (CompactW + 40.dp) to pillH
+        IslandMode.LiveExpanded -> fullW to (if (lv?.actions.isNullOrEmpty()) 96.dp else 136.dp) + cameraRoom
         IslandMode.TripExpanded -> fullW to 118.dp + cameraRoom
         IslandMode.ScoreExpanded -> fullW to 104.dp + cameraRoom
         IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH + 52.dp) + cameraRoom
@@ -295,6 +310,7 @@ fun DynamicIsland(
         IslandMode.TimerCompact -> IslandMode.TimerExpanded
         IslandMode.NavCompact -> IslandMode.NavExpanded
         IslandMode.TripCompact -> IslandMode.TripExpanded
+        IslandMode.LiveCompact -> IslandMode.LiveExpanded
         IslandMode.ScoreCompact -> IslandMode.ScoreExpanded
         IslandMode.PeekCompact -> IslandMode.Peek
         else -> null
@@ -305,6 +321,7 @@ fun DynamicIsland(
         IslandMode.TimerExpanded -> IslandMode.TimerCompact
         IslandMode.NavExpanded -> IslandMode.NavCompact
         IslandMode.TripExpanded -> IslandMode.TripCompact
+        IslandMode.LiveExpanded -> IslandMode.LiveCompact
         IslandMode.ScoreExpanded -> IslandMode.ScoreCompact
         else -> null
     }
@@ -428,9 +445,9 @@ fun DynamicIsland(
 
     val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
         mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact || mode == IslandMode.TripCompact || mode == IslandMode.ScoreCompact ||
-        mode == IslandMode.PeekCompact
+        mode == IslandMode.PeekCompact || mode == IslandMode.LiveCompact
     val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
-        mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded ||
+        mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded || mode == IslandMode.LiveExpanded ||
         (mode == IslandMode.CallExpanded && c?.incoming == false)
     val haptic = { if (settings.haptics) onHaptic() }
 
@@ -452,6 +469,7 @@ fun DynamicIsland(
         when (which) {
             Activity.Call -> model.openCall()
             Activity.Nav -> model.openNav()
+            Activity.Live -> lv?.onTap?.invoke() ?: if (expanded) model.collapse() else model.expand()
             Activity.Timer -> model.openTimer()
             Activity.Trip -> model.openTrip()
             Activity.Score -> model.openScore()
@@ -645,6 +663,7 @@ fun DynamicIsland(
                                     IslandMode.CallCompact, IslandMode.CallExpanded -> open(Activity.Call)
                                     IslandMode.TimerCompact, IslandMode.TimerExpanded -> open(Activity.Timer)
                                     IslandMode.NavCompact, IslandMode.NavExpanded -> open(Activity.Nav)
+                                    IslandMode.LiveCompact, IslandMode.LiveExpanded -> open(Activity.Live)
                                     IslandMode.TripCompact, IslandMode.TripExpanded -> open(Activity.Trip)
                                     IslandMode.ScoreCompact, IslandMode.ScoreExpanded -> open(Activity.Score)
                                     is IslandMode.Alert -> when (mode.alert) {
@@ -711,7 +730,7 @@ private fun IslandContent(
 ) {
     val big = shown is IslandMode.MediaExpanded || shown is IslandMode.CallExpanded || shown is IslandMode.TimerExpanded ||
         shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek ||
-        shown is IslandMode.TripExpanded || shown is IslandMode.ScoreExpanded
+        shown is IslandMode.TripExpanded || shown is IslandMode.ScoreExpanded || shown is IslandMode.LiveExpanded
     Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
                         IslandMode.Idle -> IdleContent()
@@ -732,6 +751,8 @@ private fun IslandContent(
                         IslandMode.ScoreExpanded -> model.score.value?.let { ScoreExpanded(it) }
                         IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
                         IslandMode.PeekCompact -> p?.let { PeekCompactContent(it) }
+                        IslandMode.LiveCompact -> LiveHub.lives.value.firstOrNull()?.let { LiveCompactContent(it) }
+                        IslandMode.LiveExpanded -> LiveHub.lives.value.firstOrNull()?.let { LiveExpandedContent(it) }
                     }
     }
 }
@@ -748,6 +769,7 @@ private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.Tim
         }
         Activity.Timer -> TimerGlyph(Orange, Modifier.size(s * 0.55f))
         Activity.Nav -> NavArrow(n, Modifier.size(s * 0.6f))
+        Activity.Live -> LiveHub.lives.value.firstOrNull()?.let { l -> Text(l.icon, color = Color(l.accent), fontSize = 13.sp, maxLines = 1) }
         Activity.Call -> PhoneGlyph(Green, Modifier.size(s * 0.5f))
         Activity.Trip -> model.trip.value?.icon?.let { bmp ->
             val img = remember(bmp) { bmp.asImageBitmap() }
@@ -969,6 +991,231 @@ private fun AlertContent(alert: IslandAlert, onAsk: (Boolean) -> Unit = {}) {
                 Text(if (alert.on) "On" else "Off", color = if (alert.on) Color.White else Grey, fontSize = compactSp(), fontWeight = FontWeight.SemiBold)
             },
         )
+        is IslandAlert.Level -> LevelContent(alert)
+        is IslandAlert.Celebrate -> CelebrateContent(alert)
+    }
+}
+
+// ---- volume / brightness slider ---------------------------------------------------------
+
+@Composable
+private fun LevelContent(alert: IslandAlert.Level) {
+    val s = LocalPill.current
+    val target = alert.percent / 100f
+    val shown by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 500f), label = "level")
+    val color = when (alert.kind) {
+        "brightness" -> Color(0xFFFFD60A)
+        "ring" -> if (alert.percent == 0) Orange else Color.White
+        else -> Color.White
+    }
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxWidth().height(s)) {
+            CompactSplit(
+                leading = {
+                    when (alert.kind) {
+                        "brightness" -> SunGlyph(color, Modifier.size(s * 0.52f))
+                        "ring" -> BellGlyph(color, slashed = alert.percent == 0, modifier = Modifier.size(s * 0.5f))
+                        else -> SpeakerGlyph(color, alert.percent, Modifier.size(s * 0.55f))
+                    }
+                },
+                trailing = {
+                    Text(
+                        if (alert.kind == "ring" && alert.percent == 0) "Vibrate" else "${alert.percent}%",
+                        color = color, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1,
+                    )
+                },
+            )
+        }
+        Canvas(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 4.dp).height(8.dp)) {
+            val bar = size.height
+            drawRoundRect(Color.White.copy(alpha = 0.2f), Offset.Zero, Size(size.width, bar), CornerRadius(bar / 2))
+            drawRoundRect(color, Offset.Zero, Size(size.width * shown.coerceIn(0f, 1f), bar), CornerRadius(bar / 2))
+        }
+    }
+}
+
+@Composable
+private fun SpeakerGlyph(color: Color, percent: Int, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val body = Path().apply {
+            moveTo(w * 0.08f, h * 0.36f)
+            lineTo(w * 0.28f, h * 0.36f)
+            lineTo(w * 0.52f, h * 0.14f)
+            lineTo(w * 0.52f, h * 0.86f)
+            lineTo(w * 0.28f, h * 0.64f)
+            lineTo(w * 0.08f, h * 0.64f)
+            close()
+        }
+        drawPath(body, color)
+        val stroke = Stroke(width = w * 0.08f, cap = StrokeCap.Round)
+        if (percent > 0) drawArc(color, -45f, 90f, false, Offset(w * 0.36f, h * 0.3f), Size(w * 0.36f, h * 0.4f), style = stroke)
+        if (percent > 50) drawArc(color, -50f, 100f, false, Offset(w * 0.3f, h * 0.12f), Size(w * 0.62f, h * 0.76f), style = stroke)
+        if (percent == 0) {
+            drawLine(color, Offset(w * 0.66f, h * 0.36f), Offset(w * 0.94f, h * 0.64f), w * 0.08f, StrokeCap.Round)
+            drawLine(color, Offset(w * 0.94f, h * 0.36f), Offset(w * 0.66f, h * 0.64f), w * 0.08f, StrokeCap.Round)
+        }
+    }
+}
+
+@Composable
+private fun SunGlyph(color: Color, modifier: Modifier) {
+    Canvas(modifier) {
+        val c = center
+        val r = size.minDimension
+        drawCircle(color, r * 0.2f, c)
+        for (i in 0 until 8) {
+            val a = Math.toRadians(i * 45.0)
+            val x = kotlin.math.cos(a).toFloat()
+            val y = kotlin.math.sin(a).toFloat()
+            drawLine(color, Offset(c.x + x * r * 0.32f, c.y + y * r * 0.32f), Offset(c.x + x * r * 0.46f, c.y + y * r * 0.46f), r * 0.08f, StrokeCap.Round)
+        }
+    }
+}
+
+// ---- celebrations ----------------------------------------------------------------------
+
+@Composable
+private fun CelebrateContent(alert: IslandAlert.Celebrate) {
+    val s = LocalPill.current
+    val t = remember { Animatable(0f) }
+    LaunchedEffect(alert) { t.animateTo(1f, tween(2600, easing = LinearEasing)) }
+    val pieces = remember(alert) {
+        val r = java.util.Random(alert.text.hashCode().toLong())
+        List(36) {
+            floatArrayOf(r.nextFloat(), r.nextFloat() * 0.5f, (r.nextFloat() - 0.5f) * 0.5f, r.nextFloat() * 360f, r.nextInt(5).toFloat())
+        }
+    }
+    val colors = listOf(Color(0xFFFF453A), Color(0xFFFFD60A), Color(0xFF30D158), Color(0xFF0A84FF), Color(0xFFBF5AF2))
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            val p = t.value
+            pieces.forEach { f ->
+                // Bursts out of the camera, then falls.
+                val x = size.width * (0.5f + (f[0] - 0.5f) * 1.1f * minOf(1f, p * 3f)) + f[2] * size.width * p * 0.2f
+                val y = size.height * (0.1f + f[1] * minOf(1f, p * 3f) + p * p * 0.9f)
+                val a = (1f - p).coerceIn(0f, 1f)
+                rotate(f[3] + p * 540f, Offset(x, y)) {
+                    drawRect(colors[f[4].toInt()].copy(alpha = a), Offset(x - 3.dp.toPx(), y - 1.5.dp.toPx()), Size(6.dp.toPx(), 3.dp.toPx()))
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = s + 6.dp, start = 16.dp, end = 16.dp),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(alert.icon, fontSize = 17.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(alert.text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+// ---- Kinetic's live activities ------------------------------------------------------------
+
+/** What a live activity shows on its right side: a running clock, a countdown or text. */
+@Composable
+private fun liveValue(l: Live): String {
+    val ticking = l.countUpFrom != null || l.countDownTo != null
+    val now by produceState(Pair(android.os.SystemClock.elapsedRealtime(), System.currentTimeMillis()), l.id, ticking) {
+        while (ticking) {
+            value = Pair(android.os.SystemClock.elapsedRealtime(), System.currentTimeMillis())
+            delay(if (l.countUpFrom != null) 100 else 500)
+        }
+    }
+    return when {
+        l.value != null -> l.value
+        l.countUpFrom != null -> LiveHub.clock(now.first - l.countUpFrom, tenths = true)
+        l.countDownTo != null -> LiveHub.clock(l.countDownTo - now.second + 999, tenths = false)
+        else -> ""
+    }
+}
+
+/** 0..1, or null for no ring. */
+@Composable
+private fun liveProgress(l: Live): Float? {
+    if (l.progress != null) return l.progress
+    val total = l.totalMs ?: return null
+    val end = l.countDownTo ?: return null
+    val now by produceState(System.currentTimeMillis(), l.id) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    return ((end - now).toFloat() / total).coerceIn(0f, 1f)
+}
+
+@Composable
+private fun LiveRing(progress: Float, color: Color, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.minDimension * 0.14f
+        val inset = w / 2
+        val box = Size(size.minDimension - w, size.minDimension - w)
+        drawArc(color.copy(alpha = 0.25f), 0f, 360f, false, Offset(inset, inset), box, style = Stroke(w))
+        drawArc(color, -90f, 360f * progress, false, Offset(inset, inset), box, style = Stroke(w, cap = StrokeCap.Round))
+    }
+}
+
+@Composable
+private fun LiveCompactContent(l: Live) {
+    val s = LocalPill.current
+    val accent = Color(l.accent)
+    val prog = liveProgress(l)
+    val value = liveValue(l)
+    CompactSplit(
+        leading = {
+            Box(Modifier.size(s - 8.dp), contentAlignment = Alignment.Center) {
+                if (prog != null) LiveRing(prog, accent, Modifier.fillMaxSize())
+                Text(l.icon, color = accent, fontSize = if (prog != null) 10.sp else compactSp(), maxLines = 1)
+            }
+            if (l.title.length <= 12 && l.countUpFrom == null) {
+                Spacer(Modifier.width(5.dp))
+                Text(l.title, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        trailing = {
+            Text(value, color = accent, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        padding = 8.dp,
+    )
+}
+
+@Composable
+private fun LiveExpandedContent(l: Live) {
+    val accent = Color(l.accent)
+    val prog = liveProgress(l)
+    val value = liveValue(l)
+    Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                if (prog != null) LiveRing(prog, accent, Modifier.fillMaxSize())
+                Text(l.icon, color = accent, fontSize = if (prog != null) 16.sp else 24.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(l.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (l.detail.isNotBlank()) Text(l.detail, color = Grey, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            if (value.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Text(value, color = accent, fontSize = if (value.length > 7) 22.sp else 28.sp, fontWeight = FontWeight.SemiBold, style = Tabular, maxLines = 1)
+            }
+        }
+        if (l.actions.isNotEmpty()) {
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                l.actions.forEachIndexed { i, a ->
+                    Text(
+                        a.label, color = if (i == 0) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(50)).background(if (i == 0) accent else Color(0xFF3A3A3C))
+                            .clickable { a.run() }.padding(vertical = 10.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1064,7 +1311,18 @@ private fun TripIcon(t: NotificationHub.TripInfo, size: Dp) {
 private fun TripCompact(t: NotificationHub.TripInfo) {
     val s = LocalPill.current
     CompactSplit(
-        leading = { TripIcon(t, s - 9.dp) },
+        leading = {
+            // Progress bars (downloads, uploads…) get a ring around the app icon.
+            val pr = t.progress
+            if (t.generic && pr != null) {
+                Box(Modifier.size(s - 6.dp), contentAlignment = Alignment.Center) {
+                    LiveRing(pr, Blue, Modifier.fillMaxSize())
+                    TripIcon(t, s - 14.dp)
+                }
+            } else {
+                TripIcon(t, s - 9.dp)
+            }
+        },
         trailing = {
             Text(
                 t.eta ?: if (t.isRide) "On the way" else "On its way",
