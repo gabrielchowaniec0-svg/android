@@ -250,7 +250,7 @@ object Assistant {
     }
 
     /** An answer card. Tapping it copies the answer. */
-    private fun answer(badge: String, title: String, subtitle: String, copy: String, open: ((Context) -> Boolean)? = null, done: String? = null) =
+    private fun answer(badge: String, title: String, subtitle: String, copy: String, done: String? = null, open: ((Context) -> Boolean)? = null) =
         Ready(badge, title, subtitle, if (open != null) "Open" else "Copy", answer = true, done = done) { ctx ->
             if (open != null) {
                 open(ctx)
@@ -293,7 +293,7 @@ object Assistant {
                 rain >= 30 -> "Maybe: $rain% chance of rain"
                 else -> "No rain expected ($rain%)"
             }
-            return answer(weatherIcon(code), title, "Now $t° · ${weatherText(code)}" + if (rain >= 30) " · bring an umbrella" else "", title, open)
+            return answer(weatherIcon(code), title, "Now $t° · ${weatherText(code)}" + if (rain >= 30) " · bring an umbrella" else "", title, open = open)
         }
         val title = "$t° · ${weatherText(code)}"
         val sub = buildString {
@@ -301,7 +301,7 @@ object Assistant {
             if (feels != t) append(" · Feels like $feels°")
             if (rain >= 20) append(" · $rain% rain")
         }
-        return answer(weatherIcon(code), title, sub, "$title. $sub", open)
+        return answer(weatherIcon(code), title, sub, "$title. $sub", open = open)
     }
 
     private fun weatherText(code: Int) = when (code) {
