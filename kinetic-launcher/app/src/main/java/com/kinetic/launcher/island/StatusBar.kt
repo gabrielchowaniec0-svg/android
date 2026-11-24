@@ -122,8 +122,15 @@ object StatusBarData {
     private var overrideNet: Int = TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE
     private var dataType: Int = TelephonyManager.NETWORK_TYPE_UNKNOWN
 
+    /** Set once the overlay has ever been told the status bar is showing: only then is "hidden" believable. */
+    private var insetsWork = false
+
     fun setSystemBarShown(shown: Boolean) {
-        if (_state.value.systemBarShown != shown) update { it.copy(systemBarShown = shown) }
+        // Overlay windows aren't always told about the status bar (they can report "hidden"
+        // all the time). Only hide for full-screen apps once we've seen it report "shown".
+        if (shown) insetsWork = true
+        val v = shown || !insetsWork
+        if (_state.value.systemBarShown != v) update { it.copy(systemBarShown = v) }
     }
 
     fun start(s: AccessibilityService, sc: CoroutineScope) {
