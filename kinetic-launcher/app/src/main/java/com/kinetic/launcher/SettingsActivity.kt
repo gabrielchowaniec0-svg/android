@@ -209,7 +209,19 @@ class SettingsActivity : ComponentActivity() {
                     s.secureScreenshot,
                     bool(KineticSettings.SECURE_SCREENSHOT),
                 )
+                SwitchRow("Intruder photo", "After 3 wrong codes, the front camera quietly photographs whoever tried, into the Vault", s.intruderPhoto, bool(KineticSettings.INTRUDER))
                 if (hasCode) {
+                    val hasDecoy = com.kinetic.launcher.vault.VaultCrypto.hasDecoy(this@SettingsActivity)
+                    LinkRow("Decoy code", if (hasDecoy) "On · opens a harmless fake Vault. Tap to change" else "A second code that opens a fake, empty Vault", on = hasDecoy) {
+                        com.kinetic.launcher.vault.VaultActivity.decoySetup(this@SettingsActivity)
+                    }
+                    if (hasDecoy) {
+                        LinkRow("Remove decoy code", "Deletes the fake Vault and its code", on = false) {
+                            com.kinetic.launcher.vault.VaultCrypto.removeDecoy(this@SettingsActivity)
+                            android.widget.Toast.makeText(this@SettingsActivity, "Decoy code removed", android.widget.Toast.LENGTH_SHORT).show()
+                            recreate()
+                        }
+                    }
                     LinkRow("Change Kinetic code", "The PIN or pattern for the Vault and hidden apps", on = false) {
                         com.kinetic.launcher.vault.VaultActivity.changeCode(this@SettingsActivity)
                     }

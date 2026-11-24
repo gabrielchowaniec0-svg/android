@@ -19,6 +19,8 @@ object KineticSettings {
         val islandRestingPill: Boolean = true,
         val islandChowaniecPeek: Boolean = true,
         val islandAllMessagesPeek: Boolean = false,
+        /** After 3 wrong Kinetic codes, the front camera photographs whoever tried (into the Vault). */
+        val intruderPhoto: Boolean = true,
         /** Red unread-count badges on app icons. */
         val badges: Boolean = true,
         /** Newly installed apps wait in a "New" folder for a week. */
@@ -78,6 +80,7 @@ object KineticSettings {
     const val ISLAND_NOTIFICATIONS = "island_notifications_peek"
     const val ISLAND_THEME = "island_theme"
     const val BADGES = "number_badges"
+    const val INTRUDER = "intruder_photo"
     const val NEW_APPS_FOLDER = "new_apps_folder"
     const val ISLAND_EARBUDS = "island_earbuds"
     const val ISLAND_MUSIC_GLOW = "island_music_glow"
@@ -140,6 +143,7 @@ object KineticSettings {
         islandNotifications = p.getBoolean(ISLAND_NOTIFICATIONS, true),
         islandTheme = p.getString(ISLAND_THEME, "black") ?: "black",
         badges = p.getBoolean(BADGES, true),
+        intruderPhoto = p.getBoolean(INTRUDER, true),
         newAppsFolder = p.getBoolean(NEW_APPS_FOLDER, true),
         islandEarbuds = p.getBoolean(ISLAND_EARBUDS, true),
         islandMusicGlow = p.getBoolean(ISLAND_MUSIC_GLOW, true),

@@ -153,7 +153,7 @@ object VaultCrypto {
      * Checks [code] and returns the vault key, or null if it's wrong (or tries are
      * locked out). Takes about half a second on purpose (it's what slows guessing).
      */
-    fun unlock(context: Context, code: String): SecretKey? {
+    fun unlock(context: Context, code: String, allowDecoy: Boolean = true): SecretKey? {
         if (lockedFor(context) > 0) return null
         val p = prefs(context)
         val salt = unb64(p.getString("salt", null) ?: return null)
@@ -162,8 +162,17 @@ object VaultCrypto {
             val inner = gcmDecrypt(keystoreKey(), outer)
             val master = gcmDecrypt(derive(code, salt), inner)
             p.edit().putInt("fails", 0).putLong("locked_until", 0L).apply()
+            lastWasDecoy = false
             SecretKeySpec(master, "AES")
         } catch (e: Exception) {
+            // The decoy code opens a separate, harmless Vault (and nothing else).
+            if (allowDecoy) {
+                tryDecoy(p, code)?.let {
+                    p.edit().putInt("fails", 0).putLong("locked_until", 0L).apply()
+                    lastWasDecoy = true
+                    return it
+                }
+            }
             // Wrong code: after 5 misses, wait 30 s, then 1 min, 2 min… up to 15 min.
             val fails = p.getInt("fails", 0) + 1
             val wait = if (fails >= 5) (30_000L shl (fails - 5).coerceAtMost(5)).coerceAtMost(15 * 60_000L) else 0L
@@ -173,6 +182,47 @@ object VaultCrypto {
     }
 
     fun failedTries(context: Context) = prefs(context).getInt("fails", 0)
+
+    // ---- decoy code -------------------------------------------------------------------
+
+    /** True right after the decoy code (not the real one) was entered. */
+    @Volatile
+    var lastWasDecoy = false
+        private set
+
+    fun hasDecoy(context: Context) = prefs(context).contains("d_wrapped")
+
+    private fun tryDecoy(p: SharedPreferences, code: String): SecretKey? = runCatching {
+        val salt = unb64(p.getString("d_salt", null) ?: return null)
+        val outer = unb64(p.getString("d_wrapped", null) ?: return null)
+        val inner = gcmDecrypt(keystoreKey(), outer)
+        SecretKeySpec(gcmDecrypt(derive(code, salt), inner), "AES")
+    }.getOrNull()
+
+    private fun matchesReal(context: Context, code: String): Boolean = runCatching {
+        val p = prefs(context)
+        val salt = unb64(p.getString("salt", null)!!)
+        val inner = gcmDecrypt(keystoreKey(), unb64(p.getString("wrapped", null)!!))
+        gcmDecrypt(derive(code, salt), inner)
+        true
+    }.getOrDefault(false)
+
+    /** Sets the decoy code. False if it's the same as the real code. */
+    fun setUpDecoy(context: Context, code: String): Boolean {
+        if (matchesReal(context, code)) return false
+        val master = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val inner = gcmEncrypt(derive(code, salt), master)
+        val outer = gcmEncrypt(keystoreKey(), inner)
+        master.fill(0)
+        prefs(context).edit().putString("d_salt", b64(salt)).putString("d_wrapped", b64(outer)).apply()
+        return true
+    }
+
+    fun removeDecoy(context: Context) {
+        prefs(context).edit().remove("d_salt").remove("d_wrapped").apply()
+        java.io.File(context.filesDir, "vault_decoy").deleteRecursively()
+    }
 
     /** Turns a pattern (dots 0–8 in order) into a code string. */
     fun patternCode(dots: List<Int>) = "pattern:" + dots.joinToString("-")
