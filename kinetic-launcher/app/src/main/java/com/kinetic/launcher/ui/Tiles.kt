@@ -44,6 +44,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.CornerRadius
@@ -113,6 +115,10 @@ fun AppTile(
     badgePackage: String? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    /** Set to let this app be held and dragged (into a folder); see [AppDrag]. */
+    dragKey: String? = null,
+    /** Called when a drag begins (e.g. to close the long-press menu). */
+    onDragStart: (() -> Unit)? = null,
 ) {
     val counts by com.kinetic.launcher.NotificationHub.counts.collectAsState()
     val badgesOn = com.kinetic.launcher.KineticSettings.values.collectAsState().value.badges
@@ -140,12 +146,38 @@ fun AppTile(
     } else {
         Modifier
     }
+    var tileCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val dragging = dragKey != null && AppDrag.drag?.key == dragKey
+    val drags = if (dragKey != null) {
+        Modifier.pointerInput(dragKey) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { at ->
+                    val c = tileCoords
+                    if (c != null && c.isAttached) {
+                        onDragStart?.invoke()
+                        AppDrag.start(dragKey, icon, c.localToWindow(at))
+                    }
+                },
+                onDrag = { change, _ ->
+                    change.consume()
+                    val c = tileCoords
+                    if (c != null && c.isAttached) AppDrag.move(c.localToWindow(change.position))
+                },
+                onDragEnd = { AppDrag.end() },
+                onDragCancel = { AppDrag.cancel() },
+            )
+        }
+    } else {
+        Modifier
+    }
     Column(
         modifier
             .fillMaxSize()
+            .onGloballyPositioned { tileCoords = it }
+            .then(drags)
             .then(clicks)
             .jiggle(jiggle)
-            .alpha(if (dimmed) 0.45f else 1f)
+            .alpha(if (dragging) 0.25f else if (dimmed) 0.45f else 1f)
             .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

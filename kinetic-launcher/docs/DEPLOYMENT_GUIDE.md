@@ -654,3 +654,10 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - Volume buttons now change **media volume** when nothing's playing (and always while the phone is on silent/vibrate, since the ringtone can't move then). Choose Settings → Island → **Volume buttons change: Media / Ringtone**. The slider follows the volume you're actually changing.
 - The battery number is a little bigger and is **cut out** of the battery (you see the background through it), like iOS.
 - **Flashlight in the island:** whenever the flashlight is on (from Kinetic, Samsung's Quick Panel, a shake or a command), the island shows it with a brightness ring. Pull the island down for **Off**, **Dimmer** and **Brighter** (your phone's flashlight has several brightness steps).
+
+### Flashlight like iOS 18, drag into folders, uninstall, busy status bar
+- **Flashlight:** when it's on, the island shows a small flashlight icon. **Tap** it to open a top-down flashlight shining its beam downward. **Drag down** for brighter (the beam reaches further) and **up** for dimmer, with a tick for each step. **Tap the flashlight** to switch it off or back on. Tap anywhere outside to close it. While the flashlight is on, swiping up/down on the island controls the light instead of opening/closing the island. (Android phones can't change the beam *width* like iPhones with adjustable flash, so that part isn't there.)
+- Pulling the island open now works for Kinetic's own live items too (stopwatch, Focus, flights…); before, they snapped back.
+- **Folders:** hold an app, then keep holding and **drag it onto a folder**, on the home screen or in the app list. The folder grows as you hover and the phone ticks; let go to drop it in. The "Add to…/Move to…" lists are gone from the menus.
+- **Uninstall:** in the long-press menu (and the app's full menu) for apps you installed. Phone apps that came with the phone can't be uninstalled, so they don't show it.
+- **Status bar while the island is busy:** only the time and battery stay, each centred in the space between the island and the screen edge; everything comes back when the island shrinks.

@@ -29,6 +29,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -580,19 +583,30 @@ object FlightWatch {
 }
 
 // ======================================================================================
-// Flashlight, like iOS: when it's on, the island shows it, with Dimmer / Brighter / Off.
+// Flashlight, like iOS 18: a torch icon in the island; tap it open for a top-down
+// flashlight with its beam. Drag up/down to change brightness, tap the torch for off/on.
 // ======================================================================================
 object TorchLive {
+    data class Torch(val on: Boolean, val level: Int, val max: Int)
+
+    private val _state = MutableStateFlow<Torch?>(null)
+    /** Null when the flashlight is off (and not just switched off from the island). */
+    val state: StateFlow<Torch?> = _state.asStateFlow()
+
     private var callback: android.hardware.camera2.CameraManager.TorchCallback? = null
     private var torchId: String? = null
     private var maxLevel = 1
-    private var level = 1
+    private var app: Context? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val clearOff = Runnable { if (_state.value?.on == false) _state.value = null }
 
     private fun cm(c: Context) = c.getSystemService(android.hardware.camera2.CameraManager::class.java)
 
-    fun start(app: Context) {
-        stop(app)
-        val cm = cm(app) ?: return
+    fun start(context: Context) {
+        stop(context)
+        val a = context.applicationContext
+        app = a
+        val cm = cm(a) ?: return
         val id = runCatching {
             cm.cameraIdList.firstOrNull { cid ->
                 val ch = cm.getCameraCharacteristics(cid)
@@ -607,57 +621,53 @@ object TorchLive {
         val cb = object : android.hardware.camera2.CameraManager.TorchCallback() {
             override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
                 if (cameraId != id) return
+                handler.removeCallbacks(clearOff)
                 if (enabled) {
-                    level = runCatching { cm.getTorchStrengthLevel(id) }.getOrDefault(maxLevel).coerceIn(1, maxLevel)
-                    publish(app)
-                } else {
-                    LiveHub.remove("torch")
+                    val l = runCatching { cm.getTorchStrengthLevel(id) }.getOrDefault(maxLevel).coerceIn(1, maxLevel)
+                    _state.value = Torch(true, l, maxLevel)
+                } else if (_state.value != null) {
+                    // Stays (dark) for a moment so it can be switched back on from the island.
+                    _state.value = _state.value?.copy(on = false)
+                    handler.postDelayed(clearOff, 4000)
                 }
             }
 
             override fun onTorchStrengthLevelChanged(cameraId: String, newStrengthLevel: Int) {
                 if (cameraId != id) return
-                level = newStrengthLevel.coerceIn(1, maxLevel)
-                if (LiveHub.get("torch") != null) publish(app)
+                val s = _state.value ?: return
+                _state.value = s.copy(level = newStrengthLevel.coerceIn(1, maxLevel))
             }
         }
-        runCatching { cm.registerTorchCallback(cb, Handler(Looper.getMainLooper())) }
+        runCatching { cm.registerTorchCallback(cb, handler) }
         callback = cb
     }
 
-    fun stop(app: Context) {
-        callback?.let { cb -> runCatching { cm(app)?.unregisterTorchCallback(cb) } }
+    fun stop(context: Context) {
+        callback?.let { cb -> runCatching { cm(context.applicationContext)?.unregisterTorchCallback(cb) } }
         callback = null
-        LiveHub.remove("torch")
+        _state.value = null
     }
 
-    private fun setLevel(app: Context, l: Int) {
+    /** Tap on the torch: off, or back on at the same brightness. */
+    fun toggle() {
+        val a = app ?: return
         val id = torchId ?: return
-        val target = l.coerceIn(1, maxLevel)
-        runCatching { cm(app)?.turnOnTorchWithStrengthLevel(id, target) }.onSuccess {
-            level = target
-            publish(app)
+        val s = _state.value ?: return
+        runCatching {
+            if (s.on) cm(a)?.setTorchMode(id, false)
+            else if (maxLevel > 1) cm(a)?.turnOnTorchWithStrengthLevel(id, s.level) else cm(a)?.setTorchMode(id, true)
         }
     }
 
-    private fun publish(app: Context) {
-        val dimmable = maxLevel > 1
-        val pct = level * 100 / maxLevel
-        LiveHub.put(
-            Live(
-                "torch", "🔦", "Flashlight",
-                if (dimmable) "Brightness $level of $maxLevel" else "On",
-                value = if (dimmable) "$pct%" else "On",
-                progress = if (dimmable) level.toFloat() / maxLevel else null,
-                accent = 0xFFFFD60A.toInt(), priority = 5,
-                actions = buildList {
-                    add(LiveAction("Off") { torchId?.let { id -> runCatching { cm(app)?.setTorchMode(id, false) } } })
-                    if (dimmable) {
-                        add(LiveAction("Dimmer") { setLevel(app, level - 1) })
-                        add(LiveAction("Brighter") { setLevel(app, level + 1) })
-                    }
-                },
-            ),
-        )
+    /** Brightness 1..max (only while it's on). */
+    fun setLevel(level: Int) {
+        val a = app ?: return
+        val id = torchId ?: return
+        val s = _state.value ?: return
+        if (!s.on || maxLevel <= 1) return
+        val l = level.coerceIn(1, maxLevel)
+        if (l == s.level) return
+        _state.value = s.copy(level = l)
+        runCatching { cm(a)?.turnOnTorchWithStrengthLevel(id, l) }
     }
 }
