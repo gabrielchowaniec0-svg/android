@@ -600,6 +600,17 @@ object TorchLive {
     private val handler = Handler(Looper.getMainLooper())
     private val clearOff = Runnable { if (_state.value?.on == false) _state.value = null }
 
+    // Samsung briefly reports "off", then "on at full", while it changes the brightness.
+    // Kinetic trusts its own last setting for a moment instead of bouncing back.
+    @Volatile
+    private var lastSetAt = 0L
+    private var lastSetLevel = 1
+    private var pendingLevel = 0
+    private var lastSentAt = 0L
+    private val sendPending = Runnable { flush() }
+
+    private fun settling() = SystemClock.elapsedRealtime() - lastSetAt < 900
+
     private fun cm(c: Context) = c.getSystemService(android.hardware.camera2.CameraManager::class.java)
 
     fun start(context: Context) {
@@ -623,8 +634,11 @@ object TorchLive {
                 if (cameraId != id) return
                 handler.removeCallbacks(clearOff)
                 if (enabled) {
-                    val l = runCatching { cm.getTorchStrengthLevel(id) }.getOrDefault(maxLevel).coerceIn(1, maxLevel)
+                    val l = if (settling()) lastSetLevel
+                    else runCatching { cm.getTorchStrengthLevel(id) }.getOrDefault(maxLevel).coerceIn(1, maxLevel)
                     _state.value = Torch(true, l, maxLevel)
+                } else if (settling() && _state.value?.on == true) {
+                    // Just a blink while the brightness changes: ignore.
                 } else if (_state.value != null) {
                     // Stays (dark) for a moment so it can be switched back on from the island.
                     _state.value = _state.value?.copy(on = false)
@@ -635,6 +649,7 @@ object TorchLive {
             override fun onTorchStrengthLevelChanged(cameraId: String, newStrengthLevel: Int) {
                 if (cameraId != id) return
                 val s = _state.value ?: return
+                if (settling() && newStrengthLevel != lastSetLevel) return
                 _state.value = s.copy(level = newStrengthLevel.coerceIn(1, maxLevel))
             }
         }
@@ -666,8 +681,25 @@ object TorchLive {
         val s = _state.value ?: return
         if (!s.on || maxLevel <= 1) return
         val l = level.coerceIn(1, maxLevel)
-        if (l == s.level) return
+        if (l == s.level && pendingLevel == 0) return
         _state.value = s.copy(level = l)
+        lastSetAt = SystemClock.elapsedRealtime()
+        lastSetLevel = l
+        // At most one change every 90 ms while dragging (the newest one wins).
+        pendingLevel = l
+        handler.removeCallbacks(sendPending)
+        val wait = 90 - (SystemClock.elapsedRealtime() - lastSentAt)
+        if (wait <= 0) flush() else handler.postDelayed(sendPending, wait)
+    }
+
+    private fun flush() {
+        val a = app ?: return
+        val id = torchId ?: return
+        val l = pendingLevel
+        if (l <= 0) return
+        pendingLevel = 0
+        lastSentAt = SystemClock.elapsedRealtime()
+        lastSetAt = lastSentAt
         runCatching { cm(a)?.turnOnTorchWithStrengthLevel(id, l) }
     }
 }

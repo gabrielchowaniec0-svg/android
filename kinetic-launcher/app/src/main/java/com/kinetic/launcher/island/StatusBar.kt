@@ -414,42 +414,42 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
     val rightEar = (screenWidth - side - islandRight - gap).coerceAtLeast(0.dp)
     var leftW by remember { mutableIntStateOf(0) }
     var rightW by remember { mutableIntStateOf(0) }
-    // Each side fades out as the island grows over its space.
-    val leftA = with(density) { ((leftEar.toPx() - leftW) / 10.dp.toPx()).coerceIn(0f, 1f) }
-    val rightA = with(density) { ((rightEar.toPx() - rightW) / 10.dp.toPx()).coerceIn(0f, 1f) }
+    // Items are dropped to fit (below), so a side only fades when even the time or the
+    // battery alone can't fit (the island has grown right over it).
+    val leftA = with(density) { ((leftEar.toPx() - leftW + 4.dp.toPx()) / 6.dp.toPx()).coerceIn(0f, 1f) }
+    val rightA = with(density) { ((rightEar.toPx() - rightW + 4.dp.toPx()) / 6.dp.toPx()).coerceIn(0f, 1f) }
 
     // While the island is showing something, each side is centred in the space between
     // the island and the screen edge, with as many icons as fit (time and battery first).
     val centred by androidx.compose.animation.core.animateFloatAsState(if (busy) 1f else 0f, tween(260), label = "sbBusy")
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val timeW = with(density) {
-        measurer.measure(time, androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)).size.width.toDp()
+        measurer.measure(time, androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp))
+            .size.width.toDp().value
     }
-    val leftRoom = leftEar - 6.dp
-    val rightRoom = rightEar - 6.dp
-    val iconCount = if (!busy) icons.size.coerceAtMost(3) else {
-        var n = 0
-        var used = timeW
-        while (n < icons.size.coerceAtMost(3) && used + (if (n == 0) 8.dp else 6.dp) + 14.dp <= leftRoom) {
-            used += (if (n == 0) 8.dp else 6.dp) + 14.dp
-            n++
-        }
-        n
+    // Always fit what there's room for (busy or not), most important first.
+    val leftRoom = (leftEar - 6.dp).value
+    val rightRoom = (rightEar - 6.dp).value
+    val (iconCount, showMore) = StatusFit.left(leftRoom, timeW, icons.size, more)
+    val netW = (st.net?.length ?: 0) * 8f + 7f
+    val wifiOrNetW = when {
+        st.airplane -> null
+        st.wifi >= 0 -> 23f
+        st.net != null -> netW
+        else -> null
     }
-    val showMore = more && (!busy || iconCount == 3)
-    // Right side, most important first (after the battery).
-    var rightUsed = 30.dp
-    fun fits(w: Dp): Boolean = if (!busy) true else (rightUsed + w <= rightRoom).also { if (it) rightUsed += w }
-    val netW = (st.net?.length ?: 0) * 8 + 7
-    val showWifiOrNet = when {
-        st.airplane -> false
-        st.wifi >= 0 -> fits(23.dp)
-        st.net != null -> fits(netW.dp)
-        else -> false
-    }
-    val showSignal = if (st.airplane) fits(18.dp) else fits(22.dp)
-    val showRinger = st.ringer != AudioManager.RINGER_MODE_NORMAL && fits(20.dp)
-    val showDnd = st.dnd && fits(19.dp)
+    // Order of importance after the battery: Wi-Fi/5G, signal, silent/vibrate, Do Not Disturb.
+    val wanted = listOf(
+        wifiOrNetW,
+        if (st.airplane) 18f else 22f,
+        if (st.ringer != AudioManager.RINGER_MODE_NORMAL) 20f else null,
+        if (st.dnd) 19f else null,
+    )
+    val keep = StatusFit.right(rightRoom, 30f, wanted)
+    val showWifiOrNet = keep[0]
+    val showSignal = keep[1]
+    val showRinger = keep[2]
+    val showDnd = keep[3]
 
     Box(Modifier.fillMaxWidth().padding(top = top).height(pillH)) {
         // ---- left: time (carrier on the lock screen) + notification icons ----
@@ -629,5 +629,36 @@ private fun MuteGlyph(tint: Color, modifier: Modifier) {
         }
         drawPath(body, tint)
         drawLine(tint, Offset(w * 0.05f, h * 0.08f), Offset(w * 0.95f, h * 0.92f), w * 0.1f, StrokeCap.Round)
+    }
+}
+
+/** Which status bar items fit (all sizes in dp). Kept separate so it can be tested. */
+internal object StatusFit {
+    /** Notification icons after the time: how many fit, and whether the "more" dot fits too. */
+    fun left(room: Float, timeW: Float, available: Int, more: Boolean): Pair<Int, Boolean> {
+        val maxIcons = available.coerceAtMost(3)
+        var n = 0
+        var used = timeW
+        while (n < maxIcons && used + (if (n == 0) 8f else 6f) + 14f <= room) {
+            used += (if (n == 0) 8f else 6f) + 14f
+            n++
+        }
+        // The dot means "there are more than shown" (only if at least one icon shows).
+        val hidden = more || available > n
+        val dot = n > 0 && hidden && used + 10f <= room
+        return n to dot
+    }
+
+    /** [wanted] in order of importance (null = not needed); the battery always stays. */
+    fun right(room: Float, battery: Float, wanted: List<Float?>): List<Boolean> {
+        var used = battery
+        return wanted.map { w ->
+            if (w != null && used + w <= room) {
+                used += w
+                true
+            } else {
+                false
+            }
+        }
     }
 }

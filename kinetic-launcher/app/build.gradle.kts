@@ -16,6 +16,10 @@ val commitCount: Int = runCatching {
 }.getOrDefault(0)
 
 android {
+    // Plain-JVM tests (command understanding etc.): Android calls just return defaults.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
     namespace = "com.kinetic.launcher"
     compileSdk = 35
 
@@ -67,6 +71,7 @@ kotlin {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(project(":launcher-core"))
     implementation(project(":wallpaper-engine"))
     implementation(project(":lockscreen-transition"))
@@ -93,4 +98,13 @@ dependencies {
     // Installs the pre-compiled start-up profile on your phone (release builds).
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
+}
+
+// Show why a test failed right in the build log.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = false
+    }
 }
