@@ -672,3 +672,6 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - **Flashlight brightness no longer bounces back** while you drag. Samsung briefly reports the light as "off" and then "on at full" while it changes brightness; Kinetic now ignores those blips for a moment and sends at most one change every 90 ms.
 - **Grey status bar text fixed:** the "more notifications" dot wasn't counted when checking what fits beside a wider island, so that side half-faded. Now every item is measured, and items are dropped (least important first) instead of fading.
 - **Automated tests** now run in every build check (on a computer, no phone): every example in the "help" list, typical commands (calls, texts, flights, school, quick tools), odd inputs that must not crash, timers/clock text, and the status bar fitting on hundreds of island widths. They already caught one bug: "track UA123" was looking up the wrong flight (it searched for "UA123" instead of United's real callsign "UAL123").
+
+### Kinetic's Control Center removed
+- Kinetic's own Control Center is gone (Android's is good enough). Swiping down from the **top-right corner** of the home screen now opens **Android's Quick Settings** (the toggles) directly; swiping down anywhere else still opens the notification shade. The flashlight still shows in the island however you turn it on.
