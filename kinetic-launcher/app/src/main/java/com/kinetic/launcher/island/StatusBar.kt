@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -477,23 +479,39 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
     }
 }
 
-/** Plain white (or black) battery with the number inside; red only at 5% or less. */
+/**
+ * Plain white (or black) battery, red only at 5% or less. The number is cut out of
+ * the battery (you see what's behind through it), like iOS.
+ */
 @Composable
-private fun BatteryPill(level: Int, tint: Color, dark: Boolean) {
+private fun BatteryPill(level: Int, tint: Color, @Suppress("UNUSED_PARAMETER") dark: Boolean) {
     val low = level <= 5
     val fill = if (low) Color(0xFFFF453A) else tint
-    Box(Modifier.size(27.dp, 13.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val nub = 1.6.dp.toPx()
-            val bodyW = size.width - nub - 1.dp.toPx()
-            val r = CornerRadius(size.height * 0.34f)
-            drawRoundRect(tint.copy(alpha = 0.32f), Offset.Zero, Size(bodyW, size.height), r)
-            drawRoundRect(fill, Offset.Zero, Size(bodyW * (level / 100f).coerceIn(0.06f, 1f), size.height), r)
-            drawRoundRect(tint.copy(alpha = 0.4f), Offset(bodyW + 1.dp.toPx(), size.height * 0.32f), Size(nub, size.height * 0.36f), CornerRadius(nub / 2))
-        }
-        Text(
-            "$level", color = if (dark || low) Color.White else Color.Black, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            modifier = Modifier.padding(end = 2.dp),
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val label = remember(level) {
+        measurer.measure(
+            androidx.compose.ui.text.AnnotatedString("$level"),
+            style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
+        )
+    }
+    Canvas(
+        Modifier.size(30.dp, 14.dp)
+            // Drawn on its own layer so the number can punch a hole through it.
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen },
+    ) {
+        val nub = 1.7.dp.toPx()
+        val bodyW = size.width - nub - 1.dp.toPx()
+        val r = CornerRadius(size.height * 0.34f)
+        drawRoundRect(tint.copy(alpha = 0.32f), Offset.Zero, Size(bodyW, size.height), r)
+        drawRoundRect(fill, Offset.Zero, Size(bodyW * (level / 100f).coerceIn(0.06f, 1f), size.height), r)
+        drawRoundRect(tint.copy(alpha = 0.4f), Offset(bodyW + 1.dp.toPx(), size.height * 0.32f), Size(nub, size.height * 0.36f), CornerRadius(nub / 2))
+        val tw = label.size.width.toFloat()
+        val th = label.size.height.toFloat()
+        drawText(
+            label,
+            color = Color.Black,
+            topLeft = Offset((bodyW - tw) / 2f, (size.height - th) / 2f),
+            blendMode = androidx.compose.ui.graphics.BlendMode.DstOut,
         )
     }
 }

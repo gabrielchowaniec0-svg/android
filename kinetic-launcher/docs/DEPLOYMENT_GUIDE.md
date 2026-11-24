@@ -649,3 +649,8 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - The battery is always plain white (black on light apps) with the number inside; it only turns red at 5% or less.
 - Volume buttons: the island slider appears instantly on every press (it used to wait ~half a second when Secure screenshot was on), and **holding** a button keeps changing the volume, using your phone's own key-repeat timing (first repeat after about 0.4 s, then a step every ~50 ms).
 - Secure screenshot (Up, Up, Down, Down) still works: the slider slides away just before the capture, so it isn't in the screenshot.
+
+### Volume, battery and flashlight
+- Volume buttons now change **media volume** when nothing's playing (and always while the phone is on silent/vibrate, since the ringtone can't move then). Choose Settings → Island → **Volume buttons change: Media / Ringtone**. The slider follows the volume you're actually changing.
+- The battery number is a little bigger and is **cut out** of the battery (you see the background through it), like iOS.
+- **Flashlight in the island:** whenever the flashlight is on (from Kinetic, Samsung's Quick Panel, a shake or a command), the island shows it with a brightness ring. Pull the island down for **Off**, **Dimmer** and **Brighter** (your phone's flashlight has several brightness steps).

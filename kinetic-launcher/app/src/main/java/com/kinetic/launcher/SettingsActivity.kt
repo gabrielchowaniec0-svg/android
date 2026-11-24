@@ -349,6 +349,11 @@ class SettingsActivity : ComponentActivity() {
                     s.statusBarTint,
                 ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.STATUS_BAR_TINT, it) }
                 SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
+                if (s.islandVolume) ChoiceRow(
+                    "Volume buttons change",
+                    listOf("media" to "Media", "ring" to "Ringtone"),
+                    s.volumeKeys,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.VOLUME_KEYS, it) }
                 SwitchRow("Brightness slider", "Changing brightness shows it in the island (when auto-brightness is off)", s.islandBrightness, bool(KineticSettings.ISLAND_BRIGHTNESS))
                 SwitchRow("Up next", "Your next calendar event counts down 15 minutes before", s.islandUpNext, bool(KineticSettings.ISLAND_UP_NEXT))
                 SwitchRow("Rain alerts", "\u201CRain in 15 min\u201D when it's about to rain where you are", s.islandRain, bool(KineticSettings.ISLAND_RAIN))

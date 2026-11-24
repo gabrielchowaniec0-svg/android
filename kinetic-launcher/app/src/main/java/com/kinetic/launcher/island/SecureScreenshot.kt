@@ -82,7 +82,8 @@ class SecureScreenshot(
         if (seq.size == pattern.size) {
             seq.clear()
             VolumeHud.stopRepeat()
-            adjust(dir, showUi = false) // back to where the volume started
+            // Back to where the volume started.
+            if (island) runCatching { audio.adjustStreamVolume(VolumeHud.stream(service), dir, 0) } else adjust(dir, showUi = false)
             if (island) {
                 // Slide the volume slider away first so it isn't in the screenshot.
                 IslandBus.hideLevel()
@@ -92,8 +93,7 @@ class SecureScreenshot(
             }
         } else if (island) {
             // The island slider shows straight away (it's hidden again before a capture).
-            adjust(dir, showUi = false)
-            VolumeHud.show(service)
+            VolumeHud.step(service, dir)
             VolumeHud.startRepeat(service, dir)
         } else if (seq.isNotEmpty()) {
             adjust(dir, showUi = false)
