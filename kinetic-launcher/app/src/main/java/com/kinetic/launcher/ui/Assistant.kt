@@ -54,6 +54,8 @@ object Assistant {
         data class Convert(val amount: Double, val from: String, val to: String) : Question
         data class Flight(val airline: String, val number: String) : Question
         data object Coin : Question
+        data class Define(val word: String) : Question
+        data class Birthday(val name: String) : Question
         data class Dice(val sides: Int) : Question
     }
 
@@ -70,6 +72,8 @@ object Assistant {
     private val CONVERT = Regex("""^([\d.,]+)\s*([a-z°"'/ .]+?)\s+(?:in|to|into|as)\s+([a-z°"'/ .]+)$""")
     private val FLIGHT = Regex("""^(?:where(?:'s| is)|track|find|flight|status of|where is flight)\s+(?:flight\s+)?([a-z][a-z0-9]|[a-z]{3})\s?(\d{1,4})$""")
     private val FOCUS_TIMER = Regex("""^(?:focus|study|deep work|work|pomodoro)\s+(?:for\s+)?(.+)$""")
+    private val BIRTHDAY = Regex("""^(?:when(?:'s| is)\s+)?(.+?)(?:'s|s)\s+birthday$|^birthday\s+(?:of\s+)?(.+)$""")
+    private val DEFINE = Regex("""^(?:define|definition of|meaning of|what does)\s+(.+?)(?:\s+mean)?$""")
     private val DICE = Regex("""^roll\s+(?:a|one|the)?\s*(?:d(\d+)|dice|die)$""")
 
     fun parse(raw: String): Parsed? {
@@ -84,6 +88,8 @@ object Assistant {
         if (Regex("""^(?:(?:what|how)(?:'s| is)? (?:the )?|show (?:me )?(?:the )?|tell me the |check (?:the )?|get (?:the )?)?weather\b|^(?:the )?temperature$|^temp$|^how (?:hot|cold|warm) is it|^what'?s it like outside""").containsMatchIn(q)) return Parsed.Ask(Question.Weather(false))
         if (Regex("""^(will|is) it (going to )?(rain|snow|storm)|^(do|should) i (need|bring|take) an? (umbrella|jacket|coat)|^any rain""").containsMatchIn(q)) return Parsed.Ask(Question.Weather(true))
         if (Regex("""^(what'?s|what is) (next|on my calendar|my next (event|meeting|appointment))|^next (event|meeting|appointment)$|^(my )?(schedule|agenda|calendar)( today)?$|^what do i have (today|next|coming up)""").containsMatchIn(q)) return Parsed.Ask(Question.CalendarNext)
+        BIRTHDAY.matchEntire(q)?.let { return Parsed.Ask(Question.Birthday(it.groupValues[1].ifBlank { it.groupValues[2] }.trim())) }
+        DEFINE.matchEntire(q)?.let { return Parsed.Ask(Question.Define(it.groupValues[1].trim())) }
         WHEN.matchEntire(q)?.let { m ->
             val what = m.groupValues[1].trim()
             if (what.isNotBlank() && !what.startsWith("sunset") && !what.startsWith("sunrise")) return Parsed.Ask(Question.CalendarFind(what))
@@ -266,6 +272,8 @@ object Assistant {
         }
         is Question.Convert -> convert(q)
         is Question.Flight -> flight(context, q)
+        is Question.Define -> define(q.word)
+        is Question.Birthday -> birthday(context, q.name)
         Question.Coin -> (if (Math.random() < 0.5) "Heads" else "Tails").let { answer("◎", it, "Coin flip", it) }
         is Question.Dice -> (1 + (Math.random() * q.sides).toInt()).let { answer("⚄", "You rolled $it", "d${q.sides}", it.toString()) }
     }
@@ -577,6 +585,61 @@ object Assistant {
         return answer("✈", title, sub, title) { ctx ->
             start(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://www.flightaware.com/live/flight/$callsign")))
         }
+    }
+
+    // ---- definitions & birthdays (Spotlight-style) ----------------------------------------
+
+    private fun define(word: String): Ready {
+        val w = word.trim().trim('"', '\'').lowercase()
+        val json = runCatching {
+            val c = (URL("https://api.dictionaryapi.dev/api/v2/entries/en/" + Uri.encode(w)).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8_000
+                readTimeout = 8_000
+            }
+            try {
+                if (c.responseCode !in 200..299) null else org.json.JSONArray(c.inputStream.bufferedReader().readText())
+            } finally {
+                c.disconnect()
+            }
+        }.getOrNull()
+        val meaning = json?.optJSONObject(0)?.optJSONArray("meanings")?.optJSONObject(0)
+        val part = meaning?.optString("partOfSpeech").orEmpty()
+        val def = meaning?.optJSONArray("definitions")?.optJSONObject(0)?.optString("definition")
+        return if (def.isNullOrBlank()) {
+            answer("📖", "No definition for \u201C$w\u201D", "Check the spelling", "")
+        } else {
+            answer("📖", w.replaceFirstChar { it.uppercase() } + if (part.isNotBlank()) " ($part)" else "", def, def, done = "$w: $def")
+        }
+    }
+
+    private fun birthday(context: Context, nameRaw: String): Ready {
+        if (!has(context, Manifest.permission.READ_CONTACTS)) return allow("🎂", "Birthday", "Allow contacts so Kinetic can look", Manifest.permission.READ_CONTACTS)
+        val name = nameRaw.removePrefix("my ").trim()
+        var found: Pair<String, String>? = null
+        runCatching {
+            context.contentResolver.query(
+                android.provider.ContactsContract.Data.CONTENT_URI,
+                arrayOf(android.provider.ContactsContract.Data.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Event.START_DATE),
+                "${android.provider.ContactsContract.Data.MIMETYPE} = ? AND ${android.provider.ContactsContract.CommonDataKinds.Event.TYPE} = ? AND ${android.provider.ContactsContract.Data.DISPLAY_NAME} LIKE ?",
+                arrayOf(android.provider.ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE, android.provider.ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY.toString(), "%$name%"),
+                null,
+            )?.use { c -> if (c.moveToFirst()) found = (c.getString(0) ?: name) to (c.getString(1) ?: "") }
+        }
+        val f = found ?: return answer("🎂", "No birthday saved for \u201C$name\u201D", "Add it to their contact card", "")
+        // Stored as yyyy-MM-dd or --MM-dd (no year).
+        val parts = f.second.trimStart('-').split('-')
+        val (m, d) = if (parts.size >= 3) parts[1].toIntOrNull() to parts[2].toIntOrNull() else parts.getOrNull(0)?.toIntOrNull() to parts.getOrNull(1)?.toIntOrNull()
+        if (m == null || d == null) return answer("🎂", f.first, f.second, f.second)
+        val today = java.time.LocalDate.now()
+        var next = java.time.LocalDate.of(today.year, m, d.coerceAtMost(java.time.YearMonth.of(today.year, m).lengthOfMonth()))
+        if (next.isBefore(today)) next = next.plusYears(1)
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, next)
+        val pretty = next.format(DateTimeFormatter.ofPattern("MMMM d", Locale.getDefault()))
+        val year = parts.takeIf { it.size >= 3 }?.get(0)?.toIntOrNull()
+        val turning = year?.let { " · turns ${next.year - it}" } ?: ""
+        val title = "${f.first}: $pretty"
+        val sub = (if (days == 0L) "Today! 🎉" else "In $days days") + turning
+        return answer("🎂", title, sub, title, done = "$title · $sub")
     }
 
     // ---- helpers ----------------------------------------------------------------------------

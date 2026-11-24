@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -172,6 +173,8 @@ fun AppDrawer(
 ) {
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    val libraryOn = com.kinetic.launcher.KineticSettings.values.collectAsState().value.libraryView
+    val context = LocalContext.current
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!said.isNullOrBlank()) {
@@ -264,8 +267,23 @@ fun AppDrawer(
                     onFocus = onFocus,
                     onVault = onVault,
                     onPlanes = onPlanes,
+                    libraryOn = libraryOn,
+                    onToggleLibrary = {
+                        com.kinetic.launcher.KineticSettings.setBoolean(context, com.kinetic.launcher.KineticSettings.LIBRARY_VIEW, !libraryOn)
+                    },
                 )
-                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                if (libraryOn) {
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        AppLibrary(
+                            apps = searchable.filter { !isHidden(it) },
+                            horizontalMargin = horizontalMargin,
+                            labelFor = labelFor,
+                            onAppClick = onAppClick,
+                            onAppLongPress = onAppLongPress,
+                            hasNotification = hasNotification,
+                        )
+                    }
+                } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // Leave room for the page dots under the grid.
                     val cellHeight = minOf(DRAWER_CELL_HEIGHT, (maxHeight - 28.dp) / DRAWER_ROWS)
                     val pages = remember(sections) {
@@ -323,6 +341,8 @@ private fun DrawerTopBar(
     onFocus: () -> Unit,
     onVault: () -> Unit,
     onPlanes: () -> Unit,
+    libraryOn: Boolean = false,
+    onToggleLibrary: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -353,6 +373,13 @@ private fun DrawerTopBar(
                     .padding(horizontal = 16.dp, vertical = 6.dp),
             )
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (libraryOn) "Page view" else "App Library view") },
+                    onClick = {
+                        menuOpen = false
+                        onToggleLibrary()
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text(if (privateRevealed) "Hide hidden apps" else "Show hidden apps") },
                     onClick = {
