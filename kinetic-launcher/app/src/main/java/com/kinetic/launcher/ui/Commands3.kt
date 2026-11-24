@@ -220,7 +220,7 @@ object Commands3 {
         }
         r("""(?:track|follow)\s+(?:flight\s+)?([a-z][a-z0-9]|[a-z]{3})\s?(\d{1,4})""")?.let { m ->
             val air = m.groupValues[1]
-            val icao = if (air.length == 3) air.uppercase() else (Assistant.AIRLINE[air] ?: air).uppercase()
+            val icao = if (air.length == 3) air.uppercase() else (Assistant.AIRLINE[air.uppercase()] ?: air.uppercase())
             return Cmd.TrackFlight(air.uppercase() + m.groupValues[2], icao + m.groupValues[2])
         }
         r("""(?:phonetic|spell|nato)\s+(.+)""")?.let { return Cmd.Phonetic(it.groupValues[1]) }

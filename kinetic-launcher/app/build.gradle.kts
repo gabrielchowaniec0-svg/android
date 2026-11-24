@@ -99,3 +99,12 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
 }
+
+// Show why a test failed right in the build log.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = false
+    }
+}
