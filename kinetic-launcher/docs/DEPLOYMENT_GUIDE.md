@@ -534,3 +534,9 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **App Library:** in the app list, tap ⋮ ▸ App Library view. Every app is sorted into groups (Social, Games, Productivity…). Tap a big icon to open it, or the little grid for the whole group.
 - **Search:** "define serendipity" gives a definition, and "Mom's birthday" shows the date, how many days away it is and how old they'll turn.
 - **Smart Rotate** was already built in: widget stacks flip to music while it plays and to calendar or weather in the morning.
+
+## S Pen extras (Batch 4)
+- **Shapes:** Settings ▸ S Pen ▸ Shapes. Give a heart, circle, check, star or triangle a command (e.g. heart → "call mom"). Drawing that shape in one stroke on the home screen runs the command.
+- **Sticky notes:** write "note buy milk" (or type it in search). A yellow sticky with your handwriting appears on the first home page. Swipe it sideways to throw it away.
+- **Maths with steps:** write "2x + 5 = 17". The island shows "Subtract 5 → Divide by 2 → x = 6".
+- **Command chains:** Settings ▸ S Pen ▸ Command chains. Make one name run several commands, one per line (e.g. "gaming mode" = "focus 60 min" then "open roblox"). Write or type the name to run them all in order.

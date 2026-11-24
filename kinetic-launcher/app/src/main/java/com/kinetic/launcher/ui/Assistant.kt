@@ -55,6 +55,7 @@ object Assistant {
         data class Flight(val airline: String, val number: String) : Question
         data object Coin : Question
         data class Define(val word: String) : Question
+        data class Steps(val steps: List<String>) : Question
         data class Birthday(val name: String) : Question
         data class Dice(val sides: Int) : Question
     }
@@ -97,6 +98,7 @@ object Assistant {
         if (Regex("""^(battery|battery level|battery life|how much battery( do i have)?( left)?|battery percentage|how charged)$""").matches(q)) return Parsed.Ask(Question.Battery)
         TIME_IN.matchEntire(q)?.let { return Parsed.Ask(Question.TimeIn(it.groupValues[1].trim())) }
         if (Regex("""^(what'?s|what is) (the date|today'?s date|the day)( today)?$|^what day is (it|today)$|^today'?s date$|^date$""").matches(q)) return Parsed.Ask(Question.Today)
+        com.kinetic.launcher.pen.EquationSolver.solve(q)?.let { return Parsed.Ask(Question.Steps(it)) }
         CONVERT.matchEntire(q)?.let { m ->
             val amount = m.groupValues[1].replace(",", "").toDoubleOrNull()
             val from = unit(m.groupValues[2])
@@ -273,6 +275,7 @@ object Assistant {
         is Question.Convert -> convert(q)
         is Question.Flight -> flight(context, q)
         is Question.Define -> define(q.word)
+        is Question.Steps -> answer("✎", q.steps.last(), q.steps.dropLast(1).joinToString(" → "), q.steps.last().removePrefix("x = "), done = q.steps.joinToString(" → "))
         is Question.Birthday -> birthday(context, q.name)
         Question.Coin -> (if (Math.random() < 0.5) "Heads" else "Tails").let { answer("◎", it, "Coin flip", it) }
         is Question.Dice -> (1 + (Math.random() * q.sides).toInt()).let { answer("⚄", "You rolled $it", "d${q.sides}", it.toString()) }

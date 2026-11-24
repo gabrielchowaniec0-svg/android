@@ -91,6 +91,82 @@ class SettingsActivity : ComponentActivity() {
         resumeTick.intValue++
     }
 
+    private fun textDialog(title: String, message: String, hint: String, start: String, multiline: Boolean = false, onSave: (String) -> Unit) {
+        val field = android.widget.EditText(this).apply {
+            this.hint = hint
+            setText(start)
+            if (multiline) {
+                minLines = 3
+                gravity = android.view.Gravity.TOP
+            } else {
+                setSingleLine()
+            }
+        }
+        val box = android.widget.FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(field)
+        }
+        android.app.AlertDialog.Builder(this).setTitle(title).setMessage(message).setView(box)
+            .setPositiveButton("Save") { _, _ -> onSave(field.text.toString()) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** S Pen shapes: pick a shape, type the command it runs. */
+    private fun editShapes() {
+        val shapes = com.kinetic.launcher.pen.PenShapes.names
+        val glyph = mapOf("Heart" to "♥", "Circle" to "○", "Check" to "✓", "Star" to "★", "Triangle" to "△")
+        val items = shapes.map { s ->
+            val c = com.kinetic.launcher.pen.PenShapes.command(this, s)
+            "${glyph[s]}  $s  →  " + c.ifBlank { "nothing" }
+        }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Draw a shape to…")
+            .setItems(items) { _, i ->
+                val s = shapes[i]
+                textDialog(
+                    "${glyph[s]} $s", "Type any Kinetic command, e.g. \"call mom\", \"open spotify\", \"camera\". Leave empty to turn it off.",
+                    "call mom", com.kinetic.launcher.pen.PenShapes.command(this, s),
+                ) { com.kinetic.launcher.pen.PenShapes.setCommand(this, s, it) }
+            }
+            .setNegativeButton("Done", null).show()
+    }
+
+    /** Command chains: a name that runs several commands. */
+    private fun editChains() {
+        val chains = com.kinetic.launcher.pen.CommandChains.all(this)
+        val names = chains.keys.toList()
+        val items = (names.map { "$it  (${chains[it]?.size ?: 0} steps)" } + "＋ New chain…").toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Command chains")
+            .setItems(items) { _, i ->
+                if (i == names.size) {
+                    newChain("", "")
+                } else {
+                    val n = names[i]
+                    android.app.AlertDialog.Builder(this).setTitle(n)
+                        .setMessage(chains[n].orEmpty().joinToString("\n"))
+                        .setPositiveButton("Edit") { _, _ -> newChain(n, chains[n].orEmpty().joinToString("\n")) }
+                        .setNeutralButton("Delete") { _, _ -> com.kinetic.launcher.pen.CommandChains.remove(this, n) }
+                        .setNegativeButton("Close", null).show()
+                }
+            }
+            .setNegativeButton("Done", null).show()
+    }
+
+    private fun newChain(name: String, lines: String) {
+        textDialog("Chain name", "What you'll write or type to run it, e.g. \"gaming mode\".", "gaming mode", name) { n ->
+            if (n.isBlank()) return@textDialog
+            textDialog(
+                "Commands for \u201C$n\u201D", "One command per line, run in order. For example:\nfocus 60 min\nopen roblox",
+                "focus 60 min\nopen roblox", lines, multiline = true,
+            ) { l ->
+                if (n != name && name.isNotBlank()) com.kinetic.launcher.pen.CommandChains.remove(this, name)
+                com.kinetic.launcher.pen.CommandChains.put(this, n, l)
+            }
+        }
+    }
+
     /** "My teams" for live scores in the island. */
     private fun editTeams() {
         val field = android.widget.EditText(this).apply {
@@ -349,6 +425,8 @@ class SettingsActivity : ComponentActivity() {
             // ---- S Pen ---------------------------------------------------------------------
             Section("S Pen") {
                 SwitchRow("Write on the home screen", "Write \"mom\", \"timer 10 min\" or an app's name anywhere with the S Pen", s.penInk, bool(KineticSettings.PEN_INK))
+                LinkRow("Shapes", "Draw a heart, circle, check, star or triangle to run a command", on = false) { editShapes() }
+                LinkRow("Command chains", "One name runs several commands (also works typed in search)", on = false) { editChains() }
             }
             Spacer(Modifier.height(24.dp))
         }
