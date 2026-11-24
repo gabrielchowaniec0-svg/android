@@ -120,8 +120,11 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || !::model.isInitialized) return
         val pkg = event.packageName?.toString() ?: return
-        model.setForeground(pkg)
         StatusBarData.onWindowChanged()
+        // Only full-screen windows count as "this app is open": a YouTube picture-in-picture
+        // window, pop-ups and dialogs don't (they used to hide the playing song's island).
+        if (!event.isFullScreen) return
+        model.setForeground(pkg)
         // Focus app triggers (e.g. Gaming while a game is open).
         com.kinetic.launcher.FocusTriggers.onForegroundApp(this, pkg)
     }

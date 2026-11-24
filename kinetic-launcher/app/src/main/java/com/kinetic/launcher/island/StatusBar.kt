@@ -418,10 +418,39 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
     val leftA = with(density) { ((leftEar.toPx() - leftW) / 10.dp.toPx()).coerceIn(0f, 1f) }
     val rightA = with(density) { ((rightEar.toPx() - rightW) / 10.dp.toPx()).coerceIn(0f, 1f) }
 
-    // While the island is showing something, only the time and battery stay, each
-    // centred in the space between the island and the screen edge.
+    // While the island is showing something, each side is centred in the space between
+    // the island and the screen edge, with as many icons as fit (time and battery first).
     val centred by androidx.compose.animation.core.animateFloatAsState(if (busy) 1f else 0f, tween(260), label = "sbBusy")
-    val extras = if (busy) 0f else 1f - centred
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val timeW = with(density) {
+        measurer.measure(time, androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)).size.width.toDp()
+    }
+    val leftRoom = leftEar - 6.dp
+    val rightRoom = rightEar - 6.dp
+    val iconCount = if (!busy) icons.size.coerceAtMost(3) else {
+        var n = 0
+        var used = timeW
+        while (n < icons.size.coerceAtMost(3) && used + (if (n == 0) 8.dp else 6.dp) + 14.dp <= leftRoom) {
+            used += (if (n == 0) 8.dp else 6.dp) + 14.dp
+            n++
+        }
+        n
+    }
+    val showMore = more && (!busy || iconCount == 3)
+    // Right side, most important first (after the battery).
+    var rightUsed = 30.dp
+    fun fits(w: Dp): Boolean = if (!busy) true else (rightUsed + w <= rightRoom).also { if (it) rightUsed += w }
+    val netW = (st.net?.length ?: 0) * 8 + 7
+    val showWifiOrNet = when {
+        st.airplane -> false
+        st.wifi >= 0 -> fits(23.dp)
+        st.net != null -> fits(netW.dp)
+        else -> false
+    }
+    val showSignal = if (st.airplane) fits(18.dp) else fits(22.dp)
+    val showRinger = st.ringer != AudioManager.RINGER_MODE_NORMAL && fits(20.dp)
+    val showDnd = st.dnd && fits(19.dp)
+
     Box(Modifier.fillMaxWidth().padding(top = top).height(pillH)) {
         // ---- left: time (carrier on the lock screen) + notification icons ----
         Box(Modifier.offset(x = side).width(leftEar).fillMaxHeight().alpha(leftA), contentAlignment = androidx.compose.ui.BiasAlignment(-1f + centred, 0f)) {
@@ -435,37 +464,34 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
                     }
                 } else {
                     Text(time, color = tint, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, letterSpacing = 0.2.sp)
-                    if (extras > 0.01f) Row(Modifier.alpha(extras), verticalAlignment = Alignment.CenterVertically) {
-                        if (icons.isNotEmpty()) Spacer(Modifier.width(8.dp * extras))
-                        icons.take(3).forEachIndexed { i, bmp ->
-                            val img = remember(bmp) { bmp.asImageBitmap() }
-                            if (i > 0) Spacer(Modifier.width(6.dp))
-                            Image(img, null, colorFilter = ColorFilter.tint(tint.copy(alpha = 0.85f)), modifier = Modifier.size(14.dp))
-                        }
-                        if (more) {
-                            Spacer(Modifier.width(6.dp))
-                            Canvas(Modifier.size(4.dp)) { drawCircle(tint.copy(alpha = 0.85f)) }
-                        }
+                    icons.take(iconCount).forEachIndexed { i, bmp ->
+                        val img = remember(bmp) { bmp.asImageBitmap() }
+                        Spacer(Modifier.width(if (i == 0) 8.dp else 6.dp))
+                        Image(img, null, colorFilter = ColorFilter.tint(tint.copy(alpha = 0.85f)), modifier = Modifier.size(14.dp))
+                    }
+                    if (showMore) {
+                        Spacer(Modifier.width(6.dp))
+                        Canvas(Modifier.size(4.dp)) { drawCircle(tint.copy(alpha = 0.85f)) }
                     }
                 }
             }
         }
-        // ---- right: signal, network, sound, battery ----
+        // ---- right: Do Not Disturb, sound, signal, network, battery ----
         Box(Modifier.offset(x = islandRight + gap).width(rightEar).fillMaxHeight().alpha(rightA), contentAlignment = androidx.compose.ui.BiasAlignment(1f - centred, 0f)) {
             Row(
                 Modifier.wrapContentWidth(unbounded = true).onSizeChanged { rightW = it.width },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (extras > 0.01f) Row(Modifier.alpha(extras), verticalAlignment = Alignment.CenterVertically) {
-                    if (st.dnd) {
-                        MoonGlyph(tint, Modifier.size(12.dp))
-                        Spacer(Modifier.width(7.dp))
-                    }
-                    if (st.ringer != AudioManager.RINGER_MODE_NORMAL) {
-                        if (st.ringer == AudioManager.RINGER_MODE_VIBRATE) VibrateGlyph(tint, Modifier.size(13.dp))
-                        else MuteGlyph(tint, Modifier.size(13.dp))
-                        Spacer(Modifier.width(7.dp))
-                    }
+                if (showDnd) {
+                    MoonGlyph(tint, Modifier.size(12.dp))
+                    Spacer(Modifier.width(7.dp))
+                }
+                if (showRinger) {
+                    if (st.ringer == AudioManager.RINGER_MODE_VIBRATE) VibrateGlyph(tint, Modifier.size(13.dp))
+                    else MuteGlyph(tint, Modifier.size(13.dp))
+                    Spacer(Modifier.width(7.dp))
+                }
+                if (showSignal) {
                     if (st.airplane) {
                         Text("✈", color = tint, fontSize = 13.sp)
                         Spacer(Modifier.width(5.dp))
@@ -473,13 +499,14 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
                         SignalBars(st.signal, tint, Modifier.size(16.dp, 11.dp))
                         Spacer(Modifier.width(6.dp))
                     }
+                }
+                if (showWifiOrNet) {
                     if (st.wifi >= 0) {
                         WifiGlyph(st.wifi, tint, Modifier.size(16.dp, 12.dp))
-                        Spacer(Modifier.width(7.dp))
-                    } else if (!st.airplane && st.net != null) {
-                        Text(st.net!!, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Spacer(Modifier.width(7.dp))
+                    } else {
+                        Text(st.net.orEmpty(), color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }
+                    Spacer(Modifier.width(7.dp))
                 }
                 BatteryPill(st.battery, tint, dark)
             }
