@@ -31,6 +31,18 @@ object NotificationHub {
         _packages.value = packages
     }
 
+    /** Small white icons of the newest notifications (for Kinetic's status bar), newest first. */
+    private val _statusIcons = MutableStateFlow<List<android.graphics.Bitmap>>(emptyList())
+    val statusIcons: StateFlow<List<android.graphics.Bitmap>> = _statusIcons.asStateFlow()
+    private val _statusMore = MutableStateFlow(false)
+    /** True when there are more notifications than icons shown. */
+    val statusMore: StateFlow<Boolean> = _statusMore.asStateFlow()
+
+    internal fun setStatusIcons(icons: List<android.graphics.Bitmap>, more: Boolean) {
+        _statusIcons.value = icons
+        _statusMore.value = more
+    }
+
     /** A phone call in progress or ringing (shown in the Dynamic Island). */
     data class CallInfo(
         val key: String,
@@ -255,6 +267,13 @@ class KineticNotificationListener : NotificationListenerService() {
         val settings = KineticSettings.current
         // Only things the user can clear: skips "music playing", "charging" and similar.
         NotificationHub.set(active.filter { it.isClearable }.mapTo(HashSet()) { it.packageName })
+        // Kinetic's status bar: the small icons of the newest few apps.
+        runCatching {
+            val apps = active.filter { it.isClearable && it.packageName != packageName && !it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) }
+                .sortedByDescending { it.postTime }.distinctBy { it.packageName }
+            val icons = apps.take(3).mapNotNull { sbn -> statusIcon(sbn) }
+            NotificationHub.setStatusIcons(icons, apps.size > 3)
+        }
         // Number badges: each notification counts once, or its own number / messages if it has them.
         NotificationHub.setCounts(
             active.filter { it.isClearable && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
@@ -283,6 +302,23 @@ class KineticNotificationListener : NotificationListenerService() {
         NotificationHub.setPlayingPackage(
             active.firstOrNull { it.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) }?.packageName
         )
+    }
+
+    private val statusIconCache = HashMap<String, android.graphics.Bitmap>()
+
+    /** The notification's small (status bar) icon as a 48px bitmap. */
+    private fun statusIcon(sbn: StatusBarNotification): android.graphics.Bitmap? {
+        val icon = sbn.notification.smallIcon ?: return null
+        val key = sbn.packageName + ":" + (if (icon.type == android.graphics.drawable.Icon.TYPE_RESOURCE) icon.resId else sbn.id)
+        statusIconCache[key]?.let { return it }
+        val d = runCatching { icon.loadDrawable(this) }.getOrNull() ?: return null
+        val bmp = android.graphics.Bitmap.createBitmap(48, 48, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        d.setBounds(0, 0, 48, 48)
+        d.draw(c)
+        if (statusIconCache.size > 60) statusIconCache.clear()
+        statusIconCache[key] = bmp
+        return bmp
     }
 
     // ---- timers & alarms --------------------------------------------------------------

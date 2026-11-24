@@ -121,6 +121,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || !::model.isInitialized) return
         val pkg = event.packageName?.toString() ?: return
         model.setForeground(pkg)
+        StatusBarData.onWindowChanged()
         // Focus app triggers (e.g. Gaming while a game is open).
         com.kinetic.launcher.FocusTriggers.onForegroundApp(this, pkg)
     }
@@ -230,12 +231,18 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             }
         }
         view = v
+        // Full-screen apps (videos, games) hide the status bar; Kinetic's hides with it.
+        v.setOnApplyWindowInsetsListener { _, insets ->
+            StatusBarData.setSystemBarShown(insets.isVisible(android.view.WindowInsets.Type.statusBars()))
+            insets
+        }
         try {
             wm.addView(v, p)
         } catch (_: Exception) {
             view = null
             return
         }
+        StatusBarData.start(this, scope)
 
         // Touch window: an invisible box kept over the island. Its touches are passed
         // to the drawing window in screen coordinates, so moving it never matters.
@@ -387,6 +394,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     private fun removeIsland() {
+        StatusBarData.stop()
         touchView?.let { t -> runCatching { windowManager?.removeView(t) } }
         touchView = null
         val v = view ?: return

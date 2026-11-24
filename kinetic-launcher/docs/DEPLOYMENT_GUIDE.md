@@ -624,3 +624,22 @@ New commands:
 - **Celebrations**: confetti when you finish homework (`done math`), a Focus session, a flashcard deck, or a tracked flight lands.
 - **Progress bars** now have a ring around the app icon, and a "✓ done" when they finish.
 - Already there from earlier: charging, earbuds, silent/vibrate and low-battery pop-ups.
+
+## Kinetic status bar (replaces Samsung's, moves with the island)
+
+**One-time setup (hide Samsung's bar):**
+1. Install **Good Lock** from the Galaxy Store, then the **QuickStar** module inside it.
+2. QuickStar → turn it on → **Visibility of indicator icons**: turn everything off.
+3. QuickStar → **Clock settings** → position/visibility → **Hide**.
+4. Samsung Settings → Notifications → (Advanced settings) → **Show notification icons** → None (Kinetic shows its own).
+
+**Turn on Kinetic's:** Kinetic Settings → Dynamic Island → **Kinetic status bar**.
+
+What it shows:
+- Left of the island: the time (your 12/24-hour setting) and up to 3 notification icons (a dot if there are more). On the lock screen: your carrier name instead of the time (the lock screen already has a big clock).
+- Right of the island: Do Not Disturb moon, vibrate/silent, signal bars, Wi-Fi or 5G/LTE, and a battery pill with the percentage inside (green while charging, yellow on power saving, red at 15% or less).
+- Each side slides and fades as the island grows, frame by frame, and comes back as it shrinks.
+- **Text colour:** Auto checks whether the top of the screen is light or dark (when you switch apps and every 10 seconds) and uses black or white text. You can force White or Black in Settings.
+- Full-screen videos and games hide it, like Samsung's.
+
+Notes: 5G/LTE needs Android to share the network type; if it doesn't on your phone, only the signal bars show. Swiping down from the top still opens Samsung's notification shade.
