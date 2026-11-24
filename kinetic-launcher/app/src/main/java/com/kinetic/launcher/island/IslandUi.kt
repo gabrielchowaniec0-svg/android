@@ -253,6 +253,7 @@ fun DynamicIsland(
         IslandMode.Idle -> restW to pillH
         is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
+            is IslandAlert.Earbuds -> ChargingW to pillH
             // Face ID: a small rounded square hanging just below the camera
             // (kept short so it clears the lock-screen clock).
             is IslandAlert.Scan -> 74.dp to (pillH + 46.dp)
@@ -852,8 +853,27 @@ private fun AlertContent(alert: IslandAlert) {
                 },
             )
         }
+        is IslandAlert.Earbuds -> CompactSplit(
+            leading = {
+                HeadphonesGlyph(Modifier.size(s * 0.5f))
+                Spacer(Modifier.width(6.dp))
+                Text(alert.name, color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            trailing = {
+                alert.battery?.let { b ->
+                    Text("$b%", color = if (b <= 20) Red else Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Spacer(Modifier.width(6.dp))
+                    BatteryGlyph(b / 100f, if (b <= 20) Red else Green, Modifier.size(s * 0.78f, s * 0.38f))
+                } ?: Text("Connected", color = Grey, fontSize = compactSp(), maxLines = 1)
+            },
+        )
         is IslandAlert.Charging -> CompactSplit(
-            leading = { Text("Charging", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1) },
+            leading = {
+                Text(
+                    alert.fullAt?.let { "Full at $it" } ?: "Charging",
+                    color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1,
+                )
+            },
             trailing = {
                 Text("${alert.level}%", color = Green, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
@@ -1429,6 +1449,17 @@ private fun LockGlyph(open: Boolean, modifier: Modifier) {
         drawPath(path, Color.White, style = Stroke(stroke, cap = StrokeCap.Round))
         drawRoundRect(Color.White, Offset(bodyL, bodyTop), Size(bodyW, h - bodyTop), CornerRadius(w * 0.14f))
     }
+}
+
+/** Over-ear headphones. */
+@Composable
+private fun HeadphonesGlyph(modifier: Modifier) = Canvas(modifier) {
+    val w = size.width
+    val h = size.height
+    val st = w * 0.13f
+    drawArc(Color.White, 180f, 180f, false, Offset(w * 0.1f, h * 0.08f), Size(w * 0.8f, h * 0.9f), style = Stroke(st, cap = StrokeCap.Round))
+    drawRoundRect(Color.White, Offset(w * 0.02f, h * 0.52f), Size(w * 0.24f, h * 0.44f), CornerRadius(w * 0.08f))
+    drawRoundRect(Color.White, Offset(w * 0.74f, h * 0.52f), Size(w * 0.24f, h * 0.44f), CornerRadius(w * 0.08f))
 }
 
 @Composable

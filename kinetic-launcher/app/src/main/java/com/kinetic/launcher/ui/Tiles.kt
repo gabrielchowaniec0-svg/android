@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -106,9 +109,14 @@ fun AppTile(
     ring: Boolean = false,
     /** Plays a small "landing" bounce (e.g. when you come back from this app). */
     pop: Boolean = false,
+    /** The app's package: shows its unread count as a badge (only while it has a ring). */
+    badgePackage: String? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val counts by com.kinetic.launcher.NotificationHub.counts.collectAsState()
+    val badgesOn = com.kinetic.launcher.KineticSettings.values.collectAsState().value.badges
+    val badge = if (ring && badgesOn && badgePackage != null) counts[badgePackage] ?: 0 else 0
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
     val landing = remember { Animatable(1f) }
@@ -153,13 +161,38 @@ fun AppTile(
             }
             .notificationRing(ring)
             .depth3D(SquircleShape, elevation = 5.dp)
-        if (icon != null) {
-            Image(bitmap = icon, contentDescription = label, modifier = iconModifier.iconStyle(), colorFilter = iconStyleFilter())
-        } else {
-            Box(iconModifier.background(Color(0xFF2E4066)))
+        Box {
+            if (icon != null) {
+                Image(bitmap = icon, contentDescription = label, modifier = iconModifier.iconStyle(), colorFilter = iconStyleFilter())
+            } else {
+                Box(iconModifier.background(Color(0xFF2E4066)))
+            }
+            if (badge > 0) CountBadge(badge, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-5).dp))
         }
         Spacer(Modifier.height(5.dp))
         Text(label, style = TileLabelStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** iOS-style red unread badge. */
+@Composable
+private fun CountBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .height(20.dp)
+            .widthIn(min = 20.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFFFF3B30))
+            .padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 99) "99+" else count.toString(),
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 

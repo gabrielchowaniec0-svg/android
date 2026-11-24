@@ -19,6 +19,12 @@ object KineticSettings {
         val islandRestingPill: Boolean = true,
         val islandChowaniecPeek: Boolean = true,
         val islandAllMessagesPeek: Boolean = false,
+        /** Red unread-count badges on app icons. */
+        val badges: Boolean = true,
+        /** Newly installed apps wait in a "New" folder for a week. */
+        val newAppsFolder: Boolean = true,
+        /** Earbuds/headphones connecting show in the island, with battery. */
+        val islandEarbuds: Boolean = true,
         /** "black", "glass" or "outline". */
         val islandTheme: String = "black",
         /** A soft glow in the album's colours around the island while music plays. */
@@ -71,6 +77,9 @@ object KineticSettings {
     const val ISLAND_ALL_MESSAGES = "island_all_messages_peek"
     const val ISLAND_NOTIFICATIONS = "island_notifications_peek"
     const val ISLAND_THEME = "island_theme"
+    const val BADGES = "number_badges"
+    const val NEW_APPS_FOLDER = "new_apps_folder"
+    const val ISLAND_EARBUDS = "island_earbuds"
     const val ISLAND_MUSIC_GLOW = "island_music_glow"
     const val ISLAND_PROGRESS = "island_progress"
     const val MY_TEAMS = "my_teams"
@@ -130,6 +139,9 @@ object KineticSettings {
         islandAllMessagesPeek = p.getBoolean(ISLAND_ALL_MESSAGES, false),
         islandNotifications = p.getBoolean(ISLAND_NOTIFICATIONS, true),
         islandTheme = p.getString(ISLAND_THEME, "black") ?: "black",
+        badges = p.getBoolean(BADGES, true),
+        newAppsFolder = p.getBoolean(NEW_APPS_FOLDER, true),
+        islandEarbuds = p.getBoolean(ISLAND_EARBUDS, true),
         islandMusicGlow = p.getBoolean(ISLAND_MUSIC_GLOW, true),
         islandProgress = p.getBoolean(ISLAND_PROGRESS, true),
         myTeams = p.getString(MY_TEAMS, "") ?: "",

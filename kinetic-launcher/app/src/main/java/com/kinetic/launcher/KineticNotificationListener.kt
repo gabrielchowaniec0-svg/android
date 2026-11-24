@@ -19,6 +19,14 @@ object NotificationHub {
     private val _packages = MutableStateFlow<Set<String>>(emptySet())
     val packages: StateFlow<Set<String>> = _packages.asStateFlow()
 
+    /** Unread count per app (for number badges on icons). */
+    private val _counts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val counts: StateFlow<Map<String, Int>> = _counts.asStateFlow()
+
+    internal fun setCounts(c: Map<String, Int>) {
+        _counts.value = c
+    }
+
     internal fun set(packages: Set<String>) {
         _packages.value = packages
     }
@@ -247,6 +255,22 @@ class KineticNotificationListener : NotificationListenerService() {
         val settings = KineticSettings.current
         // Only things the user can clear: skips "music playing", "charging" and similar.
         NotificationHub.set(active.filter { it.isClearable }.mapTo(HashSet()) { it.packageName })
+        // Number badges: each notification counts once, or its own number / messages if it has them.
+        NotificationHub.setCounts(
+            active.filter { it.isClearable && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
+                .groupBy { it.packageName }
+                .mapValues { (_, list) ->
+                    list.sumOf { sbn ->
+                        val n = sbn.notification
+                        val msgs = n.extras.getParcelableArray(Notification.EXTRA_MESSAGES)?.size ?: 0
+                        when {
+                            n.number > 0 -> n.number
+                            msgs > 0 -> msgs
+                            else -> 1
+                        }
+                    }
+                }
+        )
         NotificationHub.setCall(active.firstOrNull { it.notification.category == Notification.CATEGORY_CALL }?.let(::callInfo))
         NotificationHub.setTimer(if (settings.islandTimers) active.firstNotNullOfOrNull(::timerInfo) else null)
         NotificationHub.setNav(if (settings.islandNavigation) active.firstNotNullOfOrNull(::navInfo) else null)

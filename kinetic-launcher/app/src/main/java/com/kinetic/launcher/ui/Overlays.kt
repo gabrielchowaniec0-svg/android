@@ -239,6 +239,7 @@ fun FolderOverlay(
                                     icon = e.icon,
                                     label = labelFor(e),
                                     ring = hasNotification(e),
+                                    badgePackage = e.packageName,
                                     onClick = { onAppClick(e) },
                                     onLongClick = { onAppLongPress(e) },
                                 )

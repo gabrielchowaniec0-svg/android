@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -171,6 +172,13 @@ fun AppDrawer(
 ) {
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!said.isNullOrBlank()) {
+            query = said
+            searching = true
+        }
+    }
     LaunchedEffect(searchSignal) {
         if (searchSignal > 0) {
             searching = true
@@ -286,7 +294,16 @@ fun AppDrawer(
                         if (pages.size > 1) DrawerDots(count = pages.size, current = pagerState.currentPage)
                     }
                 }
-                SearchPill(onClick = { searching = true })
+                SearchPill(
+                    onClick = { searching = true },
+                    // Hold: say it instead (a command, an app, a question…).
+                    onLongClick = {
+                        val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say a command, an app or a question")
+                        runCatching { voice.launch(i) }
+                    },
+                )
             }
         }
     }
@@ -413,6 +430,7 @@ private fun DrawerPage(
                                 iconSize = DRAWER_ICON,
                                 dimmed = isHidden(entry.app),
                                 ring = hasNotification(entry.app),
+                                badgePackage = entry.app.packageName,
                                 onClick = { onAppClick(entry.app) },
                                 onLongClick = { onAppLongPress(entry.app) },
                             )
@@ -452,7 +470,7 @@ private fun DrawerDots(count: Int, current: Int) {
 }
 
 @Composable
-private fun SearchPill(onClick: () -> Unit) {
+private fun SearchPill(onClick: () -> Unit, onLongClick: () -> Unit = {}) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -465,7 +483,7 @@ private fun SearchPill(onClick: () -> Unit) {
                 .height(52.dp)
                 .clip(RoundedCornerShape(26.dp))
                 .background(PillColor)
-                .clickable(onClick = onClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -697,6 +715,7 @@ private fun SearchPanel(
                         iconSize = DRAWER_ICON,
                         dimmed = isHidden(e),
                         ring = hasNotification(e),
+                        badgePackage = e.packageName,
                         onClick = { onAppClick(e) },
                         onLongClick = { onAppLongPress(e) },
                     )

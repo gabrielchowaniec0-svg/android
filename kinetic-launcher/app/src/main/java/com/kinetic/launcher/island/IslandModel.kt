@@ -59,7 +59,10 @@ data class MediaInfo(
 
 /** Short-lived pop-ups, like iOS's "Silent mode" and "Charging". */
 sealed interface IslandAlert {
-    data class Charging(val level: Int) : IslandAlert
+    /** [fullAt] e.g. "11:40 PM" once Android has an estimate. */
+    data class Charging(val level: Int, val fullAt: String? = null) : IslandAlert
+    /** Earbuds or headphones just connected. */
+    data class Earbuds(val name: String, val battery: Int?) : IslandAlert
     data class Ringer(val mode: Int) : IslandAlert
     /** Lock-screen padlock: [open] animates the shackle opening after you unlock. */
     data class Lock(val open: Boolean) : IslandAlert
@@ -240,7 +243,27 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             when (intent.action) {
                 Intent.ACTION_POWER_CONNECTED -> {
                     val bm = c.getSystemService(BatteryManager::class.java)
-                    showAlert(IslandAlert.Charging(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)))
+                    val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    showAlert(IslandAlert.Charging(level))
+                    // Android needs a moment to estimate; add "Full at …" as soon as it can.
+                    scope.launch {
+                        repeat(12) {
+                            delay(250)
+                            val ms = bm.computeChargeTimeRemaining()
+                            if (ms > 0) {
+                                val at = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date(System.currentTimeMillis() + ms))
+                                if (_alert.value is IslandAlert.Charging) _alert.value = IslandAlert.Charging(level, at)
+                                return@launch
+                            }
+                        }
+                    }
+                }
+                android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED -> earbudsConnected(intent)
+                BATTERY_LEVEL_CHANGED -> {
+                    // Some earbuds report their battery a moment after connecting.
+                    val lvl = intent.getIntExtra(EXTRA_BATTERY_LEVEL, -1)
+                    val a = _alert.value
+                    if (lvl in 0..100 && a is IslandAlert.Earbuds && a.battery == null) _alert.value = a.copy(battery = lvl)
                 }
                 Intent.ACTION_SCREEN_ON -> onScreenOn(c)
                 Intent.ACTION_USER_PRESENT -> {
@@ -289,6 +312,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_BATTERY_CHANGED)
                 addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+                addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BATTERY_LEVEL_CHANGED)
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
@@ -516,6 +541,23 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    // ---- earbuds -------------------------------------------------------------------------
+
+    private fun earbudsConnected(intent: Intent) {
+        if (!KineticSettings.current.islandEarbuds) return
+        try {
+            val device: android.bluetooth.BluetoothDevice = intent.getParcelableExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, android.bluetooth.BluetoothDevice::class.java) ?: return
+            val major = device.bluetoothClass?.majorDeviceClass
+            if (major != android.bluetooth.BluetoothClass.Device.Major.AUDIO_VIDEO) return
+            val name = device.alias ?: device.name ?: "Headphones"
+            // Battery isn't public API; most phones (Samsung included) still answer this.
+            val battery = runCatching { device.javaClass.getMethod("getBatteryLevel").invoke(device) as Int }.getOrNull()?.takeIf { it in 0..100 }
+            showAlert(IslandAlert.Earbuds(name, battery))
+        } catch (_: SecurityException) {
+            // Nearby devices permission not given: skip quietly.
+        }
+    }
+
     // ---- face unlock -----------------------------------------------------------------
     //
     // Apps can't see Samsung's face scanner, but they can see the moment the phone stops
@@ -602,6 +644,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     }
                     is IslandAlert.LowBattery -> 5000
                     is IslandAlert.Say -> (2600L + alert.text.length * 45L).coerceAtMost(7000L)
+                    is IslandAlert.Earbuds -> 3500
                     else -> 2200
                 }
             )
@@ -782,3 +825,6 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
     }
 }
+
+private const val BATTERY_LEVEL_CHANGED = "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED"
+private const val EXTRA_BATTERY_LEVEL = "android.bluetooth.device.extra.BATTERY_LEVEL"

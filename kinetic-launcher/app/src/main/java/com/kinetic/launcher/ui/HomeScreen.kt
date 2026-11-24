@@ -544,6 +544,7 @@ fun KineticHome(
                         label = labelFor(entry),
                         jiggle = interactive && editMode,
                         ring = hasNotification(entry),
+                        badgePackage = entry.packageName,
                         pop = interactive && entry.key == popKey,
                         onClick = when {
                             !interactive -> null
@@ -662,6 +663,40 @@ fun KineticHome(
             if (folder != null) mine.drop(1).forEach { deps.layout.moveToDrawerFolder(folder.id, it.key) }
         }
         prefs.edit().putBoolean(SYSTEM_FOLDER_DONE, true).apply()
+    }
+
+    // "New" folder: newly installed apps wait here for a week, then move into the list.
+    LaunchedEffect(allApps, kineticSettings.newAppsFolder) {
+        val list = allApps ?: return@LaunchedEffect
+        val prefs = com.kinetic.wallpaper.WallpaperSignals.prefs(activity)
+        val keys = list.filter { it.packageName != activity.packageName }.map { it.key }.toSet()
+        val known = prefs.getStringSet(KNOWN_APPS, null)
+        prefs.edit().putStringSet(KNOWN_APPS, keys).apply()
+        if (known == null) return@LaunchedEffect // first run: nothing is "new"
+        val added = org.json.JSONObject(prefs.getString(NEW_APPS, "{}") ?: "{}")
+        val now = System.currentTimeMillis()
+        if (kineticSettings.newAppsFolder) (keys - known).forEach { added.put(it, now) }
+        var folderId = prefs.getString(NEW_FOLDER_ID, null)?.takeIf { id -> deps.layout.layout.value.drawerFolders.any { it.id == id } }
+        val week = 7L * 24 * 3600 * 1000
+        val keep = org.json.JSONObject()
+        added.keys().forEach { k ->
+            val at = added.optLong(k)
+            val fresh = kineticSettings.newAppsFolder && now - at < week && k in keys
+            if (fresh) {
+                keep.put(k, at)
+                if (folderId == null) {
+                    if (deps.layout.createDrawerFolder("New", k)) {
+                        folderId = deps.layout.layout.value.drawerFolders.lastOrNull { it.name == "New" && k in it.appKeys }?.id
+                    }
+                } else if (deps.layout.layout.value.drawerFolders.none { it.id == folderId && k in it.appKeys }) {
+                    // Only if it isn't already in some other folder the user chose.
+                    if (deps.layout.layout.value.drawerFolders.none { k in it.appKeys }) deps.layout.moveToDrawerFolder(folderId!!, k)
+                }
+            } else {
+                folderId?.let { id -> deps.layout.removeFromDrawerFolder(id, k) }
+            }
+        }
+        prefs.edit().putString(NEW_APPS, keep.toString()).putString(NEW_FOLDER_ID, folderId).apply()
     }
 
     // ---- app drawer contents -------------------------------------------------------
@@ -1539,3 +1574,7 @@ private fun EditToolbar(
 
 /** Set once the "Kinetic" system-apps folder has been made. */
 private const val SYSTEM_FOLDER_DONE = "system_folder_done_v1"
+
+private const val KNOWN_APPS = "known_app_keys"
+private const val NEW_APPS = "new_app_keys"
+private const val NEW_FOLDER_ID = "new_folder_id"
