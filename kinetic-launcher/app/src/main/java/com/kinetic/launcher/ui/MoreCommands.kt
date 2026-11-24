@@ -251,6 +251,8 @@ object MoreCommands {
             if (!nm.isNotificationPolicyAccessGranted) {
                 askSpecial(ctx, "☾", "Do Not Disturb needs permission", PermissionActivity.DND, original)
             } else {
+                val before = nm.currentInterruptionFilter
+                Commands3.rememberUndo("Do Not Disturb") { c -> c.getSystemService(NotificationManager::class.java).setInterruptionFilter(before) }
                 nm.setInterruptionFilter(if (cmd.on) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL)
                 true
             }
@@ -557,6 +559,8 @@ object MoreCommands {
     private fun volume(context: Context, p: Int): Boolean {
         val a = context.getSystemService(AudioManager::class.java)
         val s = AudioManager.STREAM_MUSIC
+        val before = a.getStreamVolume(s)
+        Commands3.rememberUndo("volume") { c -> c.getSystemService(AudioManager::class.java).setStreamVolume(s, before, AudioManager.FLAG_SHOW_UI) }
         when (p) {
             -1 -> a.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
             -2 -> a.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
@@ -574,6 +578,8 @@ object MoreCommands {
         if (!nm.isNotificationPolicyAccessGranted && (mode == "silent" || a.ringerMode == AudioManager.RINGER_MODE_SILENT)) {
             return askSpecial(context, "🔕", "Silent mode needs permission", PermissionActivity.DND, original)
         }
+        val before = a.ringerMode
+        Commands3.rememberUndo("ringer") { c -> runCatching { c.getSystemService(AudioManager::class.java).ringerMode = before } }
         return runCatching {
             a.ringerMode = when (mode) {
                 "silent" -> AudioManager.RINGER_MODE_SILENT
@@ -590,6 +596,7 @@ object MoreCommands {
         }
         val cr = context.contentResolver
         val now = Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, 128)
+        Commands3.rememberUndo("brightness") { c -> runCatching { Settings.System.putInt(c.contentResolver, Settings.System.SCREEN_BRIGHTNESS, now) } }
         val target = when (p) {
             -1 -> now + 50
             -2 -> now - 50

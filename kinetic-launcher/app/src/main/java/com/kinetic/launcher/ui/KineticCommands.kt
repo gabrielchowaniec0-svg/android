@@ -46,6 +46,7 @@ object KineticCommands {
         data class Note(val text: String) : Parsed
         data class Chain(val name: String, val lines: List<String>) : Parsed
         data class More(val cmd: MoreCommands.Cmd, val original: String) : Parsed
+        data class Three(val cmd: Commands3.Cmd, val original: String) : Parsed
     }
 
     /** Hidden apps (while they're hidden): "open …" never reveals them. Set by the home screen. */
@@ -91,13 +92,16 @@ object KineticCommands {
         "drive", "timer", "alarm", "play", "youtube", "watch", "flashlight", "torch",
     )
 
-    fun parse(input: String): Parsed? {
+    fun parse(written: String): Parsed? {
+        // Your own shortcuts ("m" → "call mom") are expanded first.
+        val input = com.kinetic.launcher.KineticApp.context?.let { Commands3.shortcut(it, written) } ?: written
         // Forgive a typo in the first word ("rout to ohare", "cal mom", "tiemr 5 min").
         val q = Fuzzy.fixFirstWord(input, VERBS)
         if (q.length < 3) return null
         // Your own command chains come first ("gaming mode").
         com.kinetic.launcher.KineticApp.context?.let { c -> com.kinetic.launcher.pen.CommandChains.find(c, input)?.let { return Parsed.Chain(it.first, it.second) } }
         NOTE.matchEntire(input.trim())?.let { return Parsed.Note(it.groupValues[1].trim()) }
+        Commands3.parse(input)?.let { return Parsed.Three(it, input) }
         MoreCommands.parse(input)?.let { return Parsed.More(it, input) }
         // Things the assistant should get first ("open camera" isn't "open" + a contact…).
         Assistant.parse(input)?.let { if (it is Parsed.Act || it is Parsed.Ask) return it }
@@ -194,6 +198,8 @@ object KineticCommands {
                                 if (!com.kinetic.launcher.island.IslandBus.say("✉", said)) {
                                     android.widget.Toast.makeText(ctx, said, android.widget.Toast.LENGTH_SHORT).show()
                                 }
+                                // "be there in 10" → offer a reminder for that time.
+                                Commands3.followUp(ctx, parsed.body, c.first)
                                 true
                             } else {
                                 start(ctx, sms.apply { if (app != null) setPackage(app) })
@@ -271,6 +277,7 @@ object KineticCommands {
         is Parsed.Search -> Assistant.resolveSearch(parsed.query)
         is Parsed.FocusTimer -> Assistant.resolveFocusTimer(context, parsed.seconds)
         is Parsed.More -> MoreCommands.resolve(context, parsed.cmd, parsed.original)
+        is Parsed.Three -> Commands3.resolve(context, parsed.cmd, parsed.original)
         is Parsed.Note -> Ready("📝", "Sticky note", parsed.text, "Add", done = "Note added to your home screen") { ctx ->
             com.kinetic.launcher.pen.StickyNotes.add(ctx, parsed.text)
             true

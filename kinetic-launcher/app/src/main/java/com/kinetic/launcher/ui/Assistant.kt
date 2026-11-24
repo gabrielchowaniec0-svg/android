@@ -428,7 +428,7 @@ object Assistant {
         return answer("▮", "$pct% battery", sub, "$pct%") { ctx -> start(ctx, Intent(Intent.ACTION_POWER_USAGE_SUMMARY)) }
     }
 
-    private val CITY = mapOf(
+    internal val CITY = mapOf(
         "nyc" to "America/New_York", "new york" to "America/New_York", "ny" to "America/New_York", "boston" to "America/New_York",
         "miami" to "America/New_York", "atlanta" to "America/New_York", "dc" to "America/New_York", "washington" to "America/New_York",
         "la" to "America/Los_Angeles", "san francisco" to "America/Los_Angeles", "sf" to "America/Los_Angeles", "seattle" to "America/Los_Angeles",

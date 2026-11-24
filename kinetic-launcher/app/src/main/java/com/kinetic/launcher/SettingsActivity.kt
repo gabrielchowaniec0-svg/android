@@ -167,6 +167,37 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
+    /** Writing shortcuts: "m" → "call mom". */
+    private fun editShortcuts() {
+        val all = com.kinetic.launcher.ui.Commands3.shortcuts(this)
+        val keys = all.keys.toList()
+        val items = (keys.map { "$it  →  ${all[it]}" } + "＋ New shortcut…").toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Writing shortcuts")
+            .setItems(items) { _, i ->
+                if (i == keys.size) {
+                    newShortcut("", "")
+                } else {
+                    val k = keys[i]
+                    android.app.AlertDialog.Builder(this).setTitle(k).setMessage(all[k])
+                        .setPositiveButton("Edit") { _, _ -> newShortcut(k, all[k].orEmpty()) }
+                        .setNeutralButton("Delete") { _, _ -> com.kinetic.launcher.ui.Commands3.setShortcut(this, k, "") }
+                        .setNegativeButton("Close", null).show()
+                }
+            }
+            .setNegativeButton("Done", null).show()
+    }
+
+    private fun newShortcut(short: String, command: String) {
+        textDialog("Shortcut", "What you'll write, e.g. \"m\" or \"home\".", "m", short) { k ->
+            if (k.isBlank()) return@textDialog
+            textDialog("\u201C$k\u201D means…", "The full command, e.g. \"call mom\" or \"route to home\".", "call mom", command) { c ->
+                if (k != short && short.isNotBlank()) com.kinetic.launcher.ui.Commands3.setShortcut(this, short, "")
+                com.kinetic.launcher.ui.Commands3.setShortcut(this, k.trim(), c.trim())
+            }
+        }
+    }
+
     /** "My teams" for live scores in the island. */
     private fun editTeams() {
         val field = android.widget.EditText(this).apply {
@@ -427,6 +458,7 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Write on the home screen", "Write \"mom\", \"timer 10 min\" or an app's name anywhere with the S Pen", s.penInk, bool(KineticSettings.PEN_INK))
                 LinkRow("Shapes", "Draw a heart, circle, check, star or triangle to run a command", on = false) { editShapes() }
                 LinkRow("Command chains", "One name runs several commands (also works typed in search)", on = false) { editChains() }
+                LinkRow("Writing shortcuts", "Short words for long commands (\u201Cm\u201D → call mom)", on = false) { editShortcuts() }
             }
             Spacer(Modifier.height(24.dp))
         }
