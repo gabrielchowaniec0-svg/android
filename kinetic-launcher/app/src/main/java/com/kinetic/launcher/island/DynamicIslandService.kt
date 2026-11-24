@@ -259,8 +259,10 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         var downX = 0f
         var downY = 0f
         var pulling = false
+        var lastMoveDy = 0f
         var tracker: android.view.VelocityTracker? = null
-        val slop = 10 * density
+        // Small, so a pull is recognised before the system's own swipe can take it.
+        val slop = 6 * density
         val t = View(this).apply {
             setOnTouchListener { _, e ->
                 if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
@@ -273,6 +275,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                 if (e.actionMasked == MotionEvent.ACTION_DOWN) {
                     downX = e.rawX
                     downY = e.rawY
+                    lastMoveDy = 0f
                     pulling = false
                     tracker?.recycle()
                     tracker = android.view.VelocityTracker.obtain()
@@ -280,6 +283,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                 tracker?.addMovement(screen)
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
+                if (e.actionMasked == MotionEvent.ACTION_MOVE) lastMoveDy = dy
                 if (!pulling && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && !model.replying.value) {
                     pulling = true
                     // Not a tap or a hold any more.
@@ -287,14 +291,23 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     v.dispatchTouchEvent(cancel)
                     cancel.recycle()
                 }
-                if (pulling) {
+                if (e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    // The system took the touch (its status-bar swipe). Go with where the
+                    // finger was heading instead of throwing the pull away.
+                    tracker?.computeCurrentVelocity(1000)
+                    val vy = tracker?.yVelocity ?: 0f
+                    val lastDy = if (dy == 0f) lastMoveDy else dy
+                    if (pulling || kotlin.math.abs(lastDy) > 4 * density || kotlin.math.abs(vy) > 400 * density) {
+                        model.pullEnd(lastDy, vy, cancelled = true)
+                    }
+                    if (!pulling) v.dispatchTouchEvent(screen)
+                } else if (pulling) {
                     when (e.actionMasked) {
                         MotionEvent.ACTION_MOVE -> model.pullMove(dy)
                         MotionEvent.ACTION_UP -> {
                             tracker?.computeCurrentVelocity(1000)
                             model.pullEnd(dy, tracker?.yVelocity ?: 0f)
                         }
-                        MotionEvent.ACTION_CANCEL -> model.pullEnd(0f, 0f)
                     }
                 } else {
                     v.dispatchTouchEvent(screen)
