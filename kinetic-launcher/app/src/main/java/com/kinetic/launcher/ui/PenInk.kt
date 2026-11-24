@@ -59,7 +59,15 @@ import kotlin.coroutines.resume
  * downloads once, the first time Kinetic starts with this on.
  */
 @Stable
-class InkState(private val scope: CoroutineScope, private val onText: (String) -> Unit) {
+class InkState(
+    private val scope: CoroutineScope,
+    /** A command for a drawn shape (heart, circle…), or null if that shape isn't set up. */
+    private val shapeCommand: (List<Offset>) -> String? = { null },
+    private val onText: (String) -> Unit,
+) {
+    /** The handwriting that was just read (kept for sticky notes). */
+    var lastInk: List<List<Offset>> = emptyList()
+        private set
     /** Finished strokes (screen px). */
     val strokes = ArrayList<List<Offset>>()
     private var current: ArrayList<Offset>? = null
@@ -105,7 +113,10 @@ class InkState(private val scope: CoroutineScope, private val onText: (String) -
             delay(850)
             val built = ink.build()
             ink = Ink.builder()
-            val text = PenRecognizer.recognize(built)
+            lastInk = strokes.map { it.toList() }
+            // A single shape you've given a command to (a heart, a circle…) runs that command.
+            val shaped = if (strokes.size == 1) shapeCommand(strokes[0]) else null
+            val text = shaped ?: PenRecognizer.recognize(built)
             // Fade the ink out.
             val steps = 12
             for (i in 1..steps) {

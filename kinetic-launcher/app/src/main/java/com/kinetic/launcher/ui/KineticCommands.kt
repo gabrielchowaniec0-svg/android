@@ -43,6 +43,8 @@ object KineticCommands {
         data class Ask(val question: Assistant.Question) : Parsed
         data class Search(val query: String) : Parsed
         data class FocusTimer(val seconds: Int) : Parsed
+        data class Note(val text: String) : Parsed
+        data class Chain(val name: String, val lines: List<String>) : Parsed
     }
 
     /** Hidden apps (while they're hidden): "open …" never reveals them. Set by the home screen. */
@@ -92,6 +94,9 @@ object KineticCommands {
         // Forgive a typo in the first word ("rout to ohare", "cal mom", "tiemr 5 min").
         val q = Fuzzy.fixFirstWord(input, VERBS)
         if (q.length < 3) return null
+        // Your own command chains come first ("gaming mode").
+        com.kinetic.launcher.KineticApp.context?.let { c -> com.kinetic.launcher.pen.CommandChains.find(c, input)?.let { return Parsed.Chain(it.first, it.second) } }
+        NOTE.matchEntire(input.trim())?.let { return Parsed.Note(it.groupValues[1].trim()) }
         // Things the assistant should get first ("open camera" isn't "open" + a contact…).
         Assistant.parse(input)?.let { if (it is Parsed.Act || it is Parsed.Ask) return it }
         CALL.matchEntire(q)?.let { return Parsed.Call(it.groupValues[1].trim()) }
@@ -263,6 +268,14 @@ object KineticCommands {
         is Parsed.Ask -> Assistant.resolveQuestion(context, parsed.question)
         is Parsed.Search -> Assistant.resolveSearch(parsed.query)
         is Parsed.FocusTimer -> Assistant.resolveFocusTimer(context, parsed.seconds)
+        is Parsed.Note -> Ready("📝", "Sticky note", parsed.text, "Add", done = "Note added to your home screen") { ctx ->
+            com.kinetic.launcher.pen.StickyNotes.add(ctx, parsed.text)
+            true
+        }
+        is Parsed.Chain -> Ready(
+            "⛓", parsed.name, parsed.lines.joinToString(" · "), "Run",
+            done = "${parsed.name} · ${parsed.lines.size} steps",
+        ) { ctx -> runChain(ctx, parsed.lines) }
     }
 
     // ---- "the app you use most" --------------------------------------------------------
@@ -397,6 +410,24 @@ object KineticCommands {
     } catch (_: Exception) {
         false
     }
+
+    /** Runs each command of a chain in turn (a moment apart, so apps can open). */
+    private fun runChain(context: Context, lines: List<String>): Boolean {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread {
+            lines.forEach { line ->
+                val p = parse(line) ?: return@forEach
+                if (p is Parsed.Chain) return@forEach // no chains inside chains
+                val r = runCatching { resolve(context, p) }.getOrNull() ?: return@forEach
+                if (r.permission != null && ContextCompat.checkSelfPermission(context, r.permission) != PackageManager.PERMISSION_GRANTED) return@forEach
+                main.post { runCatching { r.run(context) } }
+                Thread.sleep(800)
+            }
+        }.start()
+        return true
+    }
+
+    private val NOTE = Regex("""^(?:note|sticky note|sticky|jot|jot down)[:\s]+(.+)$""", RegexOption.IGNORE_CASE)
 
     private fun sendSms(context: Context, number: String, body: String): Boolean = try {
         val sm = context.getSystemService(android.telephony.SmsManager::class.java)

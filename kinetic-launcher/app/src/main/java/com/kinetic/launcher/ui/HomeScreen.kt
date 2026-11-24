@@ -337,6 +337,8 @@ fun KineticHome(
     // What you write runs as a Kinetic Command, opens a matching app, or searches.
     lateinit var ink: InkState
     fun handleInk(text: String) {
+        // A written "note …" keeps its handwriting.
+        com.kinetic.launcher.pen.StickyNotes.pendingInk = ink.lastInk
         val parsed = KineticCommands.parse(text)
         scope.launch {
             val ready = parsed?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { KineticCommands.resolve(activity, it) } }
@@ -373,7 +375,17 @@ fun KineticHome(
             openDrawer()
         }
     }
-    ink = remember { InkState(scope) { handleInk(it) } }
+    ink = remember {
+        InkState(
+            scope,
+            shapeCommand = { pts ->
+                com.kinetic.launcher.pen.PenShapes.match(pts)?.takeIf { it.second >= 0.80 }
+                    ?.let { com.kinetic.launcher.pen.PenShapes.command(activity, it.first).takeIf { c -> c.isNotBlank() } }
+            },
+        ) { handleInk(it) }
+    }
+    LaunchedEffect(Unit) { com.kinetic.launcher.pen.StickyNotes.load(activity) }
+    val stickies by com.kinetic.launcher.pen.StickyNotes.notes.collectAsState()
     // "open …" commands never reveal hidden apps.
     LaunchedEffect(privateApps, privateRevealed, lockedApps) {
         // Hidden and code-locked apps are never opened straight from a command.
@@ -1323,6 +1335,9 @@ fun KineticHome(
             )
         }
 
+        if (stickies.isNotEmpty() && pagerState.currentPage == 0 && drawerProgress.value < 0.05f) {
+            StickyNotesLayer(stickies, onRemove = { com.kinetic.launcher.pen.StickyNotes.remove(activity, it) })
+        }
         InkLayer(ink)
         if (controlCenter) ControlCenter(onDismiss = { controlCenter = false })
         menu?.let { spec -> ActionMenu(spec, onDismiss = { menu = null }) }
