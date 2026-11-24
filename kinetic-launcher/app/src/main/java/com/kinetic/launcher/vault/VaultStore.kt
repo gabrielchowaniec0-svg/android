@@ -22,7 +22,7 @@ import javax.crypto.SecretKey
  * Kinetic's private storage (no other app can read it, and it's scrambled anyway);
  * even the list of items (names, dates) is encrypted.
  */
-class VaultStore(context: Context, private val key: SecretKey) {
+class VaultStore(context: Context, private val key: SecretKey, private val decoy: Boolean = false) {
 
     data class Item(
         val id: String,
@@ -35,7 +35,8 @@ class VaultStore(context: Context, private val key: SecretKey) {
     }
 
     private val app = context.applicationContext
-    private val dir = File(app.filesDir, "vault").apply { mkdirs() }
+    // The decoy code has its own, separate Vault.
+    private val dir = File(app.filesDir, if (decoy) "vault_decoy" else "vault").apply { mkdirs() }
     private val indexFile = File(dir, "index.bin")
 
     fun items(): List<Item> {
@@ -90,18 +91,25 @@ class VaultStore(context: Context, private val key: SecretKey) {
      * Also makes sure the drop box exists, for vaults set up before it did.
      */
     fun collectDrops(): Int {
+        if (decoy) return 0
         VaultCrypto.ensureDropBox(app, key)
         var n = 0
-        dropDir(app).listFiles()?.sortedBy { it.name }?.forEach { f ->
-            val tmp = File(captureDir(app), f.nameWithoutExtension + ".png")
+        dropDir(app).listFiles()?.filter { it.name.endsWith(".kdb") }?.sortedBy { it.name }?.forEach { f ->
+            val raw = File(captureDir(app), f.nameWithoutExtension + ".bin")
+            var tmp = raw
             try {
-                f.inputStream().buffered().use { i -> tmp.outputStream().use { o -> VaultCrypto.dropDecrypt(app, key, i, o) } }
-                if (importFile(tmp, "image/png") != null) {
+                f.inputStream().buffered().use { i -> raw.outputStream().use { o -> VaultCrypto.dropDecrypt(app, key, i, o) } }
+                // Screenshots are PNG; intruder photos are JPEG.
+                val jpeg = raw.inputStream().use { val b = ByteArray(2); it.read(b) == 2 && b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte() }
+                tmp = File(captureDir(app), f.nameWithoutExtension + if (jpeg) ".jpg" else ".png")
+                raw.renameTo(tmp)
+                if (importFile(tmp, if (jpeg) "image/jpeg" else "image/png") != null) {
                     f.delete()
                     n++
                 }
             } catch (_: Exception) {
                 wipe(tmp)
+                if (raw.exists()) wipe(raw)
             }
         }
         return n

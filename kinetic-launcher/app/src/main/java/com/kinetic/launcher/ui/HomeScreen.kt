@@ -178,6 +178,14 @@ fun KineticHome(
     var drawerPickMode by remember { mutableStateOf(false) }
     var privateRevealed by remember { mutableStateOf(false) }
     var askingCode by remember { mutableStateOf(false) }
+    /** An app that needs the Kinetic code, waiting to be opened. */
+    var pendingLaunch by remember { mutableStateOf<AppEntry?>(null) }
+    val lockPrefs = remember { com.kinetic.wallpaper.WallpaperSignals.prefs(activity) }
+    var lockedApps by remember { mutableStateOf(lockPrefs.getStringSet(LOCKED_APPS, emptySet()).orEmpty().toSet()) }
+    fun setLocked(pkg: String, locked: Boolean) {
+        lockedApps = if (locked) lockedApps + pkg else lockedApps - pkg
+        lockPrefs.edit().putStringSet(LOCKED_APPS, lockedApps).apply()
+    }
     var openFolder by remember { mutableStateOf<FolderRef?>(null) }
     var widgetPickerOpen by remember { mutableStateOf(false) }
     /** Bumped by the three-finger tap to open search. */
@@ -268,7 +276,13 @@ fun KineticHome(
         return bounds to options
     }
 
-    fun launchApp(e: AppEntry) {
+    fun launchApp(e: AppEntry, codeOk: Boolean = false) {
+        // Apps you've locked ask for the Kinetic code first (when opened from Kinetic).
+        if (!codeOk && e.packageName in lockedApps && com.kinetic.launcher.vault.VaultCrypto.isSetUp(activity)) {
+            pendingLaunch = e
+            askingCode = true
+            return
+        }
         val (bounds, options) = launchOrigin()
         // Kinetic's own "system apps" (Settings, Vault…) are started straight from here:
         // asking the system to start them would just bring the home screen back.
@@ -360,8 +374,26 @@ fun KineticHome(
     }
     ink = remember { InkState(scope) { handleInk(it) } }
     // "open …" commands never reveal hidden apps.
-    LaunchedEffect(privateApps, privateRevealed) { KineticCommands.hiddenPackages = if (privateRevealed) emptySet() else privateApps.toSet() }
+    LaunchedEffect(privateApps, privateRevealed, lockedApps) {
+        // Hidden and code-locked apps are never opened straight from a command.
+        KineticCommands.hiddenPackages = (if (privateRevealed) emptySet() else privateApps.toSet()) + lockedApps
+    }
     LaunchedEffect(kineticSettings.penInk) { if (kineticSettings.penInk) PenRecognizer.prepare() }
+
+    fun lockAction(e: AppEntry): Pair<String, () -> Unit> =
+        if (e.packageName in lockedApps) {
+            "Stop requiring Kinetic code" to fun() { setLocked(e.packageName, false) }
+        } else {
+            "Require Kinetic code" to fun() {
+                if (!com.kinetic.launcher.vault.VaultCrypto.isSetUp(activity)) {
+                    toast("Set a Kinetic code first (open the Vault)")
+                    com.kinetic.launcher.vault.VaultActivity.open(activity)
+                } else {
+                    setLocked(e.packageName, true)
+                    toast("${labelFor(e)} now asks for your Kinetic code")
+                }
+            }
+        }
 
     // ---- menus ----------------------------------------------------------------
 
@@ -392,6 +424,7 @@ fun KineticHome(
             actions += "Add to \"${f.name}\"" to fun() { deps.layout.addToFolder(pageIndex, item.id, f.id) }
         }
         actions += movePageActions(pageIndex, item.id)
+        actions += lockAction(entry)
         actions += "App info" to fun() { deps.apps.openAppInfo(entry) }
         return MenuSpec(labelFor(entry), actions)
     }
@@ -475,6 +508,7 @@ fun KineticHome(
                 toast("Hidden. Tap \"Hidden\" in the app list to see it again.")
             }
         }
+        actions += lockAction(e)
         actions += "App info" to fun() { deps.apps.openAppInfo(e) }
         return MenuSpec(labelFor(e), actions)
     }
@@ -1285,15 +1319,23 @@ fun KineticHome(
         prompt?.let { spec -> TextPrompt(spec, onDismiss = { prompt = null }) }
         if (askingCode) {
             androidx.compose.ui.window.Dialog(
-                onDismissRequest = { askingCode = false },
+                onDismissRequest = {
+                    askingCode = false
+                    pendingLaunch = null
+                },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
             ) {
                 Box(
                     Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.92f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    com.kinetic.launcher.vault.UnlockWithCode("Hidden apps", "Enter your Kinetic code") {
-                        privateRevealed = true
+                    val waiting = pendingLaunch
+                    com.kinetic.launcher.vault.UnlockWithCode(waiting?.let { "Open ${labelFor(it)}" } ?: "Hidden apps", "Enter your Kinetic code") {
+                        // The decoy code opens only the fake Vault: here it quietly does nothing.
+                        if (!com.kinetic.launcher.vault.VaultCrypto.lastWasDecoy) {
+                            if (waiting != null) launchApp(waiting, codeOk = true) else privateRevealed = true
+                        }
+                        pendingLaunch = null
                         askingCode = false
                     }
                 }
@@ -1578,3 +1620,4 @@ private const val SYSTEM_FOLDER_DONE = "system_folder_done_v1"
 private const val KNOWN_APPS = "known_app_keys"
 private const val NEW_APPS = "new_app_keys"
 private const val NEW_FOLDER_ID = "new_folder_id"
+private const val LOCKED_APPS = "locked_apps"

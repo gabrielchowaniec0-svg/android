@@ -62,8 +62,9 @@ const val PIN_LENGTH = 6
  * lock it for a while.
  */
 @Composable
-fun UnlockWithCode(title: String, subtitle: String, onUnlocked: (SecretKey) -> Unit) {
+fun UnlockWithCode(title: String, subtitle: String, allowDecoy: Boolean = true, onUnlocked: (SecretKey) -> Unit) {
     val context = LocalContext.current
+    @Suppress("DEPRECATION") val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     val kind = remember { VaultCrypto.kind(context) }
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
@@ -81,13 +82,15 @@ fun UnlockWithCode(title: String, subtitle: String, onUnlocked: (SecretKey) -> U
         }
         checking = true
         scope.launch {
-            val key = withContext(Dispatchers.Default) { VaultCrypto.unlock(context, code) }
+            val key = withContext(Dispatchers.Default) { VaultCrypto.unlock(context, code, allowDecoy) }
             checking = false
             if (key != null) {
                 onUnlocked(key)
             } else {
                 val lock = VaultCrypto.lockedFor(context)
                 message = if (lock > 0) "Too many tries — wait ${(lock / 1000) + 1} s" else "Wrong code"
+                // Third wrong try in a row: quietly photograph whoever is trying.
+                if (VaultCrypto.failedTries(context) == 3) IntruderSnap.capture(context, owner)
                 resetTick++
                 for (x in listOf(18f, -14f, 10f, -6f, 0f)) shake.animateTo(x, tween(55))
             }

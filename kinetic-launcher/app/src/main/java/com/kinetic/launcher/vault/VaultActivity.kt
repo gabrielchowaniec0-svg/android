@@ -113,12 +113,15 @@ class VaultActivity : ComponentActivity() {
                     var setUp by remember { mutableStateOf(VaultCrypto.isSetUp(this@VaultActivity)) }
                     // Opened from Settings ▸ "Change Kinetic code": unlock, then choose a new one.
                     var changing by remember { mutableStateOf(intent.getBooleanExtra(EXTRA_CHANGE_CODE, false)) }
+                    // Opened from Settings ▸ "Decoy code": unlock with the real code, then choose the decoy.
+                    var decoySetup by remember { mutableStateOf(intent.getBooleanExtra(EXTRA_DECOY, false)) }
                     val k = key
                     AnimatedContent(
                         targetState = when {
                             !setUp -> 0
                             k == null -> 1
                             changing -> 3
+                            decoySetup -> 4
                             else -> 2
                         },
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -132,13 +135,31 @@ class VaultActivity : ComponentActivity() {
                                 }
                             }
                             1 -> Centered {
-                                UnlockWithCode(if (changing) "Current code" else "Vault", "Enter your Kinetic code") { key = it }
+                                UnlockWithCode(
+                                    if (changing || decoySetup) "Your real code" else "Vault",
+                                    "Enter your Kinetic code",
+                                    // Changing codes needs the real one (never the decoy).
+                                    allowDecoy = !(changing || decoySetup),
+                                ) { key = it }
                             }
                             3 -> Centered {
                                 ChooseCode { code, kind ->
                                     key?.let { VaultCrypto.rewrap(this@VaultActivity, it, code, kind) }
                                     changing = false
                                     android.widget.Toast.makeText(this@VaultActivity, "Kinetic code changed", android.widget.Toast.LENGTH_SHORT).show()
+                                    finish()
+                                }
+                            }
+                            4 -> Centered {
+                                ChooseCode { code, kind ->
+                                    val ctx = this@VaultActivity
+                                    val msg = when {
+                                        kind != VaultCrypto.kind(ctx) -> "Use a " + (if (VaultCrypto.kind(ctx) == VaultCrypto.Kind.Pin) "6-digit PIN" else "pattern") + ", like your real code"
+                                        !VaultCrypto.setUpDecoy(ctx, code) -> "That's your real code. Pick a different one"
+                                        else -> "Decoy code set"
+                                    }
+                                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                                    decoySetup = false
                                     finish()
                                 }
                             }
@@ -175,7 +196,7 @@ class VaultActivity : ComponentActivity() {
 
     @Composable
     private fun Unlocked(key: SecretKey) {
-        val store = remember(key) { VaultStore(this, key) }
+        val store = remember(key) { VaultStore(this, key, decoy = VaultCrypto.lastWasDecoy) }
         var refresh by remember { mutableIntStateOf(0) }
         val items by produceState(initialValue = emptyList<VaultStore.Item>(), refresh) {
             value = withContext(Dispatchers.IO) {
@@ -523,6 +544,11 @@ class VaultActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_CHANGE_CODE = "change_code"
+        const val EXTRA_DECOY = "decoy_setup"
+
+        fun decoySetup(context: android.content.Context) {
+            context.startActivity(Intent(context, VaultActivity::class.java).putExtra(EXTRA_DECOY, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
 
         fun changeCode(context: android.content.Context) {
             context.startActivity(Intent(context, VaultActivity::class.java).putExtra(EXTRA_CHANGE_CODE, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

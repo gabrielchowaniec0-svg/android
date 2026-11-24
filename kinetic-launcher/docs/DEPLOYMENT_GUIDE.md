@@ -512,3 +512,8 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **Charging:** the island shows "Full at 11:40 PM" once Android has worked out the estimate.
 - **Earbuds & headphones:** when they connect, the island shows their name and battery (if they report it).
 - **Voice search:** hold the Search pill in the app list and say a command, an app or a question.
+
+## Privacy (Batch 3)
+- **Decoy code:** Settings ▸ Privacy ▸ Decoy code. It's a second code (the same type as your real one) that opens a separate, fake Vault. If someone makes you unlock, they see only what you put in the fake one. The decoy never shows hidden apps or opens locked apps.
+- **Intruder photo:** after 3 wrong codes in a row, the front camera quietly takes one photo. It goes straight into the real Vault, named "Intruder" with the date and time (needs camera permission, e.g. from the plane spotter). It's on by default; switch it off in Settings ▸ Privacy.
+- **Lock apps:** long-press any app ▸ Require Kinetic code. Opening it from Kinetic (home, the app list, search or the S Pen) then asks for your code first. Opening it from recent apps or another app's link doesn't, because Android doesn't let launchers block those.
