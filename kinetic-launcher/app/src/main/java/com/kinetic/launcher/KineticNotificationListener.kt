@@ -105,6 +105,8 @@ object NotificationHub {
         val eta: String?,
         val icon: Bitmap?,
         val contentIntent: PendingIntent?,
+        /** Any app's progress bar (a download, an upload…), not a ride or delivery. */
+        val generic: Boolean = false,
     )
 
     /** A live game score from a sports app's notification. */
@@ -248,7 +250,10 @@ class KineticNotificationListener : NotificationListenerService() {
         NotificationHub.setCall(active.firstOrNull { it.notification.category == Notification.CATEGORY_CALL }?.let(::callInfo))
         NotificationHub.setTimer(if (settings.islandTimers) active.firstNotNullOfOrNull(::timerInfo) else null)
         NotificationHub.setNav(if (settings.islandNavigation) active.firstNotNullOfOrNull(::navInfo) else null)
-        NotificationHub.setTrip(active.firstNotNullOfOrNull(::tripInfo))
+        NotificationHub.setTrip(
+            active.firstNotNullOfOrNull(::tripInfo)
+                ?: if (settings.islandProgress) active.sortedByDescending { it.postTime }.firstNotNullOfOrNull(::progressInfo) else null
+        )
         NotificationHub.setScore(active.sortedByDescending { it.postTime }.firstNotNullOfOrNull(::scoreInfo))
         NotificationHub.setRecording(active.any(::isScreenRecording))
         NotificationHub.setPlayingPackage(
@@ -334,9 +339,48 @@ class KineticNotificationListener : NotificationListenerService() {
         )
     }
 
+    /** Any other app's ongoing progress bar (downloads, uploads, installs…), like iOS Live Activities. */
+    private fun progressInfo(sbn: StatusBarNotification): NotificationHub.TripInfo? {
+        val pkg = sbn.packageName
+        if (pkg == packageName || pkg in CLOCK_PACKAGES || pkg in NAV_PACKAGES) return null
+        val n = sbn.notification
+        if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_TRANSPORT) return null
+        val extras = n.extras
+        if (extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) return null
+        val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        if (max <= 0 || extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)) return null
+        val prog = extras.getInt(Notification.EXTRA_PROGRESS, 0)
+        val fraction = (prog.toFloat() / max).coerceIn(0f, 1f)
+        if (fraction >= 1f) return null
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = (extras.getCharSequence(Notification.EXTRA_TEXT) ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT))?.toString().orEmpty()
+        val icon = runCatching { packageManager.getApplicationIcon(pkg).toBitmap(96, 96) }.getOrNull()
+        return NotificationHub.TripInfo(
+            key = sbn.key,
+            packageName = pkg,
+            isRide = false,
+            title = title.ifBlank { appName(pkg) },
+            text = text.ifBlank { appName(pkg) },
+            progress = fraction,
+            eta = "${(fraction * 100).toInt()}%",
+            icon = icon,
+            contentIntent = n.contentIntent,
+            generic = true,
+        )
+    }
+
     // ---- live scores --------------------------------------------------------------------
 
     private fun scoreInfo(sbn: StatusBarNotification): NotificationHub.ScoreInfo? {
+        val s = scoreInfoAny(sbn) ?: return null
+        // "My teams": when set, only their games.
+        val teams = KineticSettings.current.myTeams.split(',').map { it.trim().lowercase() }.filter { it.length >= 2 }
+        if (teams.isEmpty()) return s
+        val both = "${s.teamA} ${s.teamB}".lowercase()
+        return if (teams.any { both.contains(it) }) s else null
+    }
+
+    private fun scoreInfoAny(sbn: StatusBarNotification): NotificationHub.ScoreInfo? {
         if (sbn.packageName !in SPORTS_PACKAGES) return null
         if (System.currentTimeMillis() - sbn.postTime > 4 * 3600_000L) return null
         val extras = sbn.notification.extras

@@ -74,6 +74,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -180,6 +182,7 @@ fun DynamicIsland(
     onFocusable: (Boolean) -> Unit = {},
 ) {
     val settings by KineticSettings.values.collectAsState()
+    val haptic0 = { if (settings.haptics) onHaptic() }
     val media by model.media.collectAsState()
     val look by model.mediaLook.collectAsState()
     val call by model.call.collectAsState()
@@ -208,8 +211,16 @@ fun DynamicIsland(
         if (score != null) add(Activity.Score)
         if (m != null && look != IslandModel.MediaLook.Hidden) add(Activity.Media)
     }
-    val primary = activities.firstOrNull()
-    val secondary = activities.getOrNull(1)
+    // Island stacks: a sideways swipe brings the next live thing to the front.
+    val stackShift by model.stackShift.collectAsState()
+    val stacked = if (activities.size > 1) {
+        val k = ((stackShift % activities.size) + activities.size) % activities.size
+        activities.drop(k) + activities.take(k)
+    } else {
+        activities
+    }
+    val primary = stacked.firstOrNull()
+    val secondary = stacked.getOrNull(1)
 
     val mode: IslandMode = when {
         c != null && c.incoming -> IslandMode.CallExpanded
@@ -374,6 +385,42 @@ fun DynamicIsland(
     LaunchedEffect(replying) { onFocusable(replying) }
 
     var pressed by remember { mutableStateOf(false) }
+
+    // ---- looks: theme, music glow, score bounce, stack dots ---------------------------
+    val islandFill = when (settings.islandTheme) {
+        "glass" -> Color(0xE61C1C22)
+        else -> IslandBlack
+    }
+    val islandEdge = when {
+        mode == IslandMode.Idle -> Color.Transparent
+        settings.islandTheme == "glass" -> Color.White.copy(alpha = 0.16f)
+        settings.islandTheme == "outline" -> (media?.takeIf { it.playing }?.accent ?: Color.White).copy(alpha = 0.45f)
+        else -> Color.Transparent
+    }
+    val glowOn = settings.islandMusicGlow && media?.playing == true && look != IslandModel.MediaLook.Hidden &&
+        (mode == IslandMode.MediaCompact || mode == IslandMode.MediaMinimal || mode == IslandMode.MediaExpanded)
+    val breathe = rememberInfiniteTransition(label = "glow")
+    val breath by breathe.animateFloat(0.55f, 1f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "breath")
+    val glowTarget by animateFloatAsState(if (glowOn) 1f else 0f, tween(600), label = "glowOn")
+    val glowA = glowTarget * breath
+    val bump = remember { Animatable(1f) }
+    val scoreBump by model.scoreBump.collectAsState()
+    LaunchedEffect(scoreBump) {
+        if (scoreBump > 0) {
+            haptic0()
+            bump.animateTo(1.08f, spring(dampingRatio = 0.4f, stiffness = 900f))
+            bump.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 500f))
+        }
+    }
+    val stackTick by model.stackTick.collectAsState()
+    var showDots by remember { mutableStateOf(false) }
+    LaunchedEffect(stackTick) {
+        if (stackTick > 0) {
+            showDots = true
+            delay(1400)
+            showDots = false
+        }
+    }
     val squish by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "squish")
 
     val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
@@ -512,6 +559,24 @@ fun DynamicIsland(
                 )
             }
 
+            // ---- stack dots: which live thing you're on (after a sideways swipe) ---------
+            if (showDots && stacked.size > 1 && h <= pillH + 1.dp) {
+                val k = ((stackShift % stacked.size) + stacked.size) % stacked.size
+                Row(
+                    Modifier.padding(top = top + pillH + 5.dp).offset(x = centerOffset),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    repeat(activities.size) { i ->
+                        Box(
+                            Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(if (i == k) Color.White else Color.White.copy(alpha = 0.35f))
+                        )
+                    }
+                }
+            }
+
             // ---- the island ----------------------------------------------------------
             Box(
                 Modifier
@@ -519,13 +584,32 @@ fun DynamicIsland(
                     .offset(x = centerOffset)
                     .size(w, h)
                     .graphicsLayer {
-                        scaleX = squish
-                        scaleY = squish
+                        scaleX = squish * bump.value
+                        scaleY = squish * bump.value
                         transformOrigin = TransformOrigin(0.5f, 0f)
                         alpha = restAlpha
                     }
+                    // Music glow: a soft halo in the album's colour while something plays.
+                    .drawBehind {
+                        if (glowA > 0.01f) {
+                            val accent = media?.accent ?: Color.White
+                            for (i in 1..3) {
+                                val g = (i * 2.2f).dp.toPx()
+                                drawRoundRect(
+                                    accent.copy(alpha = glowA * (0.32f - i * 0.08f)),
+                                    topLeft = Offset(-g, -g),
+                                    size = Size(size.width + 2 * g, size.height + 2 * g),
+                                    cornerRadius = CornerRadius(r.toPx() + g),
+                                    style = Stroke(2.4.dp.toPx()),
+                                )
+                            }
+                        }
+                    }
                     .clip(RoundedCornerShape(r))
-                    .background(IslandBlack)
+                    .background(islandFill)
+                    .then(
+                        if (islandEdge != Color.Transparent) Modifier.border(1.dp, islandEdge, RoundedCornerShape(r)) else Modifier
+                    )
                     .pointerInput(mode) {
                         detectTapGestures(
                             onPress = {
@@ -922,7 +1006,7 @@ private fun TripCompact(t: NotificationHub.TripInfo) {
         trailing = {
             Text(
                 t.eta ?: if (t.isRide) "On the way" else "On its way",
-                color = Green,
+                color = if (t.generic) Blue else Green,
                 fontSize = compactSp(),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,

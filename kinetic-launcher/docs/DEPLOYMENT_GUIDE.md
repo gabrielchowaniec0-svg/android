@@ -498,3 +498,10 @@ It uses your location, the compass and live flight data from the community netwo
 When the screen wakes, Kinetic watches the phone's real lock state. The tick appears the moment face (or fingerprint) unlock succeeds. If you stay on the lock screen, the padlock opens there. If it hasn't worked after about 3 seconds, the face icon shakes and fades.
 
 The scan only shows when the phone is held up. It doesn't show when the phone is flat on a table or in a pocket (it uses the motion and proximity sensors). If Smart Lock already unlocked the phone, the padlock simply opens.
+
+## Island upgrades (Batch 2)
+- **Island stacks:** when two or more things are live (music, timer, directions, a delivery, a score), swipe sideways on the island to bring the next one to the front. Little dots show which one you're on.
+- **Progress bars:** any app's download, upload or install progress shows in the island with a percentage. Pull it down for the full bar. You can switch this off in Settings ▸ Dynamic Island ▸ Progress bars.
+- **My teams:** in Settings ▸ Dynamic Island ▸ My teams, type your teams (e.g. "Bears, Cubs"). Only their games show, and the island bounces with a buzz when the score changes.
+- **Island look:** Black (default), Glass (a dark see-through finish with a thin edge) or Outline (an edge in the colour of whatever is playing).
+- **Music glow:** a soft, breathing glow in the album's colours around the island while music plays.
