@@ -125,6 +125,7 @@
         <!-- Wallpaper studio: styles, colours, speed… with a live preview. -->
         <activity
             android:name=".WallpaperStudioActivity"
+            android:taskAffinity=""
             android:exported="false"
             android:label="Wallpaper"
             android:theme="@style/Theme.Kinetic" />
@@ -132,6 +133,7 @@
         <!-- Focus picker (also opened by long-pressing the Focus quick-settings tile). -->
         <activity
             android:name=".FocusActivity"
+            android:taskAffinity=""
             android:exported="true"
             android:excludeFromRecents="true"
             android:label="Focus"
@@ -171,6 +173,7 @@
         <!-- Plane spotter: point at a plane to see its flight. -->
         <activity
             android:name=".planes.PlaneSpotterActivity"
+            android:taskAffinity=""
             android:exported="false"
             android:label="Plane spotter"
             android:screenOrientation="portrait"
@@ -179,6 +182,7 @@
         <!-- Encrypted Vault (Kinetic code only; no screenshots or recents preview). -->
         <activity
             android:name=".vault.VaultActivity"
+            android:taskAffinity=""
             android:exported="false"
             android:excludeFromRecents="true"
             android:label="Vault"
@@ -216,6 +220,7 @@
         <!-- Kinetic settings (app list ▸ ⋮ ▸ Kinetic settings, or Settings in edit mode). -->
         <activity
             android:name=".SettingsActivity"
+            android:taskAffinity=""
             android:exported="false"
             android:label="Kinetic settings"
             android:theme="@style/Theme.Kinetic" />

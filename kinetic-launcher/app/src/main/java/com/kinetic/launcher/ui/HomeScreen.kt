@@ -270,7 +270,15 @@ fun KineticHome(
 
     fun launchApp(e: AppEntry) {
         val (bounds, options) = launchOrigin()
-        if (deps.apps.launch(e, bounds, options)) {
+        // Kinetic's own "system apps" (Settings, Vault…) are started straight from here:
+        // asking the system to start them would just bring the home screen back.
+        val own = e.packageName == activity.packageName
+        val started = if (own) {
+            runCatching { activity.startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN).setComponent(e.component), options) }.isSuccess
+        } else {
+            deps.apps.launch(e, bounds, options)
+        }
+        if (started) {
             lastLaunchedKey = e.key
             // The wallpaper ripples out from the icon you tapped.
             if (bounds != null) {

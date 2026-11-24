@@ -432,15 +432,20 @@ fun DynamicIsland(
             val p = if (to == expandsTo) ps.dy / pullDist else -ps.dy / pullDist
             morphStep(mode, to, p.coerceIn(0f, 1f))
         } else {
-            val to = morphTo
+            val small = with(density) { 4.dp.toPx() }
+            // A pull the system cut short still knows which way it was going.
+            val to = morphTo ?: if (ps.cancelled) (if (ps.dy > 0) expandsTo else collapsesTo) else null
             val p = morph.value
             val vy = ps.vy
             val opening = to != null && to == expandsTo
             val commit = to != null && (
-                if (opening) (p > 0.3f && vy > -flick) || vy > flick
+                if (ps.cancelled) (if (opening) ps.dy > small || vy > flick else ps.dy < -small || vy < -flick)
+                else if (opening) (p > 0.3f && vy > -flick) || vy > flick
                 else (p > 0.3f && vy < flick) || vy < -flick
                 )
-            if ((mode == IslandMode.Peek || mode == IslandMode.PeekCompact) && !replying && (ps.dy < -pullDist * 0.25f || vy < -flick)) {
+            if ((mode == IslandMode.Peek || mode == IslandMode.PeekCompact) && !replying &&
+                (ps.dy < -pullDist * 0.25f || vy < -flick || (ps.cancelled && ps.dy < -small))
+            ) {
                 model.dismissPeek()
             }
             if (commit) {

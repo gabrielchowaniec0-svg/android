@@ -365,7 +365,17 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     /** A pull on the island: [dy] px from where it started (down is positive). */
-    data class Pull(val dy: Float, val done: Boolean = false, val vy: Float = 0f)
+    data class Pull(
+        val dy: Float,
+        val done: Boolean = false,
+        val vy: Float = 0f,
+        /**
+         * Android's own status-bar gesture took the touch away part-way (a swipe down
+         * from the top of the screen belongs to the notification shade). The pull
+         * still counts, going by which way it was heading.
+         */
+        val cancelled: Boolean = false,
+    )
 
     private val _pull = MutableStateFlow<Pull?>(null)
     val pull: StateFlow<Pull?> = _pull.asStateFlow()
@@ -374,8 +384,8 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         _pull.value = Pull(dy)
     }
 
-    fun pullEnd(dy: Float, vy: Float) {
-        _pull.value = Pull(dy, done = true, vy = vy)
+    fun pullEnd(dy: Float, vy: Float, cancelled: Boolean = false) {
+        _pull.value = Pull(dy, done = true, vy = vy, cancelled = cancelled)
     }
 
     fun clearPull() {
