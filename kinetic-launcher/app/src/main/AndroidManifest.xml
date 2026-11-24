@@ -252,5 +252,62 @@
                 android:resource="@xml/island_accessibility" />
         </service>
 
+        <!-- Kinetic's own "system apps". They show in Kinetic's app list (in the "Kinetic"
+             folder); each opens one of Kinetic's screens. -->
+        <activity-alias
+            android:name=".shortcut.Settings"
+            android:exported="true"
+            android:icon="@mipmap/sys_settings"
+            android:label="Kinetic Settings"
+            android:targetActivity=".SettingsActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".shortcut.Vault"
+            android:exported="true"
+            android:icon="@mipmap/sys_vault"
+            android:label="Vault"
+            android:targetActivity=".vault.VaultActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".shortcut.Focus"
+            android:exported="true"
+            android:icon="@mipmap/sys_focus"
+            android:label="Focus"
+            android:targetActivity=".FocusActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".shortcut.PlaneSpotter"
+            android:exported="true"
+            android:icon="@mipmap/sys_planes"
+            android:label="Plane Spotter"
+            android:targetActivity=".planes.PlaneSpotterActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".shortcut.Wallpaper"
+            android:exported="true"
+            android:icon="@mipmap/sys_wallpaper"
+            android:label="Wallpaper"
+            android:targetActivity=".WallpaperStudioActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 </manifest>

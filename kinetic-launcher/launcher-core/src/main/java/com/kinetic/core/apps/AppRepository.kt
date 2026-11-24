@@ -170,7 +170,8 @@ class AppRepository(context: Context) {
             val serial = userManager.getSerialNumberForUser(user)
             for (info in launcherApps.getActivityList(null, user)) {
                 val component = info.componentName
-                if (component.packageName == self) continue
+                // Kinetic itself isn't listed, but its "system apps" (Settings, Vault…) are.
+                if (component.packageName == self && !component.className.contains(".shortcut.")) continue
                 val key = "${component.flattenToShortString()}#$serial"
                 val icon = iconCache.getOrPut(key) { renderIcon(info) }
                 out += AppEntry(
