@@ -80,7 +80,7 @@ object Assistant {
         action(q)?.let { return Parsed.Act(it) }
 
         // Questions
-        if (Regex("""\bweather\b|^temperature$|^temp$|how (hot|cold|warm) is it|what'?s it like outside""").containsMatchIn(q)) return Parsed.Ask(Question.Weather(false))
+        if (Regex("""^(?:(?:what|how)(?:'s| is)? (?:the )?|show (?:me )?(?:the )?|tell me the |check (?:the )?|get (?:the )?)?weather\b|^(?:the )?temperature$|^temp$|^how (?:hot|cold|warm) is it|^what'?s it like outside""").containsMatchIn(q)) return Parsed.Ask(Question.Weather(false))
         if (Regex("""^(will|is) it (going to )?(rain|snow|storm)|^(do|should) i (need|bring|take) an? (umbrella|jacket|coat)|^any rain""").containsMatchIn(q)) return Parsed.Ask(Question.Weather(true))
         if (Regex("""^(what'?s|what is) (next|on my calendar|my next (event|meeting|appointment))|^next (event|meeting|appointment)$|^(my )?(schedule|agenda|calendar)( today)?$|^what do i have (today|next|coming up)""").containsMatchIn(q)) return Parsed.Ask(Question.CalendarNext)
         WHEN.matchEntire(q)?.let { m ->
