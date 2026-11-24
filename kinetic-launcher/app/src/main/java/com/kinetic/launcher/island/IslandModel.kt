@@ -97,6 +97,24 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     val trip: StateFlow<NotificationHub.TripInfo?> get() = NotificationHub.trip
     val score: StateFlow<NotificationHub.ScoreInfo?> get() = NotificationHub.score
 
+    /** Island stacks: which live thing is in front (swipe sideways on the island to flip). */
+    private val _stackShift = MutableStateFlow(0)
+    val stackShift: StateFlow<Int> = _stackShift.asStateFlow()
+
+    /** Bumped when the swipe flips the stack (shows the little dots for a moment). */
+    private val _stackTick = MutableStateFlow(0)
+    val stackTick: StateFlow<Int> = _stackTick.asStateFlow()
+
+    fun cycleStack(direction: Int) {
+        _stackShift.value += direction
+        _stackTick.value++
+        collapse()
+    }
+
+    /** Bumped when your team's score changes (the island bounces). */
+    private val _scoreBump = MutableStateFlow(0)
+    val scoreBump: StateFlow<Int> = _scoreBump.asStateFlow()
+
     /** Privacy dot next to the island, like iOS: what's using the mic / camera / screen. */
     enum class Privacy { None, Mic, Camera, ScreenRecord }
 
@@ -299,6 +317,15 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 _peekOpen.value = false
                 _peek.value = m
                 schedulePeekEnd(4500)
+            }
+        }
+        // A score change in the game you're following: the island bounces.
+        scope.launch {
+            var last: NotificationHub.ScoreInfo? = null
+            NotificationHub.score.collect { s ->
+                val prev = last
+                if (s != null && prev != null && s.key == prev.key && (s.scoreA != prev.scoreA || s.scoreB != prev.scoreB)) _scoreBump.value++
+                last = s
             }
         }
         // Messages from the rest of Kinetic (S Pen answers…).

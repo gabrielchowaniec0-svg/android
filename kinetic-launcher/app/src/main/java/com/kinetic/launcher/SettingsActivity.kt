@@ -91,6 +91,27 @@ class SettingsActivity : ComponentActivity() {
         resumeTick.intValue++
     }
 
+    /** "My teams" for live scores in the island. */
+    private fun editTeams() {
+        val field = android.widget.EditText(this).apply {
+            hint = "Bears, Cubs, Bulls"
+            setText(KineticSettings.current.myTeams)
+            setSingleLine()
+        }
+        val box = android.widget.FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(field)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("My teams")
+            .setMessage("Only these teams' games show in the island. Leave empty for every game.")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ -> KineticSettings.setString(this, KineticSettings.MY_TEAMS, field.text.toString().trim()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** Pick which app a shake opens. */
     private fun pickShakeApp() {
         val la = getSystemService(android.content.pm.LauncherApps::class.java)
@@ -201,6 +222,14 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Chowaniec messages", "New Chowaniec messages drop down from the island, with Reply", s.islandChowaniecPeek, bool(KineticSettings.ISLAND_CHOWANIEC))
                 SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
                 SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
+                SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
+                SwitchRow("Music glow", "A soft glow in the album's colours while music plays", s.islandMusicGlow, bool(KineticSettings.ISLAND_MUSIC_GLOW))
+                ChoiceRow(
+                    "Island look",
+                    listOf("black" to "Black", "glass" to "Glass", "outline" to "Outline"),
+                    s.islandTheme,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.ISLAND_THEME, it) }
+                LinkRow("My teams", s.myTeams.ifBlank { "Every game · tap to pick your teams" }, on = s.myTeams.isNotBlank()) { editTeams() }
                 SwitchRow("Timers, stopwatch & alarms", "Countdown in orange; alarms ring with Snooze / Stop", s.islandTimers, bool(KineticSettings.ISLAND_TIMERS))
                 SwitchRow("Directions", "Next turn and distance from Google Maps", s.islandNavigation, bool(KineticSettings.ISLAND_NAVIGATION))
                 SwitchRow("Lock animation", "A padlock that opens when you unlock", s.islandUnlock, bool(KineticSettings.ISLAND_UNLOCK))

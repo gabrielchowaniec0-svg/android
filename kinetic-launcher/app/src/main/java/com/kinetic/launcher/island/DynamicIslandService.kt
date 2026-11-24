@@ -259,6 +259,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         var downX = 0f
         var downY = 0f
         var pulling = false
+        var flipped = false
         var lastMoveDy = 0f
         var tracker: android.view.VelocityTracker? = null
         // Small, so a pull is recognised before the system's own swipe can take it.
@@ -277,6 +278,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     downY = e.rawY
                     lastMoveDy = 0f
                     pulling = false
+                    flipped = false
                     tracker?.recycle()
                     tracker = android.view.VelocityTracker.obtain()
                 }
@@ -284,6 +286,25 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
                 if (e.actionMasked == MotionEvent.ACTION_MOVE) lastMoveDy = dy
+                // Sideways swipe on a small island: flip to the next live thing (island stacks).
+                if (!pulling && !flipped && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dx) > 36 * density &&
+                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f && !model.expanded.value && model.peek.value == null
+                ) {
+                    flipped = true
+                    model.cycleStack(if (dx < 0) 1 else -1)
+                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    val cancel = MotionEvent.obtain(screen).apply { action = MotionEvent.ACTION_CANCEL }
+                    v.dispatchTouchEvent(cancel)
+                    cancel.recycle()
+                }
+                if (flipped) {
+                    screen.recycle()
+                    if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                        tracker?.recycle()
+                        tracker = null
+                    }
+                    return@setOnTouchListener true
+                }
                 if (!pulling && e.actionMasked == MotionEvent.ACTION_MOVE && kotlin.math.abs(dy) > slop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && !model.replying.value) {
                     pulling = true
                     // Not a tap or a hold any more.

@@ -19,6 +19,14 @@ object KineticSettings {
         val islandRestingPill: Boolean = true,
         val islandChowaniecPeek: Boolean = true,
         val islandAllMessagesPeek: Boolean = false,
+        /** "black", "glass" or "outline". */
+        val islandTheme: String = "black",
+        /** A soft glow in the album's colours around the island while music plays. */
+        val islandMusicGlow: Boolean = true,
+        /** Downloads, uploads, orders… any app's progress bar shows in the island. */
+        val islandProgress: Boolean = true,
+        /** Comma-separated team names; when set, only their games show in the island. */
+        val myTeams: String = "",
         /** Every (non-silent) notification drops down from the island. */
         val islandNotifications: Boolean = true,
         val islandTimers: Boolean = true,
@@ -62,6 +70,10 @@ object KineticSettings {
     const val ISLAND_CHOWANIEC = "island_chowaniec_peek"
     const val ISLAND_ALL_MESSAGES = "island_all_messages_peek"
     const val ISLAND_NOTIFICATIONS = "island_notifications_peek"
+    const val ISLAND_THEME = "island_theme"
+    const val ISLAND_MUSIC_GLOW = "island_music_glow"
+    const val ISLAND_PROGRESS = "island_progress"
+    const val MY_TEAMS = "my_teams"
     const val ISLAND_TIMERS = "island_timers"
     const val ISLAND_NAVIGATION = "island_navigation"
     const val ISLAND_UNLOCK = "island_unlock"
@@ -117,6 +129,10 @@ object KineticSettings {
         islandChowaniecPeek = p.getBoolean(ISLAND_CHOWANIEC, true),
         islandAllMessagesPeek = p.getBoolean(ISLAND_ALL_MESSAGES, false),
         islandNotifications = p.getBoolean(ISLAND_NOTIFICATIONS, true),
+        islandTheme = p.getString(ISLAND_THEME, "black") ?: "black",
+        islandMusicGlow = p.getBoolean(ISLAND_MUSIC_GLOW, true),
+        islandProgress = p.getBoolean(ISLAND_PROGRESS, true),
+        myTeams = p.getString(MY_TEAMS, "") ?: "",
         islandTimers = p.getBoolean(ISLAND_TIMERS, true),
         islandNavigation = p.getBoolean(ISLAND_NAVIGATION, true),
         islandUnlock = p.getBoolean(ISLAND_UNLOCK, true),
