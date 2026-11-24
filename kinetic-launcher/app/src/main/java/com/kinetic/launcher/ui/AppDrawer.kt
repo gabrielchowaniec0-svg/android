@@ -348,34 +348,6 @@ private fun DrawerTopBar(
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Vault") },
-                    onClick = {
-                        menuOpen = false
-                        onVault()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Plane spotter") },
-                    onClick = {
-                        menuOpen = false
-                        onPlanes()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Focus…") },
-                    onClick = {
-                        menuOpen = false
-                        onFocus()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Kinetic settings") },
-                    onClick = {
-                        menuOpen = false
-                        onSettings()
-                    },
-                )
-                DropdownMenuItem(
                     text = { Text("Dynamic Island…") },
                     onClick = {
                         menuOpen = false

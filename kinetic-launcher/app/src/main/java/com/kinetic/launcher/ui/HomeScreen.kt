@@ -633,6 +633,26 @@ fun KineticHome(
         }
     }
 
+    // Kinetic's system apps (Settings, Vault, Focus, Plane Spotter, Wallpaper) start out
+    // together in a "Kinetic" folder in the app list. Done once; after that it's yours to arrange.
+    LaunchedEffect(allApps) {
+        val list = allApps ?: return@LaunchedEffect
+        val prefs = com.kinetic.wallpaper.WallpaperSignals.prefs(activity)
+        if (prefs.getBoolean(SYSTEM_FOLDER_DONE, false)) return@LaunchedEffect
+        // Let a first-run "use my phone's layout" finish first.
+        delay(1500)
+        val order = listOf("Settings", "Vault", "Focus", "PlaneSpotter", "Wallpaper")
+        val mine = list.filter { it.packageName == activity.packageName }
+            .sortedBy { e -> order.indexOfFirst { e.component.className.endsWith(".shortcut.$it") }.let { if (it < 0) 99 else it } }
+        if (mine.isEmpty()) return@LaunchedEffect
+        val first = mine.first().key
+        if (deps.layout.createDrawerFolder("Kinetic", first)) {
+            val folder = deps.layout.layout.value.drawerFolders.lastOrNull { it.name == "Kinetic" && first in it.appKeys }
+            if (folder != null) mine.drop(1).forEach { deps.layout.moveToDrawerFolder(folder.id, it.key) }
+        }
+        prefs.edit().putBoolean(SYSTEM_FOLDER_DONE, true).apply()
+    }
+
     // ---- app drawer contents -------------------------------------------------------
 
     /**
@@ -676,7 +696,13 @@ fun KineticHome(
         title = "Use my phone's layout?",
         actions = listOf("Reset layout" to fun() {
             val apps = allApps
-            if (apps == null) toast("Apps are still loading — try again in a moment") else onApplyMyLayout(apps)
+            if (apps == null) {
+                toast("Apps are still loading — try again in a moment")
+            } else {
+                onApplyMyLayout(apps)
+                // Rebuild the "Kinetic" folder afterwards.
+                com.kinetic.wallpaper.WallpaperSignals.prefs(activity).edit().remove(SYSTEM_FOLDER_DONE).apply()
+            }
         }),
         message = "Puts your home screen, dock, folders and app-list pages back the way they are on One UI. " +
             "Changes you've made in Kinetic will be replaced.",
@@ -1499,3 +1525,6 @@ private fun EditToolbar(
         TextButton(onClick = onDone) { Text("Done") }
     }
 }
+
+/** Set once the "Kinetic" system-apps folder has been made. */
+private const val SYSTEM_FOLDER_DONE = "system_folder_done_v1"
