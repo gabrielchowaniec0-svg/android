@@ -139,8 +139,12 @@ class HelpActivity : ComponentActivity() {
                 runCatching { com.kinetic.launcher.pen.CommandChains.all(context) }.getOrNull()?.forEach { (k, v) -> add(ex(k, "Your chain: " + v.joinToString(", "))) }
                 Commands3.history(context).take(5).forEach { add(ex(it, "Used recently")) }
             }
-            return listOfNotNull(
-                if (mine.isNotEmpty()) Group("Yours", "★", mine) else null,
+            return listOfNotNull(if (mine.isNotEmpty()) Group("Yours", "★", mine) else null) + builtIn()
+        }
+
+        /** Every built-in example (no phone needed: also used by the automated tests). */
+        fun builtIn(): List<Group> {
+            return listOf(
                 Group(
                     "People", "☏",
                     listOf(

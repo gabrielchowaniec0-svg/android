@@ -16,6 +16,10 @@ val commitCount: Int = runCatching {
 }.getOrDefault(0)
 
 android {
+    // Plain-JVM tests (command understanding etc.): Android calls just return defaults.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
     namespace = "com.kinetic.launcher"
     compileSdk = 35
 
@@ -67,6 +71,7 @@ kotlin {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(project(":launcher-core"))
     implementation(project(":wallpaper-engine"))
     implementation(project(":lockscreen-transition"))
