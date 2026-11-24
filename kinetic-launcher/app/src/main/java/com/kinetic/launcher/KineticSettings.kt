@@ -19,6 +19,8 @@ object KineticSettings {
         val islandRestingPill: Boolean = true,
         val islandChowaniecPeek: Boolean = true,
         val islandAllMessagesPeek: Boolean = false,
+        /** Every (non-silent) notification drops down from the island. */
+        val islandNotifications: Boolean = true,
         val islandTimers: Boolean = true,
         val islandNavigation: Boolean = true,
         val islandUnlock: Boolean = true,
@@ -59,6 +61,7 @@ object KineticSettings {
     const val ISLAND_RESTING = "island_resting"
     const val ISLAND_CHOWANIEC = "island_chowaniec_peek"
     const val ISLAND_ALL_MESSAGES = "island_all_messages_peek"
+    const val ISLAND_NOTIFICATIONS = "island_notifications_peek"
     const val ISLAND_TIMERS = "island_timers"
     const val ISLAND_NAVIGATION = "island_navigation"
     const val ISLAND_UNLOCK = "island_unlock"
@@ -113,6 +116,7 @@ object KineticSettings {
         islandRestingPill = p.getBoolean(ISLAND_RESTING, true),
         islandChowaniecPeek = p.getBoolean(ISLAND_CHOWANIEC, true),
         islandAllMessagesPeek = p.getBoolean(ISLAND_ALL_MESSAGES, false),
+        islandNotifications = p.getBoolean(ISLAND_NOTIFICATIONS, true),
         islandTimers = p.getBoolean(ISLAND_TIMERS, true),
         islandNavigation = p.getBoolean(ISLAND_NAVIGATION, true),
         islandUnlock = p.getBoolean(ISLAND_UNLOCK, true),

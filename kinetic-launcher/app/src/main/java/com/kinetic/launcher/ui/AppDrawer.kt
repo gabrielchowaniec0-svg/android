@@ -194,13 +194,25 @@ fun AppDrawer(
             // Vertical drags anywhere (that nothing scrollable claimed) move the drawer.
             .pointerInput(Unit) {
                 val velocity = VelocityTracker()
+                var total = 0f
+                val upPx = 64.dp.toPx()
+                val flick = 900.dp.toPx()
                 detectVerticalDragGestures(
-                    onDragStart = { velocity.resetTracking() },
-                    onDragEnd = { currentOnDragEnd(velocity.calculateVelocity().y) },
+                    onDragStart = {
+                        velocity.resetTracking()
+                        total = 0f
+                    },
+                    onDragEnd = {
+                        val vy = velocity.calculateVelocity().y
+                        // Swipe up again on the app list: search (home → apps → search).
+                        if (!searching && (total < -upPx || (total < -16.dp.toPx() && vy < -flick))) searching = true
+                        currentOnDragEnd(vy)
+                    },
                     onDragCancel = { currentOnDragEnd(0f) },
                 ) { change, dragAmount ->
                     velocity.addPointerInputChange(change)
                     change.consume()
+                    total += dragAmount
                     currentOnDrag(dragAmount)
                 }
             }

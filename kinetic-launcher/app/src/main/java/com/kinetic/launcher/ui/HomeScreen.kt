@@ -217,6 +217,9 @@ fun KineticHome(
 
     fun closeDrawer(velocityPx: Float = 0f) {
         drawerOpen = false
+        // Next time the list opens normally (not straight into search).
+        searchSignal = 0
+        searchPrefill = ""
         scope.launch { drawerProgress.animateTo(0f, drawerSpring, initialVelocity = -velocityPx / dragRangePx) }
     }
 
@@ -318,17 +321,17 @@ fun KineticHome(
             // Sums: "15% of 84", "12 x 7"…
             if (parsed == null) {
                 SmartSearch.calculate(text)?.let { result ->
-                    ink.say("$text = $result", 6000)
+                    ink.say("$text = $result", 6000, icon = "=")
                     return@launch
                 }
             }
             if (ready != null && ready.answer && allowed) {
                 // Questions: the answer appears right where you wrote.
-                ink.say("${ready.badge}  ${ready.title}" + if (ready.subtitle.isNotBlank()) "\n${ready.subtitle}" else "", 7000)
+                ink.say(ready.done ?: (ready.title + if (ready.subtitle.isNotBlank()) "\n${ready.subtitle}" else ""), 7000, icon = ready.badge)
                 return@launch
             }
             if (ready != null && allowed && !ready.confirm) {
-                if (!ready.quiet) ink.say("✎ ${ready.title}")
+                if (!ready.quiet) ink.say(ready.done ?: ready.title, icon = ready.badge)
                 if (!ready.run(activity)) ink.say("Couldn't do “$text”")
                 return@launch
             }
@@ -337,7 +340,7 @@ fun KineticHome(
             val app = apps.firstOrNull { labelFor(it).replace(" ", "").lowercase() == squash }
                 ?: apps.map { it to Fuzzy.score(text, labelFor(it)) }.filter { it.second >= 2 }.maxByOrNull { it.second }?.first
             if (app != null && ready == null) {
-                ink.say("✎ ${labelFor(app)}")
+                ink.say("Opened ${labelFor(app)}", icon = "↗")
                 launchApp(app)
                 return@launch
             }

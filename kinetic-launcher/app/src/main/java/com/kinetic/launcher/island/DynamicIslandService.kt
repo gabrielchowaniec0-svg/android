@@ -253,6 +253,12 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             title = "Kinetic Dynamic Island touch"
         }
         touchParams = tp
+        // A pull that starts on the island counts wherever the finger goes after that.
+        // (The island's own drag follows the finger; this makes sure a fast pull that
+        // leaves the island still opens it.)
+        var downY = 0f
+        var pulled = false
+        val pullPx = 44 * density
         val t = View(this).apply {
             setOnTouchListener { _, e ->
                 if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
@@ -260,6 +266,22 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                     model.collapse()
                     if (!model.replying.value) model.dismissPeek()
                 } else {
+                    when (e.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downY = e.rawY
+                            pulled = false
+                        }
+                        MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> if (!pulled) {
+                            val dy = e.rawY - downY
+                            if (dy > pullPx) {
+                                pulled = true
+                                if (model.expandFromPull()) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            } else if (dy < -pullPx) {
+                                pulled = true
+                                model.pushUp()
+                            }
+                        }
+                    }
                     val ev = MotionEvent.obtain(e)
                     ev.offsetLocation(e.rawX - e.x, e.rawY - e.y)
                     v.dispatchTouchEvent(ev)
@@ -325,6 +347,9 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     companion object {
         @Volatile
         private var instance: DynamicIslandService? = null
+
+        /** True while the island is on screen (so other parts of Kinetic can talk to it). */
+        val isRunning: Boolean get() = instance?.view != null
 
         /** Locks the phone (double-tap on the wallpaper). False if the island service is off. */
         fun lockScreen(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) ?: false

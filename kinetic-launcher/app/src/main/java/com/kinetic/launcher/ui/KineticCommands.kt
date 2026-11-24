@@ -62,6 +62,8 @@ object KineticCommands {
         val answer: Boolean = false,
         /** Don't show the "✎ …" pill (it would end up in a screenshot). */
         val quiet: Boolean = false,
+        /** What the island says once it's done ("Calling Mom", "100 °C = 212 °F"). Defaults to [title]. */
+        val done: String? = null,
         val run: (Context) -> Boolean,
     )
 
@@ -162,7 +164,7 @@ object KineticCommands {
                 else null
             } else {
                 val name = c?.first ?: number
-                Ready("☏", "Call $name", number + (c?.third?.let { " · $it" } ?: ""), "Call", Manifest.permission.CALL_PHONE) { ctx ->
+                Ready("☏", "Call $name", number + (c?.third?.let { " · $it" } ?: ""), "Call", Manifest.permission.CALL_PHONE, done = "Calling $name") { ctx ->
                     // With permission it calls straight away; otherwise the dialer opens ready to go.
                     val action = if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) Intent.ACTION_CALL else Intent.ACTION_DIAL
                     start(ctx, Intent(action, Uri.parse("tel:" + Uri.encode(number))))
@@ -180,7 +182,10 @@ object KineticCommands {
                         // permission). If that isn't allowed, Messages opens with it typed in.
                         Ready("✉", "Text ${c.first}", "\u201C${parsed.body}\u201D", "Send", Manifest.permission.SEND_SMS, confirm = true) { ctx ->
                             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED && sendSms(ctx, c.second, parsed.body)) {
-                                android.widget.Toast.makeText(ctx, "Sent to ${c.first}", android.widget.Toast.LENGTH_SHORT).show()
+                                val said = "Texted \u201C${parsed.body}\u201D to ${c.first}"
+                                if (!com.kinetic.launcher.island.IslandBus.say("✉", said)) {
+                                    android.widget.Toast.makeText(ctx, said, android.widget.Toast.LENGTH_SHORT).show()
+                                }
                                 true
                             } else {
                                 start(ctx, sms.apply { if (app != null) setPackage(app) })
@@ -217,10 +222,13 @@ object KineticCommands {
             val best = pickMostUsed(context, candidates.map { it.first })
             val chosen = candidates.firstOrNull { it.first == best } ?: candidates.firstOrNull()
             val intent = chosen?.second?.setPackage(chosen.first) ?: Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(parsed.place)))
-            Ready("➤", "Route to ${parsed.place}", appLabel(context, chosen?.first, "Maps"), "Go") { ctx -> start(ctx, intent) }
+            Ready("➤", "Route to ${parsed.place}", appLabel(context, chosen?.first, "Maps"), "Go", done = "Directions to ${parsed.place}") { ctx -> start(ctx, intent) }
         }
-        is Parsed.Timer -> Ready("◷", "Timer for ${prettyDuration(parsed.seconds)}", "Starts right away", "Start") { ctx ->
-            start(ctx, Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, parsed.seconds).putExtra(AlarmClock.EXTRA_SKIP_UI, true))
+        is Parsed.Timer -> Ready(
+            "◷", "Timer for ${prettyDuration(parsed.seconds)}", parsed.label.ifBlank { "Starts right away" }, "Start",
+            done = (if (parsed.label.isNotBlank()) "Reminder in " else "Timer · ") + prettyDuration(parsed.seconds),
+        ) { ctx ->
+            start(ctx, Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, parsed.seconds).putExtra(AlarmClock.EXTRA_MESSAGE, parsed.label).putExtra(AlarmClock.EXTRA_SKIP_UI, true))
         }
         is Parsed.Alarm -> Ready("◔", "Alarm for %d:%02d %s".format(if (parsed.hour % 12 == 0) 12 else parsed.hour % 12, parsed.minute, if (parsed.hour < 12) "AM" else "PM"), parsed.label.ifBlank { "Clock" }, "Set") { ctx ->
             start(
@@ -236,7 +244,7 @@ object KineticCommands {
             val play = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).putExtra(SearchManager.QUERY, parsed.query)
                 .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
             val app = mostUsed(context, play)
-            Ready("♫", "Play ${parsed.query}", appLabel(context, app, "Music"), "Play") { ctx -> start(ctx, play.apply { if (app != null) setPackage(app) }) }
+            Ready("♫", "Play ${parsed.query}", appLabel(context, app, "Music"), "Play", done = "Playing ${parsed.query}") { ctx -> start(ctx, play.apply { if (app != null) setPackage(app) }) }
         }
         is Parsed.YouTube -> {
             val yt = Intent(Intent.ACTION_SEARCH).setPackage("com.google.android.youtube").putExtra(SearchManager.QUERY, parsed.query)

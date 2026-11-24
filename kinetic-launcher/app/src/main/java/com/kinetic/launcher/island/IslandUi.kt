@@ -78,6 +78,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -149,6 +150,8 @@ private sealed interface IslandMode {
     data object ScoreCompact : IslandMode
     data object ScoreExpanded : IslandMode
     data object Peek : IslandMode
+    /** A notification as a small pill: app icon + a couple of words. */
+    data object PeekCompact : IslandMode
 }
 
 /**
@@ -187,6 +190,7 @@ fun DynamicIsland(
     val privacy by model.privacy.collectAsState()
     val peek by model.peek.collectAsState()
     val replying by model.replying.collectAsState()
+    val peekOpen by model.peekOpen.collectAsState()
     val alert by model.alert.collectAsState()
     val expanded by model.expanded.collectAsState()
 
@@ -210,7 +214,7 @@ fun DynamicIsland(
     val mode: IslandMode = when {
         c != null && c.incoming -> IslandMode.CallExpanded
         t != null && t.kind == NotificationHub.TimerInfo.Kind.Alarm -> IslandMode.AlarmExpanded
-        p != null -> IslandMode.Peek
+        p != null -> if (peekOpen || replying) IslandMode.Peek else IslandMode.PeekCompact
         alert != null -> IslandMode.Alert(alert!!)
         primary == null -> IslandMode.Idle
         expanded -> when (primary) {
@@ -244,6 +248,12 @@ fun DynamicIsland(
             is IslandAlert.Focus -> (CompactW + 24.dp) to pillH
             is IslandAlert.LowBattery -> (CompactW + 30.dp) to pillH
             is IslandAlert.Lock -> (restW + 44.dp) to pillH
+            // A message hangs below the camera; wider for longer text, two lines if needed.
+            is IslandAlert.Say -> {
+                val textW = 30.dp + (md.alert.text.length * 7.6f).dp
+                val wide = minOf(fullW, maxOf(restW + 40.dp, textW))
+                wide to (pillH + if (textW > fullW) 50.dp else 30.dp)
+            }
             else -> CompactW to pillH
         }
         IslandMode.MediaCompact, IslandMode.CallCompact, IslandMode.TimerCompact -> CompactW to pillH
@@ -257,7 +267,8 @@ fun DynamicIsland(
         IslandMode.TripCompact, IslandMode.ScoreCompact -> (CompactW + 40.dp) to pillH
         IslandMode.TripExpanded -> fullW to 118.dp + cameraRoom
         IslandMode.ScoreExpanded -> fullW to 104.dp + cameraRoom
-        IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH) + cameraRoom
+        IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH + 52.dp) + cameraRoom
+        IslandMode.PeekCompact -> minOf(fullW, maxOf(CompactW, ((p?.summary?.length ?: 10) * 14).dp + pillH + 70.dp)) to pillH
     }
     fun radiusFor(height: Dp) = if (height <= pillH) height / 2 else ExpandedRadius
     val (targetW, targetH) = sizeOf(mode)
@@ -271,6 +282,7 @@ fun DynamicIsland(
         IslandMode.NavCompact -> IslandMode.NavExpanded
         IslandMode.TripCompact -> IslandMode.TripExpanded
         IslandMode.ScoreCompact -> IslandMode.ScoreExpanded
+        IslandMode.PeekCompact -> IslandMode.Peek
         else -> null
     }
     val collapsesTo: IslandMode? = when (mode) {
@@ -365,7 +377,8 @@ fun DynamicIsland(
     val squish by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "squish")
 
     val compactish = mode == IslandMode.MediaCompact || mode == IslandMode.CallCompact || mode == IslandMode.MediaMinimal ||
-        mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact || mode == IslandMode.TripCompact || mode == IslandMode.ScoreCompact
+        mode == IslandMode.TimerCompact || mode == IslandMode.NavCompact || mode == IslandMode.TripCompact || mode == IslandMode.ScoreCompact ||
+        mode == IslandMode.PeekCompact
     val isExpanded = mode == IslandMode.MediaExpanded || mode == IslandMode.TimerExpanded || mode == IslandMode.NavExpanded ||
         mode == IslandMode.TripExpanded || mode == IslandMode.ScoreExpanded ||
         (mode == IslandMode.CallExpanded && c?.incoming == false)
@@ -484,7 +497,7 @@ fun DynamicIsland(
                                 val p = morph.value
                                 val opening = expandsTo != null
                                 val commit = to != null && (if (opening) (p > 0.35f && vy > -flick) || vy > flick else (p > 0.35f && vy < flick) || vy < -flick)
-                                if (mode == IslandMode.Peek && !replying && (rawY < -pullDist * 0.25f || vy < -flick)) model.dismissPeek()
+                                if ((mode == IslandMode.Peek || mode == IslandMode.PeekCompact) && !replying && (rawY < -pullDist * 0.25f || vy < -flick)) model.dismissPeek()
                                 if (commit) {
                                     haptic()
                                     if (opening) model.expand() else model.collapse()
@@ -521,7 +534,7 @@ fun DynamicIsland(
                             },
                             onTap = {
                                 when (mode) {
-                                    IslandMode.Peek -> if (!replying) model.openPeek()
+                                    IslandMode.Peek, IslandMode.PeekCompact -> if (!replying) model.openPeek()
                                     IslandMode.AlarmExpanded -> model.openTimer()
                                     IslandMode.MediaCompact, IslandMode.MediaMinimal, IslandMode.MediaExpanded -> open(Activity.Media)
                                     IslandMode.CallCompact, IslandMode.CallExpanded -> open(Activity.Call)
@@ -609,6 +622,7 @@ private fun IslandContent(
                         IslandMode.ScoreCompact -> model.score.value?.let { ScoreCompact(it) }
                         IslandMode.ScoreExpanded -> model.score.value?.let { ScoreExpanded(it) }
                         IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
+                        IslandMode.PeekCompact -> p?.let { PeekCompactContent(it) }
                     }
     }
 }
@@ -766,6 +780,27 @@ private fun AlertContent(alert: IslandAlert) {
             Modifier.fillMaxSize().padding(top = (s - 4.dp).coerceAtLeast(0.dp), bottom = 4.dp),
             contentAlignment = Alignment.Center,
         ) { FaceScanGlyph(success = alert.success, failed = alert.failed, modifier = Modifier.size(32.dp)) }
+        is IslandAlert.Say -> Box(
+            Modifier.fillMaxSize().padding(top = s - 2.dp, start = 14.dp, end = 14.dp, bottom = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (alert.icon.isNotBlank()) {
+                    Text(alert.icon, color = Blue, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(7.dp))
+                }
+                Text(
+                    alert.text,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
         is IslandAlert.LowBattery -> CompactSplit(
             leading = { Text("Low Battery", color = Color.White, fontSize = compactSp(), fontWeight = FontWeight.SemiBold, maxLines = 1) },
             trailing = {
@@ -1059,7 +1094,36 @@ private fun NavExpanded(n: NotificationHub.NavInfo) {
     }
 }
 
-/** A message dropping down from the island, with an inline reply box. */
+/** The small notification pill: the app's icon on the left, a couple of words on the right. */
+@Composable
+private fun PeekCompactContent(p: NotificationHub.MessagePeek) {
+    val s = LocalPill.current
+    val icon = remember(p.icon) { p.icon?.asImageBitmap() }
+    CompactSplit(
+        leading = {
+            if (icon != null) {
+                Image(icon, null, contentScale = ContentScale.Crop, modifier = Modifier.size(s - 9.dp).clip(RoundedCornerShape((s - 9.dp) * 0.3f)))
+            } else {
+                Box(Modifier.size(s - 9.dp).clip(RoundedCornerShape((s - 9.dp) * 0.3f)).background(Color(0xFF2C2C2E)))
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(p.appName, color = Grey, fontSize = compactSp(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        trailing = {
+            Text(
+                p.summary.ifBlank { "New notification" },
+                color = Color.White,
+                fontSize = compactSp(),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        padding = 6.dp,
+    )
+}
+
+/** A notification opened from the island: what it says, a reply field and its buttons. */
 @Composable
 private fun PeekContent(p: NotificationHub.MessagePeek, replying: Boolean, model: IslandModel) {
     val icon = remember(p.icon) { p.icon?.asImageBitmap() }
@@ -1078,23 +1142,51 @@ private fun PeekContent(p: NotificationHub.MessagePeek, replying: Boolean, model
                     Text(p.text, color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (p.reply != null && !replying) {
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    Modifier
-                        .height(34.dp)
-                        .clip(RoundedCornerShape(17.dp))
-                        .background(Color(0xFF2C2C2E))
-                        .clickable { model.startReply() }
-                        .padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text("Reply", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-            }
         }
         if (replying) {
             Spacer(Modifier.height(12.dp))
             ReplyBox(onSend = model::sendReply, onCancel = model::dismissPeek)
+        } else {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (p.reply != null) {
+                    // Looks like a text field; tapping it brings up the keyboard.
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(19.dp))
+                            .background(Color(0xFF1C1C1E))
+                            .clickable { model.startReply() }
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) { Text("Reply…", color = Grey, fontSize = 14.sp, maxLines = 1) }
+                }
+                val buttons = if (p.reply != null) p.actions.take(1) else p.actions
+                buttons.forEach { a ->
+                    PeekButton(a.title.toString(), Modifier.then(if (p.reply == null) Modifier.weight(1f) else Modifier)) { model.pressPeekAction(a) }
+                }
+                if (p.reply == null && p.actions.isEmpty()) {
+                    PeekButton("Open", Modifier.weight(1f)) { model.openPeek() }
+                }
+                PeekButton("Dismiss", Modifier.then(if (p.reply == null) Modifier.weight(1f) else Modifier), muted = true) { model.clearPeekNotification() }
+            }
         }
+    }
+}
+
+@Composable
+private fun PeekButton(label: String, modifier: Modifier = Modifier, muted: Boolean = false, onClick: () -> Unit) {
+    Box(
+        modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(19.dp))
+            .background(if (muted) Color(0xFF2C2C2E) else Color(0xFF3A3A3C))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (muted) Color.White.copy(alpha = 0.8f) else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1206,37 +1298,48 @@ private fun TimerGlyph(color: Color, modifier: Modifier) = Canvas(modifier) {
 /** A padlock; when [open] the shackle lifts and swings open, like iOS after Face ID. */
 @Composable
 private fun LockGlyph(open: Boolean, modifier: Modifier) {
-    val progress = remember { Animatable(0f) }
+    // Opening: the shackle pops straight up out of the body, then slides over to the
+    // right so it hangs off the side (no hinge). Locking plays it backwards and snaps shut.
+    val lift = remember { Animatable(if (open) 0f else 1f) }
+    val slide = remember { Animatable(if (open) 0f else 1f) }
     LaunchedEffect(open) {
         if (open) {
-            delay(120)
-            progress.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 300f))
+            lift.snapTo(0f)
+            slide.snapTo(0f)
+            delay(110)
+            lift.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 620f))
+            slide.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 340f))
         } else {
-            progress.snapTo(0f)
+            lift.snapTo(1f)
+            slide.snapTo(1f)
+            delay(90)
+            slide.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 420f))
+            lift.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = 900f))
         }
     }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
-        val p = progress.value
-        val bodyTop = h * 0.45f
-        drawRoundRect(Color.White, Offset(0f, bodyTop), Size(w, h - bodyTop), CornerRadius(w * 0.16f))
-        // Shackle: lifts up and swings to the right as it opens.
-        val stroke = w * 0.16f
-        val lift = h * 0.12f * p
-        rotate(degrees = 28f * p, pivot = Offset(w * 0.78f, bodyTop - lift)) {
-            drawArc(
-                color = Color.White,
-                startAngle = 180f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = Offset(w * 0.2f, h * 0.06f - lift),
-                size = Size(w * 0.6f, h * 0.6f),
-                style = Stroke(stroke),
-            )
-            drawLine(Color.White, Offset(w * 0.2f + stroke / 2 - stroke / 2, h * 0.36f - lift), Offset(w * 0.2f, bodyTop - lift * 0.2f), strokeWidth = stroke)
-            drawLine(Color.White, Offset(w * 0.8f, h * 0.36f - lift), Offset(w * 0.8f, bodyTop), strokeWidth = stroke)
+        val bodyTop = h * 0.46f
+        val bodyL = w * 0.12f
+        val bodyW = w * 0.76f
+        val stroke = w * 0.14f
+        // Shackle: an upside-down U, legs sunk into the body when closed.
+        val legL = w * 0.29f
+        val legR = w * 0.71f
+        val arcTop = h * 0.05f
+        val up = h * 0.17f * lift.value
+        val dx = w * 0.30f * slide.value
+        val path = Path().apply {
+            val r = (legR - legL) / 2f
+            moveTo(legL + dx, bodyTop + stroke * 0.6f - up)
+            lineTo(legL + dx, arcTop + r - up)
+            arcTo(Rect(legL + dx, arcTop - up, legR + dx, arcTop + 2 * r - up), 180f, 180f, false)
+            // Once it has slid off, the right leg hangs a little shorter (it's outside the body).
+            lineTo(legR + dx, bodyTop + stroke * 0.6f - up - h * 0.08f * slide.value)
         }
+        drawPath(path, Color.White, style = Stroke(stroke, cap = StrokeCap.Round))
+        drawRoundRect(Color.White, Offset(bodyL, bodyTop), Size(bodyW, h - bodyTop), CornerRadius(w * 0.14f))
     }
 }
 

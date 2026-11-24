@@ -66,6 +66,8 @@ sealed interface IslandAlert {
     /** Face ID–style scan while the lock screen is waiting; [success] = recognised. */
     /** Face scan: scanning, then a tick when it works, or a little shake if it didn't. */
     data class Scan(val success: Boolean, val failed: Boolean = false) : IslandAlert
+    /** A short message from elsewhere in Kinetic (S Pen answers, "Calling Mom"…). */
+    data class Say(val icon: String, val text: String) : IslandAlert
     /** Battery just dropped to 15% (when One UI warns too). */
     data class LowBattery(val level: Int) : IslandAlert
     /** A Focus was switched on or off. */
@@ -136,6 +138,10 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     private val _peek = MutableStateFlow<NotificationHub.MessagePeek?>(null)
     /** A message dropping down from the island right now. */
     val peek: StateFlow<NotificationHub.MessagePeek?> = _peek.asStateFlow()
+
+    /** The notification peek is open (buttons and reply) rather than the small pill. */
+    private val _peekOpen = MutableStateFlow(false)
+    val peekOpen: StateFlow<Boolean> = _peekOpen.asStateFlow()
 
     private val _replying = MutableStateFlow(false)
     /** True while the reply box is open (the island's window needs the keyboard then). */
@@ -290,9 +296,14 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 if (m == null || m.postedAt <= lastPeekAt) return@collect
                 lastPeekAt = m.postedAt
                 _replying.value = false
+                _peekOpen.value = false
                 _peek.value = m
-                schedulePeekEnd(5000)
+                schedulePeekEnd(4500)
             }
+        }
+        // Messages from the rest of Kinetic (S Pen answers…).
+        scope.launch {
+            IslandBus.says.collect { s -> showAlert(IslandAlert.Say(s.icon, s.text)) }
         }
     }
 
@@ -320,14 +331,55 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         peekJob?.cancel()
         peekJob = scope.launch {
             delay(ms)
-            if (!_replying.value) _peek.value = null
+            if (!_replying.value) {
+                _peek.value = null
+                _peekOpen.value = false
+            }
         }
     }
 
     fun dismissPeek() {
         peekJob?.cancel()
         _replying.value = false
+        _peekOpen.value = false
         _peek.value = null
+    }
+
+    /** Opens the notification peek into its buttons (pull down or hold). */
+    fun openPeekActions() {
+        if (_peek.value == null) return
+        _peekOpen.value = true
+        schedulePeekEnd(9000)
+    }
+
+    /** Clears the notification itself (the Dismiss button). */
+    fun clearPeekNotification() {
+        _peek.value?.key?.let { NotificationHub.cancel(it) }
+        dismissPeek()
+    }
+
+    /** Presses one of the peeked notification's buttons (Mark as read, Archive…). */
+    fun pressPeekAction(action: android.app.Notification.Action) {
+        action.actionIntent?.let { sendPending(context, it) }
+        dismissPeek()
+    }
+
+    /** A pull down that started on the island. True if it opened something. */
+    fun expandFromPull(): Boolean {
+        if (_peek.value != null) {
+            if (_peekOpen.value) return false
+            openPeekActions()
+            return true
+        }
+        if (_expanded.value) return false
+        val before = _expanded.value
+        expand()
+        return _expanded.value != before
+    }
+
+    /** A push up that started on the island: folds it, or sends a peek away. */
+    fun pushUp() {
+        if (_peek.value != null && !_replying.value) dismissPeek() else collapse()
     }
 
     fun openPeek() {
@@ -336,12 +388,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     fun touchPeek() {
-        if (_peek.value != null && !_replying.value) schedulePeekEnd(6000)
+        if (_peek.value != null && !_replying.value) schedulePeekEnd(if (_peekOpen.value) 9000 else 6000)
     }
 
     fun startReply() {
         if (_peek.value?.reply == null) return
         peekJob?.cancel()
+        _peekOpen.value = true
         _replying.value = true
     }
 
@@ -397,6 +450,10 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     fun expand() {
+        if (_peek.value != null) {
+            openPeekActions()
+            return
+        }
         if (_media.value == null && call.value == null && timer.value == null && nav.value == null &&
             trip.value == null && score.value == null
         ) return
@@ -507,6 +564,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                         else -> 4000
                     }
                     is IslandAlert.LowBattery -> 5000
+                    is IslandAlert.Say -> (2600L + alert.text.length * 45L).coerceAtMost(7000L)
                     else -> 2200
                 }
             )
