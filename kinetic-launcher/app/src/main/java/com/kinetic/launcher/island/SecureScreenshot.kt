@@ -99,7 +99,8 @@ class SecureScreenshot(
         }
     }
 
-    private fun capture() {
+    /** Takes a secure screenshot now (also used by the "secure screenshot" command). */
+    fun capture() {
         service.takeScreenshot(
             Display.DEFAULT_DISPLAY,
             service.mainExecutor,

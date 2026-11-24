@@ -33,6 +33,11 @@
 
     <!-- Plane spotter: the live camera view behind the flight labels. -->
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Commands: "when's my dentist appointment", "text mom running late" (send). -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Vault: pick photos/videos to move in (and remove the originals). -->

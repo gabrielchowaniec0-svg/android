@@ -38,7 +38,15 @@ object KineticCommands {
         data class Torch(val on: Boolean) : Parsed
         data class Panel(val action: String, val label: String) : Parsed
         data object Planes : Parsed
+        data class Open(val app: String) : Parsed
+        data class Act(val action: Assistant.Action) : Parsed
+        data class Ask(val question: Assistant.Question) : Parsed
+        data class Search(val query: String) : Parsed
     }
+
+    /** Hidden apps (while they're hidden): "open …" never reveals them. Set by the home screen. */
+    @Volatile
+    var hiddenPackages: Set<String> = emptySet()
 
     /** A command ready to run, shown as a card at the top of search. */
     data class Ready(
@@ -48,6 +56,12 @@ object KineticCommands {
         val actionLabel: String,
         /** Runtime permission needed first (asked when you run it), if any. */
         val permission: String? = null,
+        /** Written with the S Pen: show it in search to confirm instead of running it (e.g. sending a text). */
+        val confirm: Boolean = false,
+        /** An answer to a question (weather, calendar…): show it, don't "run" it. */
+        val answer: Boolean = false,
+        /** Don't show the "✎ …" pill (it would end up in a screenshot). */
+        val quiet: Boolean = false,
         val run: (Context) -> Boolean,
     )
 
@@ -75,6 +89,8 @@ object KineticCommands {
         // Forgive a typo in the first word ("rout to ohare", "cal mom", "tiemr 5 min").
         val q = Fuzzy.fixFirstWord(input, VERBS)
         if (q.length < 3) return null
+        // Things the assistant should get first ("open camera" isn't "open" + a contact…).
+        Assistant.parse(input)?.let { if (it is Parsed.Act || it is Parsed.Ask) return it }
         CALL.matchEntire(q)?.let { return Parsed.Call(it.groupValues[1].trim()) }
         TEXT_MARKED.matchEntire(q)?.let { return Parsed.Text(it.groupValues[1].trim(), it.groupValues[2].trim()) }
         TEXT.matchEntire(q)?.let { return Parsed.Text(it.groupValues[1].trim(), it.groupValues[2].trim()) }
@@ -109,7 +125,7 @@ object KineticCommands {
             "plane", "planes", "plane spotter", "spot planes", "spot plane", "flights", "what plane", "whats that plane", "what's that plane" ->
                 return Parsed.Planes
         }
-        return null
+        return Assistant.parse(input)
     }
 
     /** "10 min", "1h 30m", "90 seconds", "half an hour", "an hour", "5". */
@@ -159,8 +175,21 @@ object KineticCommands {
                 c != null -> {
                     val sms = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(c.second))).putExtra("sms_body", parsed.body)
                     val app = mostUsed(context, sms)
-                    Ready("✉", "Text ${c.first}", parsed.body.ifBlank { "New message" } + " · " + appLabel(context, app, "Messages"), "Text") { ctx ->
-                        start(ctx, sms.apply { if (app != null) setPackage(app) })
+                    if (parsed.body.isNotBlank()) {
+                        // With a message: send it straight away (Android asks once for SMS
+                        // permission). If that isn't allowed, Messages opens with it typed in.
+                        Ready("✉", "Text ${c.first}", "\u201C${parsed.body}\u201D", "Send", Manifest.permission.SEND_SMS, confirm = true) { ctx ->
+                            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED && sendSms(ctx, c.second, parsed.body)) {
+                                android.widget.Toast.makeText(ctx, "Sent to ${c.first}", android.widget.Toast.LENGTH_SHORT).show()
+                                true
+                            } else {
+                                start(ctx, sms.apply { if (app != null) setPackage(app) })
+                            }
+                        }
+                    } else {
+                        Ready("✉", "Text ${c.first}", "New message · " + appLabel(context, app, "Messages"), "Text") { ctx ->
+                            start(ctx, sms.apply { if (app != null) setPackage(app) })
+                        }
                     }
                 }
                 !hasContacts(context) -> Ready("✉", "Text ${parsed.who}", "Allow contacts so Kinetic can find them", "Allow", Manifest.permission.READ_CONTACTS) { false }
@@ -220,6 +249,10 @@ object KineticCommands {
         Parsed.Planes -> Ready("✈", "Plane spotter", "Point your phone at a plane in the sky", "Open") { ctx ->
             start(ctx, Intent(ctx, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java))
         }
+        is Parsed.Open -> Assistant.resolveOpen(context, parsed.app)
+        is Parsed.Act -> Assistant.resolveAction(context, parsed.action)
+        is Parsed.Ask -> Assistant.resolveQuestion(context, parsed.question)
+        is Parsed.Search -> Assistant.resolveSearch(parsed.query)
     }
 
     // ---- "the app you use most" --------------------------------------------------------
@@ -351,6 +384,15 @@ object KineticCommands {
         } else {
             false
         }
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun sendSms(context: Context, number: String, body: String): Boolean = try {
+        val sm = context.getSystemService(android.telephony.SmsManager::class.java)
+        val parts = sm.divideMessage(body)
+        if (parts.size > 1) sm.sendMultipartTextMessage(number, null, parts, null, null) else sm.sendTextMessage(number, null, body, null, null)
+        true
     } catch (_: Exception) {
         false
     }

@@ -329,6 +329,25 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         /** Locks the phone (double-tap on the wallpaper). False if the island service is off. */
         fun lockScreen(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) ?: false
 
+        /** Runs a system action (screenshot, notifications…). False if the island service is off. */
+        fun globalAction(action: Int): Boolean = instance?.performGlobalAction(action) ?: false
+
+        /** A normal screenshot after [delayMs] (so Kinetic's own ink/search has faded away). */
+        fun screenshotLater(delayMs: Long): Boolean {
+            val s = instance ?: return false
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ s.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT) }, delayMs)
+            return true
+        }
+
+        /** A screenshot sealed straight into the Vault after [delayMs]. False if it can't be done. */
+        fun secureScreenshotLater(delayMs: Long): Boolean {
+            val s = instance ?: return false
+            val shot = s.secureShot ?: return false
+            if (!com.kinetic.launcher.vault.VaultCrypto.canDrop(s)) return false
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ shot.capture() }, delayMs)
+            return true
+        }
+
         /** True once the user has switched the island on in Accessibility settings. */
         fun isEnabled(context: Context): Boolean {
             val am = context.getSystemService(AccessibilityManager::class.java)

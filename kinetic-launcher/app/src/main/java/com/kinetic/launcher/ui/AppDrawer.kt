@@ -62,6 +62,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -573,7 +574,8 @@ private fun SearchPanel(
 
     // ---- Kinetic Commands: "call Mom", "route to O'Hare", "timer 10 min"… ----
     val parsedCommand = remember(q) { KineticCommands.parse(q) }
-    val command by produceState<KineticCommands.Ready?>(initialValue = null, parsedCommand, contactsAllowed) {
+    var recheck by remember { mutableIntStateOf(0) }
+    val command by produceState<KineticCommands.Ready?>(initialValue = null, parsedCommand, contactsAllowed, recheck) {
         val pc = parsedCommand
         value = if (pc == null) null else withContext(Dispatchers.IO) { KineticCommands.resolve(context, pc) }
     }
@@ -583,6 +585,9 @@ private fun SearchPanel(
         pendingCommand = null
         if (cmd?.permission == Manifest.permission.READ_CONTACTS) {
             contactsAllowed = granted
+        } else if (cmd != null && cmd.actionLabel == "Allow") {
+            // Calendar / location just allowed: look again.
+            recheck++
         } else if (cmd != null && cmd.run(context)) {
             onLeave()
         }
