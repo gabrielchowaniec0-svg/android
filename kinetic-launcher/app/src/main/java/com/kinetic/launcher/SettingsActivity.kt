@@ -342,6 +342,12 @@ class SettingsActivity : ComponentActivity() {
                 SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
                 SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
                 SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
+                SwitchRow("Kinetic status bar", "Kinetic's own time, battery and signal around the island. Hide Samsung's first: Good Lock → QuickStar", s.statusBar, bool(KineticSettings.STATUS_BAR))
+                if (s.statusBar) ChoiceRow(
+                    "Status bar text",
+                    listOf("auto" to "Auto", "light" to "White", "dark" to "Black"),
+                    s.statusBarTint,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.STATUS_BAR_TINT, it) }
                 SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
                 SwitchRow("Brightness slider", "Changing brightness shows it in the island (when auto-brightness is off)", s.islandBrightness, bool(KineticSettings.ISLAND_BRIGHTNESS))
                 SwitchRow("Up next", "Your next calendar event counts down 15 minutes before", s.islandUpNext, bool(KineticSettings.ISLAND_UP_NEXT))

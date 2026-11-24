@@ -33,6 +33,10 @@ object KineticSettings {
         val islandEarbuds: Boolean = true,
         /** Volume keys show Kinetic's slider in the island instead of One UI's. */
         val islandVolume: Boolean = true,
+        /** Kinetic draws its own status bar (time, battery, signal) around the island. */
+        val statusBar: Boolean = false,
+        /** "auto" (matches the app underneath), "light" or "dark" text. */
+        val statusBarTint: String = "auto",
         /** Brightness changes show a slider in the island. */
         val islandBrightness: Boolean = true,
         /** The next calendar event counts down in the island 15 minutes before. */
@@ -100,6 +104,8 @@ object KineticSettings {
     const val NEW_APPS_FOLDER = "new_apps_folder"
     const val ISLAND_EARBUDS = "island_earbuds"
     const val ISLAND_VOLUME = "island_volume"
+    const val STATUS_BAR = "status_bar"
+    const val STATUS_BAR_TINT = "status_bar_tint"
     const val ISLAND_BRIGHTNESS = "island_brightness"
     const val ISLAND_UP_NEXT = "island_up_next"
     const val ISLAND_RAIN = "island_rain"
@@ -169,6 +175,8 @@ object KineticSettings {
         newAppsFolder = p.getBoolean(NEW_APPS_FOLDER, true),
         islandEarbuds = p.getBoolean(ISLAND_EARBUDS, true),
         islandVolume = p.getBoolean(ISLAND_VOLUME, true),
+        statusBar = p.getBoolean(STATUS_BAR, false),
+        statusBarTint = p.getString(STATUS_BAR_TINT, "auto") ?: "auto",
         islandBrightness = p.getBoolean(ISLAND_BRIGHTNESS, true),
         islandUpNext = p.getBoolean(ISLAND_UP_NEXT, true),
         islandRain = p.getBoolean(ISLAND_RAIN, true),

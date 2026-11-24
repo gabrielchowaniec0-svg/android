@@ -554,6 +554,12 @@ fun DynamicIsland(
 
     CompositionLocalProvider(LocalPill provides pillH) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            // Kinetic's status bar, either side of the island (moves with it every frame).
+            run {
+                val bubbleExtra = if (secondary != null && bubble > 0.01f) (BubbleGap + pillH) * bubble else 0.dp
+                val cx = screenWidth / 2 + centerOffset
+                KineticStatusBar(screenWidth, top, pillH, cx - w / 2, cx + w / 2 + bubbleExtra)
+            }
             // ---- the bubble for a second activity --------------------------------------
             if (bubble > 0.01f && secondary != null) {
                 val offsetX = centerOffset + (w / 2 + BubbleGap + pillH / 2) * bubble

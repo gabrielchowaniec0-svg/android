@@ -103,7 +103,12 @@ class SecureScreenshot(
     }
 
     /** Takes a secure screenshot now (also used by the "secure screenshot" command). */
-    fun capture() {
+    fun capture(retry: Boolean = true) {
+        // The status bar's colour check uses screenshots too; Android allows about 3 a second.
+        if (StatusBarData.sampling && retry) {
+            handler.postDelayed({ capture(retry = false) }, 400)
+            return
+        }
         service.takeScreenshot(
             Display.DEFAULT_DISPLAY,
             service.mainExecutor,
@@ -115,7 +120,13 @@ class SecureScreenshot(
                     }
                 }
 
-                override fun onFailure(errorCode: Int) = onFailed()
+                override fun onFailure(errorCode: Int) {
+                    if (retry && errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
+                        handler.postDelayed({ capture(retry = false) }, 400)
+                    } else {
+                        onFailed()
+                    }
+                }
             },
         )
     }
