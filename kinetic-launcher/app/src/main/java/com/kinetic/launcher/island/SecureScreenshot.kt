@@ -50,15 +50,21 @@ class SecureScreenshot(
         val code = event.keyCode
         if (code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) return false
         if (!active()) return false
-        if (event.action == KeyEvent.ACTION_UP) return true
+        val island = VolumeHud.enabled()
+        if (event.action == KeyEvent.ACTION_UP) {
+            VolumeHud.stopRepeat()
+            // A long hold is a volume change, not part of the gesture.
+            if (event.eventTime - event.downTime > 350) seq.clear()
+            return true
+        }
         if (event.action != KeyEvent.ACTION_DOWN) return true
         val dir = if (code == KeyEvent.KEYCODE_VOLUME_UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
 
-        // Holding the key: plain volume change with the panel.
+        // Holding the key: plain volume change (with the island, Kinetic repeats by itself).
         if (event.repeatCount > 0) {
             seq.clear()
             handler.removeCallbacks(showPanel)
-            adjust(dir, showUi = true)
+            if (!island) adjust(dir, showUi = true)
             return true
         }
 
@@ -75,8 +81,20 @@ class SecureScreenshot(
         handler.removeCallbacks(showPanel)
         if (seq.size == pattern.size) {
             seq.clear()
+            VolumeHud.stopRepeat()
             adjust(dir, showUi = false) // back to where the volume started
-            capture()
+            if (island) {
+                // Slide the volume slider away first so it isn't in the screenshot.
+                IslandBus.hideLevel()
+                handler.postDelayed({ capture() }, 380)
+            } else {
+                capture()
+            }
+        } else if (island) {
+            // The island slider shows straight away (it's hidden again before a capture).
+            adjust(dir, showUi = false)
+            VolumeHud.show(service)
+            VolumeHud.startRepeat(service, dir)
         } else if (seq.isNotEmpty()) {
             adjust(dir, showUi = false)
             handler.postDelayed(showPanel, GAP_MS)

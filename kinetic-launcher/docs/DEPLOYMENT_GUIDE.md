@@ -643,3 +643,9 @@ What it shows:
 - Full-screen videos and games hide it, like Samsung's.
 
 Notes: 5G/LTE needs Android to share the network type; if it doesn't on your phone, only the signal bars show. Swiping down from the top still opens Samsung's notification shade.
+
+### Status bar polish + volume buttons
+- The status bar now reaches out to the screen edges like One UI (time on the far left, battery on the far right), with tidier spacing.
+- The battery is always plain white (black on light apps) with the number inside; it only turns red at 5% or less.
+- Volume buttons: the island slider appears instantly on every press (it used to wait ~half a second when Secure screenshot was on), and **holding** a button keeps changing the volume, using your phone's own key-repeat timing (first repeat after about 0.4 s, then a step every ~50 ms).
+- Secure screenshot (Up, Up, Down, Down) still works: the slider slides away just before the capture, so it isn't in the screenshot.

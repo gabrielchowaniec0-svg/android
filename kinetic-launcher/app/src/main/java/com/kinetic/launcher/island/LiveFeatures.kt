@@ -129,14 +129,35 @@ object LiveFeatures {
 // ======================================================================================
 object VolumeHud {
     private var consumedDown = false
+    private val handler = Handler(Looper.getMainLooper())
+    private var repeatDir = 0
+    private var repeatCtx: Context? = null
+
+    /** Holding a volume key: one step every key-repeat interval, like the system does. */
+    private val repeater = object : Runnable {
+        override fun run() {
+            val c = repeatCtx ?: return
+            step(c, repeatDir)
+            handler.postDelayed(this, repeatInterval())
+        }
+    }
+
+    // Android's own key-repeat timings (the phone's settings), with sensible limits.
+    private fun repeatTimeout() = android.view.ViewConfiguration.getKeyRepeatTimeout().toLong().coerceIn(250L, 600L)
+    private fun repeatInterval() = android.view.ViewConfiguration.getKeyRepeatDelay().toLong().coerceIn(45L, 120L)
 
     fun enabled(): Boolean = KineticSettings.current.islandVolume && DynamicIslandService.isRunning
 
     fun onKey(context: Context, e: KeyEvent): Boolean {
         val code = e.keyCode
         if (code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) return false
-        if (e.action == KeyEvent.ACTION_UP) return consumedDown.also { consumedDown = false }
+        if (e.action == KeyEvent.ACTION_UP) {
+            stopRepeat()
+            return consumedDown.also { consumedDown = false }
+        }
         if (e.action != KeyEvent.ACTION_DOWN) return consumedDown
+        // Repeats from the system (if any) are ignored: Kinetic runs its own while you hold.
+        if (e.repeatCount > 0) return consumedDown
         consumedDown = false
         if (!enabled()) return false
         val audio = context.getSystemService(AudioManager::class.java)
@@ -144,11 +165,30 @@ object VolumeHud {
         if (audio.mode != AudioManager.MODE_NORMAL) return false
         if (!context.getSystemService(PowerManager::class.java).isInteractive) return false
         val dir = if (code == KeyEvent.KEYCODE_VOLUME_UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        val ok = runCatching { audio.adjustSuggestedStreamVolume(dir, AudioManager.USE_DEFAULT_STREAM_TYPE, 0) }.isSuccess
-        if (!ok) return false
+        if (!step(context, dir)) return false
         consumedDown = true
-        show(context)
+        startRepeat(context, dir)
         return true
+    }
+
+    /** One volume step, shown straight away in the island. */
+    fun step(context: Context, dir: Int): Boolean {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val ok = runCatching { audio.adjustSuggestedStreamVolume(dir, AudioManager.USE_DEFAULT_STREAM_TYPE, 0) }.isSuccess
+        if (ok) show(context)
+        return ok
+    }
+
+    fun startRepeat(context: Context, dir: Int) {
+        stopRepeat()
+        repeatDir = dir
+        repeatCtx = context.applicationContext
+        handler.postDelayed(repeater, repeatTimeout())
+    }
+
+    fun stopRepeat() {
+        handler.removeCallbacks(repeater)
+        repeatCtx = null
     }
 
     fun show(context: Context, forced: Int? = null) {

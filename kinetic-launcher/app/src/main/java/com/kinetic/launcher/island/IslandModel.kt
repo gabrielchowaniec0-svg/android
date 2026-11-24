@@ -365,7 +365,18 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         scope.launch {
             IslandBus.says.collect { s -> showAlert(IslandAlert.Say(s.icon, s.text)) }
         }
-        scope.launch { IslandBus.levels.collect { l -> showAlert(IslandAlert.Level(l.kind, l.percent)) } }
+        scope.launch {
+            IslandBus.levels.collect { l ->
+                if (l.kind == "hide") {
+                    if (_alert.value is IslandAlert.Level) {
+                        alertJob?.cancel()
+                        _alert.value = null
+                    }
+                } else {
+                    showAlert(IslandAlert.Level(l.kind, l.percent))
+                }
+            }
+        }
         scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(c.icon, c.text)) } }
         LiveFeatures.start(context, scope)
         scope.launch {
