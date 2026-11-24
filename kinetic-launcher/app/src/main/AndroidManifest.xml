@@ -185,6 +185,17 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Kinetic" />
 
+        <!-- Secure video: records straight into the Vault (no code needed, works on the lock screen). -->
+        <activity
+            android:name=".vault.SecureVideoActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="Secure video"
+            android:screenOrientation="portrait"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.Kinetic" />
+
         <!-- Level, ruler and sound meter ("level", "ruler", "decibels"). -->
         <activity
             android:name=".ui.ToolsActivity"

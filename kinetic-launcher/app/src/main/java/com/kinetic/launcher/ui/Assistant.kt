@@ -40,7 +40,7 @@ import kotlin.math.roundToInt
 object Assistant {
 
     enum class Action {
-        Screenshot, SecureScreenshot, Video, Photo, Selfie, Lock, Vault, Notifications,
+        Screenshot, SecureScreenshot, SecureVideo, Video, Photo, Selfie, Lock, Vault, Notifications,
         QuickSettings, Bluetooth, PhoneSettings, KineticSettings, Focus, Wallpaper, Recents,
     }
 
@@ -126,6 +126,7 @@ object Assistant {
 
     private fun action(q: String): Action? = when {
         Regex("""^(take (a |the )?)?(secure|private|vault|hidden|secret) (screen ?shot|screen capture|capture)$""").matches(q) -> Action.SecureScreenshot
+        Regex("""^((record|take|start|film|shoot) (a )?)?(secure|private|vault|hidden|secret) (video|recording|clip|movie)$|^record (a )?video (to|into|in) (the )?vault$""").matches(q) -> Action.SecureVideo
         Regex("""^(take (a |the )?)?(screen ?shot|screen capture|snapshot)( of (the|my) screen)?$|^capture (the |my )?screen$""").matches(q) -> Action.Screenshot
         Regex("""^(start |begin |take (a )?)?(record(ing)? (a )?video|video( recording)?|recording video|record a clip)$|^(start )?recording$|^record$""").matches(q) -> Action.Video
         Regex("""^(take (a |my )?)?selfie$|^front camera$""").matches(q) -> Action.Selfie
@@ -166,6 +167,18 @@ object Assistant {
             val on = DynamicIslandService.isEnabled(context)
             Ready("⬚", "Take a screenshot", if (on) "Saved to your gallery" else "Needs the Dynamic Island switch (Accessibility)", if (on) "Take" else "Set up", quiet = true) { ctx ->
                 DynamicIslandService.screenshotLater(650) || run { DynamicIslandService.openSettings(ctx); true }
+            }
+        }
+        Action.SecureVideo -> {
+            val ready = com.kinetic.launcher.vault.VaultCrypto.canDrop(context)
+            Ready(
+                "🔒", "Secure video",
+                if (ready) "Records straight into the Vault, never the gallery" else "Open the Vault once to set it up",
+                if (ready) "Record" else "Set up", done = if (ready) "Secure video" else "Vault",
+            ) { ctx ->
+                if (com.kinetic.launcher.vault.VaultCrypto.canDrop(ctx)) com.kinetic.launcher.vault.SecureVideoActivity.open(ctx)
+                else com.kinetic.launcher.vault.VaultActivity.open(ctx)
+                true
             }
         }
         Action.SecureScreenshot -> {

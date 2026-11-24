@@ -227,6 +227,23 @@ class VaultActivity : ComponentActivity() {
             }
         }
 
+        // Vault video: recorded by the camera app straight into the Vault, never the gallery.
+        val takeVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { ok ->
+            awaitingResult = false
+            val f = captureFile
+            captureFile = null
+            if (ok && f != null && f.length() > 0) {
+                busy = "Encrypting video…"
+                scope.launch {
+                    withContext(Dispatchers.IO) { store.importFile(f, "video/mp4") }
+                    busy = null
+                    refresh++
+                }
+            } else {
+                f?.let(VaultStore::wipe)
+            }
+        }
+
         BackHandler(viewing != null || picking) {
             viewing = null
             picking = false
@@ -266,13 +283,19 @@ class VaultActivity : ComponentActivity() {
                         awaitingResult = true
                         takePhoto.launch(FileProvider.getUriForFile(this@VaultActivity, "$packageName.vaultfiles", f))
                     }
+                    Pill("Video") {
+                        val f = File(VaultStore.captureDir(this@VaultActivity), "capture-${System.currentTimeMillis()}.mp4")
+                        captureFile = f
+                        awaitingResult = true
+                        takeVideo.launch(FileProvider.getUriForFile(this@VaultActivity, "$packageName.vaultfiles", f))
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 busy?.let { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) }
                 if (items.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "Nothing here yet.\nAdd photos or videos from your gallery,\nor take one with the Vault camera.",
+                            "Nothing here yet.\nAdd photos or videos from your gallery,\nor take one with the Vault camera or video.",
                             color = Subtle,
                             fontSize = 15.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

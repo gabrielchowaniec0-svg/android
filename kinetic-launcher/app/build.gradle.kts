@@ -94,6 +94,8 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")
     implementation("androidx.camera:camera-view:1.4.2")
+    // Secure video (records straight into the Vault).
+    implementation("androidx.camera:camera-video:1.4.2")
 
     // Installs the pre-compiled start-up profile on your phone (release builds).
     implementation(libs.androidx.profileinstaller)
