@@ -59,7 +59,10 @@ object Updater {
                     readTimeout = 15_000
                     setRequestProperty("Accept", "application/vnd.github+json")
                 }
-                if (conn.responseCode == 404) return@withContext State.UpToDate // no releases yet
+                if (conn.responseCode == 404) {
+                    // Nothing published yet: GitHub skips releases until the signing key secret is added.
+                    return@withContext State.Failed("No builds on GitHub yet — finish the one-time setup in docs/UPDATES.md")
+                }
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(body)
                 val code = json.optString("tag_name").substringAfterLast('-').toLongOrNull() ?: return@withContext State.UpToDate
