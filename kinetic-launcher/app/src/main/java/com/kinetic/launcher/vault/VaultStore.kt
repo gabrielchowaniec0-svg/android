@@ -85,6 +85,28 @@ class VaultStore(context: Context, private val key: SecretKey) {
         }
     }
 
+    /**
+     * Moves secure screenshots (sealed while the Vault was locked) in. Returns how many.
+     * Also makes sure the drop box exists, for vaults set up before it did.
+     */
+    fun collectDrops(): Int {
+        VaultCrypto.ensureDropBox(app, key)
+        var n = 0
+        dropDir(app).listFiles()?.sortedBy { it.name }?.forEach { f ->
+            val tmp = File(captureDir(app), f.nameWithoutExtension + ".png")
+            try {
+                f.inputStream().buffered().use { i -> tmp.outputStream().use { o -> VaultCrypto.dropDecrypt(app, key, i, o) } }
+                if (importFile(tmp, "image/png") != null) {
+                    f.delete()
+                    n++
+                }
+            } catch (_: Exception) {
+                wipe(tmp)
+            }
+        }
+        return n
+    }
+
     /** Copies a file Kinetic just made (e.g. a vault-camera photo) in, then wipes the original. */
     fun importFile(file: File, mime: String): Item? {
         val item = import(Uri.fromFile(file), file.name, mime)
@@ -185,6 +207,9 @@ class VaultStore(context: Context, private val key: SecretKey) {
 
     companion object {
         fun playDir(context: Context) = File(context.cacheDir, "vault_play").apply { mkdirs() }
+        /** Sealed secure screenshots waiting for the Vault to be opened. */
+        fun dropDir(context: Context) = File(context.filesDir, "vault_drop").apply { mkdirs() }
+
         fun captureDir(context: Context) = File(context.cacheDir, "vault_capture").apply { mkdirs() }
 
         /** Removes decrypted temporary files (called whenever the Vault locks). */

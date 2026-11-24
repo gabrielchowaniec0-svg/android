@@ -178,7 +178,11 @@ class VaultActivity : ComponentActivity() {
         val store = remember(key) { VaultStore(this, key) }
         var refresh by remember { mutableIntStateOf(0) }
         val items by produceState(initialValue = emptyList<VaultStore.Item>(), refresh) {
-            value = withContext(Dispatchers.IO) { store.items() }
+            value = withContext(Dispatchers.IO) {
+                // Secure screenshots taken while the Vault was locked come in first.
+                store.collectDrops()
+                store.items()
+            }
         }
         var viewing by remember { mutableStateOf<VaultStore.Item?>(null) }
         var picking by remember { mutableStateOf(false) }

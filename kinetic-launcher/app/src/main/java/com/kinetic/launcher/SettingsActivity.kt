@@ -172,6 +172,12 @@ class SettingsActivity : ComponentActivity() {
                 LinkRow("Vault", "Encrypted photos & videos, opened with your Kinetic code", on = hasCode) {
                     com.kinetic.launcher.vault.VaultActivity.open(this@SettingsActivity)
                 }
+                SwitchRow(
+                    "Secure screenshot",
+                    "Volume Up, Up, Down, Down: the screen goes straight into the Vault, never the gallery (needs the Dynamic Island switch)",
+                    s.secureScreenshot,
+                    bool(KineticSettings.SECURE_SCREENSHOT),
+                )
                 if (hasCode) {
                     LinkRow("Change Kinetic code", "The PIN or pattern for the Vault and hidden apps", on = false) {
                         com.kinetic.launcher.vault.VaultActivity.changeCode(this@SettingsActivity)

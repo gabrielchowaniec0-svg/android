@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.provider.Settings
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -91,6 +92,14 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         super.onServiceConnected()
         instance = this
         shake = ShakeDetector(this).also { it.start() }
+        secureShot = SecureScreenshot(
+            this, scope,
+            onSaved = {
+                view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                if (::model.isInitialized) model.showVaultSaved()
+            },
+            onFailed = { view?.performHapticFeedback(HapticFeedbackConstants.REJECT) },
+        )
         KineticSettings.init(this)
         com.kinetic.launcher.FocusModes.init(this)
         model = IslandModel(this, scope)
@@ -116,6 +125,10 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     override fun onInterrupt() = Unit
+
+    /** Volume keys: watches for the secure screenshot gesture (Up, Up, Down, Down). */
+    override fun onKeyEvent(event: KeyEvent): Boolean =
+        secureShot?.onKey(event) ?: false
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -307,6 +320,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     }
 
     private var shake: ShakeDetector? = null
+    private var secureShot: SecureScreenshot? = null
 
     companion object {
         @Volatile

@@ -417,6 +417,9 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    /** A secure screenshot was sealed into the Vault: the padlock closes. */
+    fun showVaultSaved() = showAlert(IslandAlert.Lock(open = false))
+
     private fun showAlert(alert: IslandAlert) {
         alertJob?.cancel()
         _alert.value = alert

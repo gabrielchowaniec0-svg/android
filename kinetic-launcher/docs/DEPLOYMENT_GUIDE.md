@@ -444,3 +444,13 @@ The Vault (drawer ⋮ ▸ Vault, or Settings ▸ Privacy ▸ Vault) keeps photos
 
 ### Why not "just one fingerprint"?
 Android only tells an app "a fingerprint on this phone matched". It never says *which* finger, and apps can't register their own fingerprints. So Kinetic can't limit secure things to one finger. That's why the Vault and hidden apps use the Kinetic code instead of fingerprints.
+
+### Secure screenshot
+Press **Volume Up, Up, Down, Down** quickly (within about half a second between presses). The island's padlock closes and the phone gives a short buzz. The screenshot is sealed straight into the Vault without asking for your code. It never appears in the gallery, recent files or the clipboard. Next time you open the Vault, it's there.
+
+- It needs the Dynamic Island switch on (Accessibility), and the Vault set up. If you set up the Vault before this update, open it once so secure screenshots can start working.
+- Turn it off in Settings ▸ Privacy ▸ Secure screenshot.
+- Volume keys still work normally. Kinetic changes the volume itself, and the volume panel shows up a split second later after Volume Up. That pause is so it doesn't end up in your screenshot. The volume ends where it started.
+- It doesn't run during calls or with the screen off. Apps that block screenshots (banking apps, for example) still come out black.
+- How it's safe without a code: the screenshot is locked with a "drop box" key that can only lock, not unlock. The key that opens it is itself locked inside the Vault.
+- If the gesture does nothing after updating, switch the Dynamic Island off and on again in Accessibility. Android asks once more because it now also handles the volume keys.
