@@ -517,3 +517,8 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **Decoy code:** Settings ▸ Privacy ▸ Decoy code. It's a second code (the same type as your real one) that opens a separate, fake Vault. If someone makes you unlock, they see only what you put in the fake one. The decoy never shows hidden apps or opens locked apps.
 - **Intruder photo:** after 3 wrong codes in a row, the front camera quietly takes one photo. It goes straight into the real Vault, named "Intruder" with the date and time (needs camera permission, e.g. from the plane spotter). It's on by default; switch it off in Settings ▸ Privacy.
 - **Lock apps:** long-press any app ▸ Require Kinetic code. Opening it from Kinetic (home, the app list, search or the S Pen) then asks for your code first. Opening it from recent apps or another app's link doesn't, because Android doesn't let launchers block those.
+
+## Plane spotter extras (Batch 7)
+- **Logbook:** every plane you lock onto is saved (the same flight counts once a day), with its airline, route, aircraft type and time. Tap **Logbook** for your totals, most-spotted aircraft types and recent sightings.
+- **United:** shows only United flights (United mainline plus United Express from GoJet, CommuteAir and Mesa).
+- **Radar:** a night view that doesn't need the camera. You're in the middle and the way you're facing is at the top. Planes show as glowing dots with their heading, and rings mark 10, 20 and 35 miles. Turn until a plane is straight ahead to lock onto it. It also turns on automatically if the camera isn't allowed.
