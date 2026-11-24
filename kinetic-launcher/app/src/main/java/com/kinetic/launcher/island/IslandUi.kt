@@ -254,6 +254,8 @@ fun DynamicIsland(
         is IslandMode.Alert -> when (md.alert) {
             is IslandAlert.Charging -> ChargingW to pillH
             is IslandAlert.Earbuds -> ChargingW to pillH
+            // A message with a button, hanging below the camera.
+            is IslandAlert.Ask -> fullW to (pillH + 86.dp)
             // Face ID: a small rounded square hanging just below the camera
             // (kept short so it clears the lock-screen clock).
             is IslandAlert.Scan -> 74.dp to (pillH + 46.dp)
@@ -631,7 +633,11 @@ fun DynamicIsland(
                                     IslandMode.NavCompact, IslandMode.NavExpanded -> open(Activity.Nav)
                                     IslandMode.TripCompact, IslandMode.TripExpanded -> open(Activity.Trip)
                                     IslandMode.ScoreCompact, IslandMode.ScoreExpanded -> open(Activity.Score)
-                                    is IslandMode.Alert -> if (mode.alert is IslandAlert.LowBattery) model.openBatterySaver()
+                                    is IslandMode.Alert -> when (mode.alert) {
+                                        is IslandAlert.LowBattery -> model.openBatterySaver()
+                                        is IslandAlert.Ask -> model.answerAsk()
+                                        else -> Unit
+                                    }
                                     else -> Unit
                                 }
                             },
@@ -888,6 +894,22 @@ private fun AlertContent(alert: IslandAlert) {
             Modifier.fillMaxSize().padding(top = (s - 4.dp).coerceAtLeast(0.dp), bottom = 4.dp),
             contentAlignment = Alignment.Center,
         ) { FaceScanGlyph(success = alert.success, failed = alert.failed, modifier = Modifier.size(32.dp)) }
+        is IslandAlert.Ask -> Column(
+            Modifier.fillMaxSize().padding(top = s + 4.dp, start = 18.dp, end = 14.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(alert.icon, color = Blue, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(10.dp))
+                Text(alert.text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Box(
+                Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(19.dp)).background(Blue),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(alert.button, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
         is IslandAlert.Say -> Box(
             Modifier.fillMaxSize().padding(top = s - 2.dp, start = 14.dp, end = 14.dp, bottom = 6.dp),
             contentAlignment = Alignment.Center,

@@ -3,6 +3,13 @@
     <!-- Base app theme (platform theme, no AppCompat dependency needed). -->
     <style name="Theme.Kinetic" parent="android:Theme.Material.NoActionBar" />
 
+    <!-- Invisible screen used only to ask for a permission. -->
+    <style name="Theme.Kinetic.Invisible" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- Home theme: transparent window so the live wallpaper shows behind the grid. -->
     <style name="Theme.Kinetic.Home" parent="android:Theme.Material.Wallpaper.NoTitleBar">
         <item name="android:windowBackground">@android:color/transparent</item>

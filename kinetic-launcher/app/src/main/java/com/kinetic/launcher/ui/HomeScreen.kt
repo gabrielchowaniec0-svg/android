@@ -369,6 +369,15 @@ fun KineticHome(
                 launchApp(app)
                 return@launch
             }
+            // A command that needs a permission: the island drops down with an Allow button
+            // (and runs the command as soon as you allow it).
+            val needs = ready?.permission
+            if (ready != null && !allowed && needs != null) {
+                val asked = com.kinetic.launcher.island.IslandBus.ask(
+                    ready.badge, "${ready.title} needs ${com.kinetic.launcher.ui.PermissionActivity.nameOf(needs)}", "Allow",
+                ) { com.kinetic.launcher.ui.PermissionActivity.start(activity, needs, text) }
+                if (asked) return@launch
+            }
             // Anything else (or a command that needs a permission first): open search with it.
             searchPrefill = text
             searchSignal++

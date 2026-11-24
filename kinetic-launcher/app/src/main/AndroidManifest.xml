@@ -271,6 +271,15 @@
             android:showWhenLocked="true"
             android:theme="@style/Theme.Kinetic" />
 
+        <!-- The island's "Allow" button: asks for a command's permission, then runs it. -->
+        <activity
+            android:name=".ui.PermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Kinetic.Invisible" />
+
         <!-- Ends a timed Focus ("focus 25 min"). -->
         <receiver android:name=".FocusEndReceiver" android:exported="false" />
 

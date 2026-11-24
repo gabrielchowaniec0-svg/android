@@ -10,6 +10,17 @@ import kotlinx.coroutines.flow.asSharedFlow
  */
 object IslandBus {
     data class Say(val icon: String, val text: String)
+    /** A message with a button (e.g. "Allow"); [onTap] runs when it's pressed. */
+    data class Ask(val icon: String, val text: String, val button: String, val onTap: () -> Unit)
+
+    private val _asks = MutableSharedFlow<Ask>(extraBufferCapacity = 2)
+    val asks: SharedFlow<Ask> = _asks.asSharedFlow()
+
+    /** True if the island will show it (with its button); false means handle it another way. */
+    fun ask(icon: String, text: String, button: String, onTap: () -> Unit): Boolean {
+        if (!DynamicIslandService.isRunning) return false
+        return _asks.tryEmit(Ask(icon, text, button, onTap))
+    }
 
     private val _says = MutableSharedFlow<Say>(extraBufferCapacity = 4)
     val says: SharedFlow<Say> = _says.asSharedFlow()

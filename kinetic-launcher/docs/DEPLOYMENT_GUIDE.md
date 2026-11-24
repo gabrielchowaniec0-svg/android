@@ -540,3 +540,20 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **Sticky notes:** write "note buy milk" (or type it in search). A yellow sticky with your handwriting appears on the first home page. Swipe it sideways to throw it away.
 - **Maths with steps:** write "2x + 5 = 17". The island shows "Subtract 5 → Divide by 2 → x = 6".
 - **Command chains:** Settings ▸ S Pen ▸ Command chains. Make one name run several commands, one per line (e.g. "gaming mode" = "focus 60 min" then "open roblox"). Write or type the name to run them all in order.
+
+## More commands (S Pen or search)
+**Music:** "next", "previous", "pause", "resume", "what's playing" · "spotify lofi beats" / "play Taylor Swift on spotify"
+**Sound & screen:** "volume 40", "louder", "quieter", "mute", "unmute" · "silent", "vibrate", "ring" · "dnd on/off" · "brightness 70", "brighter", "dimmer"
+**Inside apps:**
+- "coffee near me" / "maps target" (Maps)
+- "uber to the airport" / "lyft home"
+- "whatsapp mom running late"
+- "translate where is the bathroom to spanish" / "how do you say thank you in finnish" (Google Translate)
+- "add event dentist tomorrow at 3pm" / "schedule practice friday at 6" (calendar)
+- "keep buy milk" (Google Keep) / "samsung notes ideas for video" (Samsung Notes)
+- "youtube.com" / "go to wikipedia.org" (any website)
+- "voice memo" (Voice Recorder)
+**Settings:** "hotspot", "battery saver", "airplane mode", "display", "storage", "gps"
+**Answers:** "where am I" · "tip 20% on 45" / "tip 18% on 120 split 4" · "days until christmas" / "countdown to july 4" · "random number 1 to 50"
+
+**Permissions:** when a command needs something you haven't allowed yet (contacts, location, silent mode, brightness, music controls…), the Dynamic Island drops down with an **Allow** button. Tap it: Android asks, and the command runs as soon as you say yes. For Do Not Disturb, brightness and music controls, it opens the right settings page; switch Kinetic on there and try the command again.
