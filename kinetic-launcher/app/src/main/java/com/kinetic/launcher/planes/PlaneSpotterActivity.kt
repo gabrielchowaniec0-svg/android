@@ -162,7 +162,7 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
         LaunchedEffect(me?.latitude?.let { (it * 100).roundToInt() }, me?.longitude?.let { (it * 100).roundToInt() }) {
             val here = me ?: return@LaunchedEffect
             while (true) {
-                val list = withContext(Dispatchers.IO) { PlaneData.nearby(here.latitude, here.longitude) }
+                val list = withContext(Dispatchers.IO) { runCatching { PlaneData.nearby(here.latitude, here.longitude) }.getOrDefault(planes) }
                 planes = list
                 fetchedAt = System.currentTimeMillis()
                 loading = false
@@ -194,7 +194,7 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
         LaunchedEffect(locked?.plane?.callsign) {
             route = null
             val cs = locked?.plane?.callsign ?: return@LaunchedEffect
-            route = withContext(Dispatchers.IO) { PlaneData.route(cs) }
+            route = withContext(Dispatchers.IO) { runCatching { PlaneData.route(cs) }.getOrNull() }
         }
 
         Box(Modifier.fillMaxSize().background(Color.Black)) {

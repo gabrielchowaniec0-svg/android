@@ -4,7 +4,6 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -34,10 +33,15 @@ data class Route(val airline: String?, val fromCode: String, val fromCity: Strin
  * (free, no account; whichever answers first). Routes come from adsbdb.com.
  */
 object PlaneData {
-    private val routes = ConcurrentHashMap<String, Route?>()
+    // Remembers routes, including "no route known" (ConcurrentHashMap can't hold null,
+    // which crashed the spotter the first time it locked onto a plane with no route).
+    private val routes = java.util.Collections.synchronizedMap(HashMap<String, Route?>())
 
     /** Aircraft within [radiusNm] nautical miles of a point. Empty if both networks fail. */
-    fun nearby(lat: Double, lon: Double, radiusNm: Int = 30): List<Plane> {
+    fun nearby(lat: Double, lon: Double, radiusNm: Int = 30): List<Plane> =
+        runCatching { nearbyOrThrow(lat, lon, radiusNm) }.getOrDefault(emptyList())
+
+    private fun nearbyOrThrow(lat: Double, lon: Double, radiusNm: Int): List<Plane> {
         val la = "%.4f".format(Locale.US, lat)
         val lo = "%.4f".format(Locale.US, lon)
         val urls = listOf(
@@ -50,7 +54,8 @@ object PlaneData {
             val out = ArrayList<Plane>(ac.length())
             for (i in 0 until ac.length()) {
                 val a = ac.optJSONObject(i) ?: continue
-                if (!a.has("lat") || !a.has("lon")) continue
+                // Skip anything with a missing or odd position instead of failing on it.
+                if (a.optDouble("lat").isNaN() || a.optDouble("lon").isNaN()) continue
                 val alt = a.opt("alt_baro").let { it as? Number }?.toInt() ?: a.optInt("alt_geom", -1)
                 if (alt <= 0) continue // on the ground or unknown
                 out += Plane(
@@ -71,12 +76,14 @@ object PlaneData {
     }
 
     /** The aircraft flying as [callsign] right now (e.g. "UAL1234"), or null if it isn't in the air. */
-    fun byCallsign(callsign: String): Plane? {
+    fun byCallsign(callsign: String): Plane? = runCatching { byCallsignOrThrow(callsign) }.getOrNull()
+
+    private fun byCallsignOrThrow(callsign: String): Plane? {
         for (u in listOf("https://api.adsb.lol/v2/callsign/$callsign", "https://opendata.adsb.fi/api/v2/callsign/$callsign")) {
             val ac = get(u)?.let { it.optJSONArray("ac") ?: it.optJSONArray("aircraft") } ?: continue
             for (i in 0 until ac.length()) {
                 val a = ac.optJSONObject(i) ?: continue
-                if (!a.has("lat")) continue
+                if (a.optDouble("lat").isNaN() || a.optDouble("lon").isNaN()) continue
                 val alt = a.opt("alt_baro").let { it as? Number }?.toInt() ?: a.optInt("alt_geom", -1)
                 if (alt <= 0) continue
                 return Plane(
@@ -95,8 +102,14 @@ object PlaneData {
     /** Airline and from → to for a callsign (cached). Null if unknown. */
     fun route(callsign: String): Route? {
         if (callsign.isBlank()) return null
-        if (routes.containsKey(callsign)) return routes[callsign]
-        val r = get("https://api.adsbdb.com/v0/callsign/$callsign")
+        synchronized(routes) { if (routes.containsKey(callsign)) return routes[callsign] }
+        val r = runCatching { routeLookup(callsign) }.getOrNull()
+        if (routes.size < 500) routes[callsign] = r
+        return r
+    }
+
+    private fun routeLookup(callsign: String): Route? {
+        return get("https://api.adsbdb.com/v0/callsign/$callsign")
             ?.optJSONObject("response")?.optJSONObject("flightroute")
             ?.let { fr ->
                 val o = fr.optJSONObject("origin") ?: return@let null
@@ -109,8 +122,6 @@ object PlaneData {
                     toCity = d.optString("municipality").ifBlank { d.optString("name") },
                 )
             }
-        if (r != null || routes.size < 500) routes[callsign] = r
-        return r
     }
 
     private fun get(url: String): JSONObject? = runCatching {
