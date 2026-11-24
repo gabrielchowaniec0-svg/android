@@ -527,3 +527,10 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 - **Snow, fog & wind:** snowflakes drift down when it snows, a slow haze rises when it's foggy, and rain slants (and snow drifts) with the real wind. Settings ▸ Living wallpaper.
 - **Sunset & moon:** colours warm up around your real sunrise and sunset. At night the wallpaper dims slightly and the real moon, in today's phase, glows in the top-right corner.
 - **Focus timer:** write or type "focus 25 min" (or "study 45 min", "pomodoro 25 min"). Your Study/School/Work Focus turns on, a 25-minute timer starts, and the Focus turns itself off when the time's up.
+
+## iOS-style screens (Batch 5)
+- **StandBy:** put the phone on the charger and turn it on its side (from the home or lock screen), and leave it still for a couple of seconds. You get a big clock with the date, your next event and the battery level. Swipe sideways for your photos or your calendar. Late at night or in a dark room it all turns deep red. To leave, unplug, stand the phone upright or swipe up. Settings ▸ Home ▸ StandBy.
+- **Control Center:** on the home screen, swipe down from the top-right corner. It has Wi-Fi, internet, Bluetooth and airplane mode, music controls, flashlight, Focus, timer, camera, calculator, screenshot, Vault and settings, plus brightness and volume sliders. The brightness slider asks once for "Modify system settings". Swiping down anywhere else still opens the normal notification shade.
+- **App Library:** in the app list, tap ⋮ ▸ App Library view. Every app is sorted into groups (Social, Games, Productivity…). Tap a big icon to open it, or the little grid for the whole group.
+- **Search:** "define serendipity" gives a definition, and "Mom's birthday" shows the date, how many days away it is and how old they'll turn.
+- **Smart Rotate** was already built in: widget stacks flip to music while it plays and to calendar or weather in the morning.

@@ -204,6 +204,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        homeVisible = true
         isResumedNow = true
         resumedState.value = true
         // Tell the Dynamic Island we're in front (so music shows again straight away).
@@ -224,6 +225,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onPause() {
         super.onPause()
+        homeVisible = false
         isResumedNow = false
         resumedState.value = false
         handler.removeCallbacks(disarmUnlock)
@@ -390,6 +392,10 @@ class MainActivity : FragmentActivity() {
     }
 
     companion object {
+        /** True while the home screen is in front (StandBy only opens from home or the lock screen). */
+        @Volatile
+        var homeVisible = false
+
         /** Opens Kinetic straight into search (shake action, Commands). */
         const val EXTRA_OPEN_SEARCH = "kinetic_open_search"
         private const val REQUEST_CONFIGURE_WIDGET = 1001

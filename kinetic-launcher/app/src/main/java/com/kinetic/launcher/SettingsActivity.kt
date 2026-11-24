@@ -264,6 +264,7 @@ class SettingsActivity : ComponentActivity() {
             // ---- home ---------------------------------------------------------------------
             Section("Home screen") {
                 SwitchRow("Notification rings", "A spinning ring around apps with notifications", s.notificationRings, bool(KineticSettings.RINGS))
+                SwitchRow("StandBy", "Charging and turned sideways: a big clock, photos or calendar (red at night)", s.standBy, bool(KineticSettings.STANDBY))
                 SwitchRow("Number badges", "A red count on apps with unread notifications", s.badges, bool(KineticSettings.BADGES))
                 SwitchRow("\u201CNew\u201D folder", "Newly installed apps wait in a New folder in the app list for a week", s.newAppsFolder, bool(KineticSettings.NEW_APPS_FOLDER))
                 SwitchRow("Haptics", "Little vibrations for the island and edit mode", s.haptics, bool(KineticSettings.HAPTICS))

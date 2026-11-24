@@ -92,6 +92,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         super.onServiceConnected()
         instance = this
         shake = ShakeDetector(this).also { it.start() }
+        standBy = com.kinetic.launcher.standby.StandByWatcher(this).also { it.start() }
         secureShot = SecureScreenshot(
             this, scope,
             onSaved = {
@@ -147,6 +148,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     override fun onDestroy() {
         if (instance === this) instance = null
         shake?.stop()
+        standBy?.stop()
         removeIsland()
         if (::model.isInitialized) model.stop()
         scope.cancel()
@@ -394,6 +396,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     private var shake: ShakeDetector? = null
     private var secureShot: SecureScreenshot? = null
+    private var standBy: com.kinetic.launcher.standby.StandByWatcher? = null
 
     companion object {
         @Volatile
