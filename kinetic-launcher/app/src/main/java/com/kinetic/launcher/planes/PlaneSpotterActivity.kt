@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -174,17 +175,26 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
         val poor by compassPoor
         // Where everything is in the sky right now (positions moved on since the last fetch).
         val now = System.currentTimeMillis()
-        val sky = remember(planes, me, rot, declination) {
+        // Modes: radar (no camera needed, great at night) and United-only.
+        var radar by remember { mutableStateOf(false) }
+        var unitedOnly by remember { mutableStateOf(false) }
+        var showLog by remember { mutableStateOf(false) }
+        var logCount by remember { mutableStateOf(PlaneLog.all(this@PlaneSpotterActivity).size) }
+        val radarView = radar || !camOk
+        val shown = if (unitedOnly) planes.filter { isUnited(it) } else planes
+        val sky = remember(shown, me, rot, declination) {
             val here = me ?: return@remember emptyList()
-            planes.map { skyPos(it, here, declination, (now - fetchedAt) / 1000.0, rot) }
+            shown.map { skyPos(it, here, declination, (now - fetchedAt) / 1000.0, rot) }
         }
         val cam = remember(rot) { cameraDir(rot) }
 
         // The plane closest to the middle of the view (sticky so it doesn't flicker).
         var lockedHex by remember { mutableStateOf<String?>(null) }
-        val best = sky.minByOrNull { it.angle }
-        val stillLocked = sky.firstOrNull { it.plane.hex == lockedHex && it.angle < 14f }
-        val locked = stillLocked ?: best?.takeIf { it.angle < 9f }
+        // On the radar, "pointing at" means the direction you face (height doesn't matter).
+        fun aim(s: SkyPos) = if (radarView) kotlin.math.abs(((s.azimuth - cam[0] + 540f) % 360f) - 180f) else s.angle
+        val best = sky.minByOrNull { aim(it) }
+        val stillLocked = sky.firstOrNull { it.plane.hex == lockedHex && aim(it) < 14f }
+        val locked = stillLocked ?: best?.takeIf { aim(it) < 9f }
         val haptics = LocalHapticFeedback.current
         LaunchedEffect(locked?.plane?.hex) {
             if (locked != null && locked.plane.hex != lockedHex) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -195,21 +205,31 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
             route = null
             val cs = locked?.plane?.callsign ?: return@LaunchedEffect
             route = withContext(Dispatchers.IO) { runCatching { PlaneData.route(cs) }.getOrNull() }
+            // Into the logbook once it's been locked on for a moment.
+            delay(1200)
+            val p = locked?.plane ?: return@LaunchedEffect
+            val r = route
+            val isNew = withContext(Dispatchers.IO) {
+                PlaneLog.add(
+                    this@PlaneSpotterActivity,
+                    PlaneLog.Entry(p.label, PlaneData.typeName(p.typeCode), r?.airline, r?.fromCode, r?.toCode, p.registration, System.currentTimeMillis()),
+                )
+            }
+            if (isNew) logCount++
         }
 
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            if (camOk) {
-                CameraPreview()
+            if (radarView) {
+                RadarView(sky, cam[0], locked?.plane?.hex)
             } else {
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1B3A), Color(0xFF3A6EA5), Color(0xFF9CC3E6)))))
-            }
-
-            Canvas(Modifier.fillMaxSize()) {
-                val f = (size.height / 2f) / tan(Math.toRadians(vfovDeg / 2.0)).toFloat()
-                sky.forEach { s -> drawMarker(s, s.plane.hex == locked?.plane?.hex, f) }
-                // Reticle
-                drawCircle(Color.White.copy(alpha = 0.55f), 34.dp.toPx(), center, style = Stroke(1.5.dp.toPx()))
-                drawCircle(Color.White.copy(alpha = 0.8f), 2.dp.toPx(), center)
+                CameraPreview()
+                Canvas(Modifier.fillMaxSize()) {
+                    val f = (size.height / 2f) / tan(Math.toRadians(vfovDeg / 2.0)).toFloat()
+                    sky.forEach { s -> drawMarker(s, s.plane.hex == locked?.plane?.hex, f) }
+                    // Reticle
+                    drawCircle(Color.White.copy(alpha = 0.55f), 34.dp.toPx(), center, style = Stroke(1.5.dp.toPx()))
+                    drawCircle(Color.White.copy(alpha = 0.8f), 2.dp.toPx(), center)
+                }
             }
 
             // Top bar
@@ -224,10 +244,17 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
                             !locOk -> "Needs your location"
                             me == null -> "Finding you…"
                             loading -> "Looking at the sky…"
+                            unitedOnly -> "${shown.size} United flights within 35 miles"
                             else -> "${planes.size} planes within 35 miles"
                         },
                         color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip(if (radarView) "Radar" else "Radar", radarView) { if (camOk) radar = !radar }
+                        Chip("United", unitedOnly) { unitedOnly = !unitedOnly }
+                        Chip("Logbook · $logCount", false) { showLog = true }
+                    }
                 }
                 Text(
                     "Done",
@@ -256,6 +283,8 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
                     if (s != null) LockedCard(s, route) else HintCard(sky, cam, poor, locOk, me != null)
                 }
             }
+
+            if (showLog) Logbook(onClose = { showLog = false })
         }
     }
 
@@ -450,6 +479,143 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
         drawContext.canvas.nativeCanvas.drawText(
             "%,d ft · %.1f mi".format(s.plane.altitudeFt, s.distanceM / 1609.34), tx, c.y + 14.dp.toPx(), subPaint,
         )
+    }
+
+    /** United mainline plus the United Express airlines that only fly for United. */
+    private fun isUnited(p: Plane): Boolean {
+        val cs = p.callsign.uppercase()
+        return listOf("UAL", "GJS", "UCA", "ASH").any { cs.startsWith(it) }
+    }
+
+    @Composable
+    private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
+        Text(
+            label,
+            color = if (on) Color.Black else Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .background(if (on) Color.White else Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+
+    /** Night radar: you in the middle, the way you're facing at the top, planes as glowing dots. */
+    @Composable
+    private fun RadarView(sky: List<SkyPos>, heading: Float, lockedHex: String?) {
+        val sweep = androidx.compose.animation.core.rememberInfiniteTransition(label = "sweep")
+        val angle by sweep.animateFloat(
+            0f, 360f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(4000, easing = androidx.compose.animation.core.LinearEasing)),
+            label = "sweepAngle",
+        )
+        Canvas(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF0B2A1E), Color(0xFF02080A))))) {
+            val c = Offset(size.width / 2f, size.height * 0.46f)
+            val maxR = size.width * 0.46f
+            val maxMi = 35f
+            val green = Color(0xFF3DDC84)
+            // Range rings: 10, 20, 35 miles.
+            listOf(10f, 20f, 35f).forEach { mi ->
+                val rr = maxR * mi / maxMi
+                drawCircle(green.copy(alpha = 0.22f), rr, c, style = Stroke(1.dp.toPx()))
+                drawContext.canvas.nativeCanvas.drawText("${mi.toInt()} mi", c.x + 6, c.y - rr + 30, ringPaint)
+            }
+            drawLine(green.copy(alpha = 0.15f), Offset(c.x, c.y - maxR), Offset(c.x, c.y + maxR), 1.dp.toPx())
+            drawLine(green.copy(alpha = 0.15f), Offset(c.x - maxR, c.y), Offset(c.x + maxR, c.y), 1.dp.toPx())
+            // Sweep
+            val a = Math.toRadians(angle.toDouble() - 90)
+            drawLine(green.copy(alpha = 0.5f), c, Offset(c.x + (maxR * kotlin.math.cos(a)).toFloat(), c.y + (maxR * kotlin.math.sin(a)).toFloat()), 2.dp.toPx())
+            // "Ahead" marker
+            drawCircle(Color.White, 5.dp.toPx(), c)
+            drawLine(Color.White.copy(alpha = 0.6f), c, Offset(c.x, c.y - maxR), 1.5.dp.toPx())
+            sky.forEach { s ->
+                val mi = (s.distanceM / 1609.34).toFloat()
+                if (mi > maxMi) return@forEach
+                val rel = Math.toRadians((s.azimuth - heading).toDouble() - 90)
+                val rr = maxR * mi / maxMi
+                val p = Offset(c.x + (rr * kotlin.math.cos(rel)).toFloat(), c.y + (rr * kotlin.math.sin(rel)).toFloat())
+                val on = s.plane.hex == lockedHex
+                val col = if (on) Color(0xFF7FB2FF) else green
+                // Heading tail
+                s.plane.trackDeg?.let { t ->
+                    val tr = Math.toRadians(t - heading - 90 + 180)
+                    drawLine(col.copy(alpha = 0.5f), p, Offset(p.x + (22.dp.toPx() * kotlin.math.cos(tr)).toFloat(), p.y + (22.dp.toPx() * kotlin.math.sin(tr)).toFloat()), 2.dp.toPx())
+                }
+                drawCircle(col.copy(alpha = 0.25f), (if (on) 14 else 9).dp.toPx(), p)
+                drawCircle(col, 4.dp.toPx(), p)
+                drawContext.canvas.nativeCanvas.drawText(s.plane.label, p.x + 14.dp.toPx(), p.y - 4.dp.toPx(), labelPaint)
+                drawContext.canvas.nativeCanvas.drawText("%,d ft".format(s.plane.altitudeFt), p.x + 14.dp.toPx(), p.y + 12.dp.toPx(), subPaint)
+            }
+        }
+    }
+
+    private val ringPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.argb(120, 61, 220, 132)
+        textSize = 28f
+    }
+
+    /** Everything you've spotted: totals, your top aircraft types, and the latest sightings. */
+    @Composable
+    private fun Logbook(onClose: () -> Unit) {
+        val log = remember { PlaneLog.all(this@PlaneSpotterActivity) }
+        val types = remember(log) { log.mapNotNull { it.type }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value } }
+        val airlines = remember(log) { log.mapNotNull { it.airline }.toSet().size }
+        val fmt = remember { java.text.SimpleDateFormat("MMM d · h:mm a", java.util.Locale.getDefault()) }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xF2080B12))
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Logbook", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    "Close",
+                    color = Color.Black,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.background(Color.White, RoundedCornerShape(50)).clickable(onClick = onClose).padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            Text("${log.size} planes · ${types.size} aircraft types · $airlines airlines", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                if (types.isNotEmpty()) {
+                    item { Text("Most spotted", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)) }
+                    items(types.take(8).size) { i ->
+                        val (t, n) = types[i]
+                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            Text(t, color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            Text("×$n", color = Color(0xFF7FB2FF), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    item { Spacer(Modifier.height(18.dp)) }
+                }
+                item { Text("Recent", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)) }
+                if (log.isEmpty()) {
+                    item { Text("Point at a plane until it locks on, and it's saved here.", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp) }
+                }
+                items(log.size) { i ->
+                    val e = log[i]
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Row {
+                            Text(e.callsign, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            if (e.from != null && e.to != null) {
+                                Spacer(Modifier.width(10.dp))
+                                Text("${e.from} → ${e.to}", color = Color(0xFF7FB2FF), fontSize = 15.sp)
+                            }
+                        }
+                        Text(
+                            listOfNotNull(e.airline, e.type, fmt.format(java.util.Date(e.at))).joinToString(" · "),
+                            color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     companion object {
