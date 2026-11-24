@@ -340,6 +340,7 @@ fun KineticHome(
         // A written "note …" keeps its handwriting.
         com.kinetic.launcher.pen.StickyNotes.pendingInk = ink.lastInk
         val parsed = KineticCommands.parse(text)
+        if (parsed != null) Commands3.recordHistory(activity, text)
         scope.launch {
             val ready = parsed?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { KineticCommands.resolve(activity, it) } }
             val allowed = ready?.permission?.let { activity.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED } ?: true
@@ -379,6 +380,11 @@ fun KineticHome(
                     ready.badge, "${ready.title} needs ${com.kinetic.launcher.ui.PermissionActivity.nameOf(needs)}", "Allow",
                 ) { com.kinetic.launcher.ui.PermissionActivity.start(activity, needs, text) }
                 if (asked) return@launch
+            }
+            // The start of something you've written before ("ca" → "call mom"): finish it.
+            if (ready == null) {
+                val full = Commands3.complete(activity, text)
+                if (full != null && com.kinetic.launcher.island.IslandBus.ask("↻", "\u201C$full\u201D?", "Do it", secondary = "No") { handleInk(full) }) return@launch
             }
             // Not a command or an app: the island offers to search for it.
             if (ready == null && com.kinetic.launcher.island.IslandBus.ask(

@@ -14,6 +14,8 @@
     <!-- Kinetic Commands: "call Mom" calls straight away (asked the first time), "timer 10 min" / "alarm 7am". -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Optional "Usage access": lets Commands pick the app you use most for each job. -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -171,6 +173,17 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <!-- Level, ruler and sound meter ("level", "ruler", "decibels"). -->
+        <activity
+            android:name=".ui.ToolsActivity"
+            android:taskAffinity=""
+            android:exported="false"
+            android:label="Tools"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Kinetic" />
+        <receiver android:name=".ui.HomeworkReminder" android:exported="false" />
+        <receiver android:name=".ui.SnoozeEndReceiver" android:exported="false" />
 
         <!-- Plane spotter: point at a plane to see its flight. -->
         <activity

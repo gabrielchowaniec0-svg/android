@@ -572,3 +572,35 @@ New commands:
 - "copy 555-0123" (to the clipboard)
 - "how far is Chicago" · "sunset" / "sunrise" · "moon phase" · "planes nearby" (count plus the closest flight)
 - "tell me a joke" · "magic 8 ball will I pass my test" / "should I get pizza"
+
+## Commands, part 3 (write these with the S Pen or type them in search)
+
+**Doing things in one line**
+- After you text someone "be there in 10", the island offers a reminder in 10 minutes.
+- `reply on my way` answers your newest message notification. `call back` returns your missed call (or opens call history). `read it` reads your newest notification out loud.
+- `snooze notifications 1 hour` turns on Do Not Disturb and turns it off again by itself.
+- `what's my ETA` / `send my ETA to mom` (while Google Maps directions are running).
+
+**Your stuff**
+- `remember I parked on level 3` saves it with where you are; `where did I park` shows it with a Map button. Works for anything: `remember the wifi password is …` then `what's the wifi password`. `forget parking` clears it.
+- `last photo`, `send last photo to mom`, `photos from yesterday`.
+- `my schedule`, `my schedule tomorrow`, `schedule friday` (includes homework due that day).
+
+**School**
+- `homework math page 42 due friday` saves it and reminds you at 7 pm the evening before. `homework` lists it; `done math` ticks it off.
+- `save spanish word gato = cat`, then `flashcards spanish` quizzes you in the island (Show → Next).
+- `stopwatch`, `lap`, `stop`. The island shows the time when you write lap/stop (it is not a live ticking counter).
+- `school days until summer` (weekdays only; holidays aren't known). Set the date with `summer starts june 4`.
+
+**Planes**
+- `metar KORD` (or `metar ORD`): the raw report plus plain English.
+- `what's that plane` opens the plane spotter. `phonetic Gabriel` spells it Golf Alpha Bravo… `FL350` → 35,000 ft.
+
+**Quick tools**
+- `split 84 between 3`, `15% off 60`, `time zones: Chicago, London, Tokyo`, `pick for me: pizza, tacos, sushi`.
+- `level`, `ruler`, `decibels` open a tools screen (the sound reading is approximate: phone mics aren't real sound meters).
+
+**Smarter commands**
+- `again` repeats your last command. `undo` puts back the last volume, brightness, ringer or Do Not Disturb change.
+- Writing shortcuts: `shortcut m = call mom`, or Settings → Writing shortcuts.
+- If you write the start of a command you've used before ("ca"), the island offers to finish it ("call mom?" → Do it).

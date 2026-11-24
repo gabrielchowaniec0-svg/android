@@ -622,6 +622,7 @@ private fun SearchPanel(
         }
     }
     fun runCommand(cmd: KineticCommands.Ready) {
+        Commands3.recordHistory(context, q)
         val perm = cmd.permission
         if (perm != null && ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED) {
             pendingCommand = cmd
