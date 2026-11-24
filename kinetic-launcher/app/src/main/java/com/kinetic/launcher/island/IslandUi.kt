@@ -1008,7 +1008,7 @@ private fun AlertContent(alert: IslandAlert, onAsk: (Boolean) -> Unit = {}) {
 private fun LevelContent(alert: IslandAlert.Level) {
     val s = LocalPill.current
     val target = alert.percent / 100f
-    val shown by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 500f), label = "level")
+    val shown by animateFloatAsState(target, spring(dampingRatio = 0.9f, stiffness = 1400f), label = "level")
     val color = when (alert.kind) {
         "brightness" -> Color(0xFFFFD60A)
         "ring" -> if (alert.percent == 0) Orange else Color.White

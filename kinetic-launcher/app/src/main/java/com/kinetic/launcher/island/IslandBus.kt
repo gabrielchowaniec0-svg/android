@@ -52,6 +52,11 @@ object IslandBus {
     private val _levels = MutableSharedFlow<Level>(extraBufferCapacity = 8)
     val levels: SharedFlow<Level> = _levels.asSharedFlow()
 
+    /** Takes the slider away at once (before a secure screenshot). */
+    fun hideLevel() {
+        _levels.tryEmit(Level("hide", 0))
+    }
+
     fun level(kind: String, percent: Int): Boolean {
         if (!DynamicIslandService.isRunning) return false
         return _levels.tryEmit(Level(kind, percent.coerceIn(0, 100)))

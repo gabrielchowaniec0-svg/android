@@ -405,7 +405,8 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
     val pattern = if (android.text.format.DateFormat.is24HourFormat(context)) "H:mm" else "h:mm"
     val time = remember(now, pattern) { SimpleDateFormat(pattern, Locale.getDefault()).format(Date(now)) }
 
-    val side = 18.dp
+    // Out to the edges, like One UI (just clear of the rounded corners).
+    val side = 15.dp
     val gap = 10.dp
     val leftEar = (islandLeft - gap - side).coerceAtLeast(0.dp)
     val rightEar = (screenWidth - side - islandRight - gap).coerceAtLeast(0.dp)
@@ -417,7 +418,7 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
 
     Box(Modifier.fillMaxWidth().padding(top = top).height(pillH)) {
         // ---- left: time (carrier on the lock screen) + notification icons ----
-        Box(Modifier.offset(x = side).width(leftEar).fillMaxHeight().alpha(leftA), contentAlignment = Alignment.Center) {
+        Box(Modifier.offset(x = side).width(leftEar).fillMaxHeight().alpha(leftA), contentAlignment = Alignment.CenterStart) {
             Row(
                 Modifier.wrapContentWidth(unbounded = true).onSizeChanged { leftW = it.width },
                 verticalAlignment = Alignment.CenterVertically,
@@ -427,76 +428,72 @@ fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, island
                         Text(st.carrier, color = tint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else {
-                    Text(time, color = tint, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    icons.take(3).forEach { bmp ->
+                    Text(time, color = tint, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, letterSpacing = 0.2.sp)
+                    if (icons.isNotEmpty()) Spacer(Modifier.width(8.dp))
+                    icons.take(3).forEachIndexed { i, bmp ->
                         val img = remember(bmp) { bmp.asImageBitmap() }
-                        Spacer(Modifier.width(5.dp))
-                        Image(img, null, colorFilter = ColorFilter.tint(tint), modifier = Modifier.size(13.dp))
+                        if (i > 0) Spacer(Modifier.width(6.dp))
+                        Image(img, null, colorFilter = ColorFilter.tint(tint.copy(alpha = 0.85f)), modifier = Modifier.size(14.dp))
                     }
                     if (more) {
-                        Spacer(Modifier.width(4.dp))
-                        Canvas(Modifier.size(4.dp)) { drawCircle(tint) }
+                        Spacer(Modifier.width(6.dp))
+                        Canvas(Modifier.size(4.dp)) { drawCircle(tint.copy(alpha = 0.85f)) }
                     }
                 }
             }
         }
         // ---- right: signal, network, sound, battery ----
-        Box(Modifier.offset(x = islandRight + gap).width(rightEar).fillMaxHeight().alpha(rightA), contentAlignment = Alignment.Center) {
+        Box(Modifier.offset(x = islandRight + gap).width(rightEar).fillMaxHeight().alpha(rightA), contentAlignment = Alignment.CenterEnd) {
             Row(
                 Modifier.wrapContentWidth(unbounded = true).onSizeChanged { rightW = it.width },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (st.dnd) {
                     MoonGlyph(tint, Modifier.size(12.dp))
-                    Spacer(Modifier.width(5.dp))
+                    Spacer(Modifier.width(7.dp))
                 }
                 if (st.ringer != AudioManager.RINGER_MODE_NORMAL) {
                     if (st.ringer == AudioManager.RINGER_MODE_VIBRATE) VibrateGlyph(tint, Modifier.size(13.dp))
                     else MuteGlyph(tint, Modifier.size(13.dp))
-                    Spacer(Modifier.width(5.dp))
+                    Spacer(Modifier.width(7.dp))
                 }
                 if (st.airplane) {
                     Text("✈", color = tint, fontSize = 13.sp)
                     Spacer(Modifier.width(5.dp))
                 } else {
-                    SignalBars(st.signal, tint, Modifier.size(15.dp, 11.dp))
-                    Spacer(Modifier.width(4.dp))
+                    SignalBars(st.signal, tint, Modifier.size(16.dp, 11.dp))
+                    Spacer(Modifier.width(6.dp))
                 }
                 if (st.wifi >= 0) {
-                    WifiGlyph(st.wifi, tint, Modifier.size(15.dp, 11.dp))
-                    Spacer(Modifier.width(5.dp))
+                    WifiGlyph(st.wifi, tint, Modifier.size(16.dp, 12.dp))
+                    Spacer(Modifier.width(7.dp))
                 } else if (!st.airplane && st.net != null) {
-                    Text(st.net!!, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Spacer(Modifier.width(5.dp))
+                    Text(st.net!!, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Spacer(Modifier.width(7.dp))
                 }
-                BatteryPill(st.battery, st.charging, st.saver, tint, dark)
+                BatteryPill(st.battery, tint, dark)
             }
         }
     }
 }
 
+/** Plain white (or black) battery with the number inside; red only at 5% or less. */
 @Composable
-private fun BatteryPill(level: Int, charging: Boolean, saver: Boolean, tint: Color, dark: Boolean) {
-    val fill = when {
-        charging -> Color(0xFF30D158)
-        saver -> Color(0xFFFFD60A)
-        level <= 15 -> Color(0xFFFF453A)
-        else -> tint
-    }
+private fun BatteryPill(level: Int, tint: Color, dark: Boolean) {
+    val low = level <= 5
+    val fill = if (low) Color(0xFFFF453A) else tint
     Box(Modifier.size(27.dp, 13.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val nub = 2.dp.toPx()
+            val nub = 1.6.dp.toPx()
             val bodyW = size.width - nub - 1.dp.toPx()
-            val r = CornerRadius(size.height * 0.36f)
-            drawRoundRect(tint.copy(alpha = 0.35f), Offset.Zero, Size(bodyW, size.height), r)
-            drawRoundRect(fill, Offset.Zero, Size(bodyW * (level / 100f).coerceIn(0.08f, 1f), size.height), r)
-            drawRoundRect(tint.copy(alpha = 0.45f), Offset(bodyW + 1.dp.toPx(), size.height * 0.3f), Size(nub, size.height * 0.4f), CornerRadius(nub / 2))
+            val r = CornerRadius(size.height * 0.34f)
+            drawRoundRect(tint.copy(alpha = 0.32f), Offset.Zero, Size(bodyW, size.height), r)
+            drawRoundRect(fill, Offset.Zero, Size(bodyW * (level / 100f).coerceIn(0.06f, 1f), size.height), r)
+            drawRoundRect(tint.copy(alpha = 0.4f), Offset(bodyW + 1.dp.toPx(), size.height * 0.32f), Size(nub, size.height * 0.36f), CornerRadius(nub / 2))
         }
-        // The number sits inside, in the opposite colour to the fill.
-        val numberColor = if (charging || saver || level <= 15) Color.Black else if (dark) Color.White else Color.Black
         Text(
-            "$level", color = numberColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            modifier = Modifier.padding(end = 3.dp),
+            "$level", color = if (dark || low) Color.White else Color.Black, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier.padding(end = 2.dp),
         )
     }
 }
