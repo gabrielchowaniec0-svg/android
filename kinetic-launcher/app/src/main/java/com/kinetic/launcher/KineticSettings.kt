@@ -33,6 +33,8 @@ object KineticSettings {
         val islandEarbuds: Boolean = true,
         /** Volume keys show Kinetic's slider in the island instead of One UI's. */
         val islandVolume: Boolean = true,
+        /** What the volume buttons change when nothing's playing: "media" or "ring". */
+        val volumeKeys: String = "media",
         /** Kinetic draws its own status bar (time, battery, signal) around the island. */
         val statusBar: Boolean = false,
         /** "auto" (matches the app underneath), "light" or "dark" text. */
@@ -104,6 +106,7 @@ object KineticSettings {
     const val NEW_APPS_FOLDER = "new_apps_folder"
     const val ISLAND_EARBUDS = "island_earbuds"
     const val ISLAND_VOLUME = "island_volume"
+    const val VOLUME_KEYS = "volume_keys"
     const val STATUS_BAR = "status_bar"
     const val STATUS_BAR_TINT = "status_bar_tint"
     const val ISLAND_BRIGHTNESS = "island_brightness"
@@ -175,6 +178,7 @@ object KineticSettings {
         newAppsFolder = p.getBoolean(NEW_APPS_FOLDER, true),
         islandEarbuds = p.getBoolean(ISLAND_EARBUDS, true),
         islandVolume = p.getBoolean(ISLAND_VOLUME, true),
+        volumeKeys = p.getString(VOLUME_KEYS, "media") ?: "media",
         statusBar = p.getBoolean(STATUS_BAR, false),
         statusBarTint = p.getString(STATUS_BAR_TINT, "auto") ?: "auto",
         islandBrightness = p.getBoolean(ISLAND_BRIGHTNESS, true),

@@ -97,6 +97,7 @@ object LiveFeatures {
         observer = obs
         runCatching { app.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, obs) }
 
+        TorchLive.start(app)
         scope.launch(Dispatchers.IO) { UpNext.loop(app) }
         scope.launch(Dispatchers.IO) { Rain.loop(app) }
         // A progress bar that finishes gets a tick ("Download done ✓").
@@ -113,6 +114,7 @@ object LiveFeatures {
     }
 
     fun stop(context: Context) {
+        TorchLive.stop(context.applicationContext)
         observer?.let { runCatching { context.applicationContext.contentResolver.unregisterContentObserver(it) } }
         observer = null
     }
@@ -171,11 +173,21 @@ object VolumeHud {
         return true
     }
 
+    /** Which volume the buttons change right now: music while it plays, otherwise your choice. */
+    fun stream(context: Context): Int {
+        val audio = context.getSystemService(AudioManager::class.java)
+        if (audio.isMusicActive) return AudioManager.STREAM_MUSIC
+        // On silent/vibrate the ringtone can't move, so media it is.
+        if (audio.ringerMode != AudioManager.RINGER_MODE_NORMAL) return AudioManager.STREAM_MUSIC
+        return if (KineticSettings.current.volumeKeys == "ring") AudioManager.STREAM_RING else AudioManager.STREAM_MUSIC
+    }
+
     /** One volume step, shown straight away in the island. */
     fun step(context: Context, dir: Int): Boolean {
         val audio = context.getSystemService(AudioManager::class.java)
-        val ok = runCatching { audio.adjustSuggestedStreamVolume(dir, AudioManager.USE_DEFAULT_STREAM_TYPE, 0) }.isSuccess
-        if (ok) show(context)
+        val s = stream(context)
+        val ok = runCatching { audio.adjustStreamVolume(s, dir, 0) }.isSuccess
+        if (ok) show(context, s)
         return ok
     }
 
@@ -193,7 +205,7 @@ object VolumeHud {
 
     fun show(context: Context, forced: Int? = null) {
         val audio = context.getSystemService(AudioManager::class.java)
-        val stream = forced ?: if (audio.isMusicActive) AudioManager.STREAM_MUSIC else AudioManager.STREAM_RING
+        val stream = forced ?: stream(context)
         val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
         val pct = audio.getStreamVolume(stream) * 100 / max
         IslandBus.level(if (stream == AudioManager.STREAM_MUSIC) "volume" else "ring", pct)
@@ -562,6 +574,89 @@ object FlightWatch {
                         tell(app, "✈", "Stopped tracking $shown")
                     },
                 ),
+            ),
+        )
+    }
+}
+
+// ======================================================================================
+// Flashlight, like iOS: when it's on, the island shows it, with Dimmer / Brighter / Off.
+// ======================================================================================
+object TorchLive {
+    private var callback: android.hardware.camera2.CameraManager.TorchCallback? = null
+    private var torchId: String? = null
+    private var maxLevel = 1
+    private var level = 1
+
+    private fun cm(c: Context) = c.getSystemService(android.hardware.camera2.CameraManager::class.java)
+
+    fun start(app: Context) {
+        stop(app)
+        val cm = cm(app) ?: return
+        val id = runCatching {
+            cm.cameraIdList.firstOrNull { cid ->
+                val ch = cm.getCameraCharacteristics(cid)
+                ch.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
+                    ch.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+            }
+        }.getOrNull() ?: return
+        torchId = id
+        maxLevel = runCatching {
+            cm.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_STRENGTH_MAXIMUM_LEVEL) ?: 1
+        }.getOrDefault(1).coerceAtLeast(1)
+        val cb = object : android.hardware.camera2.CameraManager.TorchCallback() {
+            override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+                if (cameraId != id) return
+                if (enabled) {
+                    level = runCatching { cm.getTorchStrengthLevel(id) }.getOrDefault(maxLevel).coerceIn(1, maxLevel)
+                    publish(app)
+                } else {
+                    LiveHub.remove("torch")
+                }
+            }
+
+            override fun onTorchStrengthLevelChanged(cameraId: String, newStrengthLevel: Int) {
+                if (cameraId != id) return
+                level = newStrengthLevel.coerceIn(1, maxLevel)
+                if (LiveHub.get("torch") != null) publish(app)
+            }
+        }
+        runCatching { cm.registerTorchCallback(cb, Handler(Looper.getMainLooper())) }
+        callback = cb
+    }
+
+    fun stop(app: Context) {
+        callback?.let { cb -> runCatching { cm(app)?.unregisterTorchCallback(cb) } }
+        callback = null
+        LiveHub.remove("torch")
+    }
+
+    private fun setLevel(app: Context, l: Int) {
+        val id = torchId ?: return
+        val target = l.coerceIn(1, maxLevel)
+        runCatching { cm(app)?.turnOnTorchWithStrengthLevel(id, target) }.onSuccess {
+            level = target
+            publish(app)
+        }
+    }
+
+    private fun publish(app: Context) {
+        val dimmable = maxLevel > 1
+        val pct = level * 100 / maxLevel
+        LiveHub.put(
+            Live(
+                "torch", "🔦", "Flashlight",
+                if (dimmable) "Brightness $level of $maxLevel" else "On",
+                value = if (dimmable) "$pct%" else "On",
+                progress = if (dimmable) level.toFloat() / maxLevel else null,
+                accent = 0xFFFFD60A.toInt(), priority = 5,
+                actions = buildList {
+                    add(LiveAction("Off") { torchId?.let { id -> runCatching { cm(app)?.setTorchMode(id, false) } } })
+                    if (dimmable) {
+                        add(LiveAction("Dimmer") { setLevel(app, level - 1) })
+                        add(LiveAction("Brighter") { setLevel(app, level + 1) })
+                    }
+                },
             ),
         )
     }
