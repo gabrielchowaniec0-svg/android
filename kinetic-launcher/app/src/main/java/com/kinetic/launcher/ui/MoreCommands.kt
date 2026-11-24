@@ -57,6 +57,18 @@ object MoreCommands {
         data class Tip(val percent: Double, val amount: Double, val people: Int) : Cmd
         data class Countdown(val label: String, val date: LocalDate) : Cmd
         data class Random(val from: Int, val to: Int) : Cmd
+        data object ScreenTime : Cmd
+        data object Storage : Cmd
+        data object Missed : Cmd
+        data object ClearNotifications : Cmd
+        data class ShareLocation(val who: String) : Cmd
+        data class Copy(val text: String) : Cmd
+        data object Joke : Cmd
+        data class EightBall(val question: String) : Cmd
+        data class Distance(val place: String) : Cmd
+        data object Sun : Cmd
+        data object Moon : Cmd
+        data object PlanesNearby : Cmd
     }
 
     // ---- understanding ------------------------------------------------------------------
@@ -101,7 +113,22 @@ object MoreCommands {
             "storage" -> return Cmd.Setting(Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "Storage")
             "location settings", "gps" -> return Cmd.Setting(Settings.ACTION_LOCATION_SOURCE_SETTINGS, "Location")
             "random number" -> return Cmd.Random(1, 100)
+            "screen time", "how long have i been on my phone", "phone usage", "my screen time" -> return Cmd.ScreenTime
+            "storage left", "how much storage", "free space", "space left" -> return Cmd.Storage
+            "what did i miss", "notifications summary", "my notifications", "unread", "how many notifications" -> return Cmd.Missed
+            "clear notifications", "clear all notifications", "dismiss notifications" -> return Cmd.ClearNotifications
+            "tell me a joke", "joke", "make me laugh" -> return Cmd.Joke
+            "sunset", "sunrise", "when is sunset", "when's sunset", "when is sunrise", "when's sunrise" -> return Cmd.Sun
+            "moon", "moon phase", "what's the moon", "whats the moon" -> return Cmd.Moon
+            "planes nearby", "planes overhead", "any planes", "how many planes", "what's flying", "whats flying" -> return Cmd.PlanesNearby
         }
+        r("""(?:share|send)\s+(?:my\s+)?location\s+(?:with|to)\s+(.+)""")?.let { return Cmd.ShareLocation(it.groupValues[1].trim()) }
+        r("""copy\s+(.+)""")?.let { return Cmd.Copy(it.groupValues[1].trim()) }
+        r("""(?:magic 8 ball|8 ball|eight ball)\s*(.*)""")?.let { return Cmd.EightBall(it.groupValues[1]) }
+        r("""(?:should i|will i|am i going to|is it going to be)\s+(.+)""")?.let { m ->
+            if (listOf("rain", "snow", "umbrella", "jacket", "coat").none { m.groupValues[1].contains(it) }) return Cmd.EightBall(q)
+        }
+        r("""how far(?: away)? is\s+(.+?)(?:\s+from here)?""")?.let { return Cmd.Distance(it.groupValues[1].trim()) }
         r("""(?:volume|set volume(?: to)?)\s+(\d{1,3})%?""")?.let { return Cmd.Volume(it.groupValues[1].toInt().coerceIn(0, 100)) }
         r("""(?:brightness|set brightness(?: to)?)\s+(\d{1,3})%?""")?.let { return Cmd.Brightness(it.groupValues[1].toInt().coerceIn(0, 100)) }
 
@@ -203,7 +230,7 @@ object MoreCommands {
 
     // ---- doing ----------------------------------------------------------------------------
 
-    fun resolve(context: Context, cmd: Cmd, original: String): Ready? = when (cmd) {
+    fun resolve(context: Context, cmd: Cmd, original: String): Ready? = more(context, cmd, original) ?: when (cmd) {
         is Cmd.Media -> media(context, cmd.what, original)
         is Cmd.Volume -> {
             val label = when (cmd.percent) {
@@ -314,7 +341,172 @@ object MoreCommands {
             val n = (cmd.from..cmd.to).random()
             answer("🎲", "$n", "Random number from ${cmd.from} to ${cmd.to}", "$n · random ${cmd.from}–${cmd.to}")
         }
+        else -> null
     }
+
+    // ---- more island answers ------------------------------------------------------------------
+
+    private fun more(context: Context, cmd: Cmd, original: String): Ready? = when (cmd) {
+        Cmd.ScreenTime -> {
+            if (!KineticCommands.hasUsageAccess(context)) {
+                Ready("⏱", "Screen time", "Needs usage access", "Allow") { ctx -> askSpecial(ctx, "⏱", "Screen time needs usage access", PermissionActivity.USAGE, original) }
+            } else {
+                val usm = context.getSystemService(android.app.usage.UsageStatsManager::class.java)
+                val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val stats = usm.queryAndAggregateUsageStats(start, System.currentTimeMillis())
+                    .filterKeys { it != context.packageName }
+                    .mapValues { it.value.totalTimeInForeground }.filterValues { it > 60_000 }
+                val total = stats.values.sum()
+                val top = stats.entries.sortedByDescending { it.value }.take(3).joinToString(" · ") { (pkg, ms) ->
+                    val l = runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+                    "$l ${dur(ms)}"
+                }
+                answer("⏱", "${dur(total)} today", top, "Screen time ${dur(total)} · $top")
+            }
+        }
+        Cmd.Storage -> {
+            val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            val free = st.availableBytes / 1_000_000_000.0
+            val total = st.totalBytes / 1_000_000_000.0
+            val t = "%.0f GB free".format(free)
+            answer("▤", t, "of %.0f GB".format(total), "$t of %.0f GB".format(total))
+        }
+        Cmd.Missed -> {
+            val counts = com.kinetic.launcher.NotificationHub.counts.value
+            if (counts.isEmpty()) {
+                answer("☰", "You're all caught up", "", "You're all caught up ✓")
+            } else {
+                val pm = context.packageManager
+                val parts = counts.entries.sortedByDescending { it.value }.take(4).joinToString(" · ") { (pkg, n) ->
+                    val l = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+                    "$n $l"
+                }
+                val total = counts.values.sum()
+                answer("☰", "$total unread", parts, "$total unread · $parts")
+            }
+        }
+        Cmd.ClearNotifications -> Ready("☰", "Clear all notifications", "Everything that can be cleared", "Clear", confirm = true, done = "Notifications cleared") { _ ->
+            val l = com.kinetic.launcher.KineticNotificationListener.instance ?: return@Ready false
+            runCatching { l.cancelAllNotifications() }.isSuccess
+        }
+        is Cmd.ShareLocation -> {
+            val loc = lastLocation(context)
+            if (loc == null) {
+                Ready("⌖", "Share location", "Needs your location", "Allow", Manifest.permission.ACCESS_FINE_LOCATION) { false }
+            } else {
+                val link = "https://maps.google.com/?q=%.5f,%.5f".format(Locale.US, loc.latitude, loc.longitude)
+                KineticCommands.resolve(context, KineticCommands.Parsed.Text(cmd.who, "I'm here: $link"))
+            }
+        }
+        is Cmd.Copy -> Ready("⧉", "Copy “${cmd.text}”", "To the clipboard", "Copy", done = "Copied “${cmd.text}”") { ctx ->
+            ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("Kinetic", cmd.text))
+            true
+        }
+        Cmd.Joke -> JOKES.random().let { answer("😄", it.first, it.second, "${it.first} … ${it.second}") }
+        is Cmd.EightBall -> EIGHT.random().let { answer("🎱", it, cmd.question.ifBlank { "Magic 8 ball" }, "🎱 $it") }
+        is Cmd.Distance -> {
+            val me = lastLocation(context)
+            if (me == null) {
+                Ready("⌖", "How far is ${cmd.place}", "Needs your location", "Allow", Manifest.permission.ACCESS_FINE_LOCATION) { false }
+            } else {
+                @Suppress("DEPRECATION")
+                val there = runCatching { Geocoder(context, Locale.getDefault()).getFromLocationName(cmd.place, 1)?.firstOrNull() }.getOrNull()
+                if (there == null) {
+                    answer("⌖", "Couldn't find “${cmd.place}”", "Try a fuller name or city", "Couldn't find ${cmd.place}")
+                } else {
+                    val out = FloatArray(1)
+                    android.location.Location.distanceBetween(me.latitude, me.longitude, there.latitude, there.longitude, out)
+                    val mi = out[0] / 1609.34
+                    val t = if (mi < 10) "%.1f miles".format(mi) else "%,.0f miles".format(mi)
+                    Ready("⌖", "${cmd.place.replaceFirstChar { it.uppercase() }}: $t", "As the crow flies", "Directions", answer = true, done = "${cmd.place.replaceFirstChar { it.uppercase() }} is $t away") { ctx ->
+                        start(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(cmd.place))))
+                    }
+                }
+            }
+        }
+        Cmd.Sun -> {
+            val p = context.getSharedPreferences("kinetic_settings", Context.MODE_PRIVATE)
+            val rise = p.getLong("wp_sunrise", 0L)
+            val set = p.getLong("wp_sunset", 0L)
+            if (rise == 0L || set == 0L) {
+                answer("☀", "Not known yet", "Turn on Sunset & moon in Settings ▸ Living wallpaper", "Sun times aren't known yet")
+            } else {
+                val f = java.text.SimpleDateFormat("h:mm a", Locale.getDefault())
+                // Saved times may be from an earlier day; the clock time is what matters.
+                val t = "Sunrise ${f.format(java.util.Date(rise))} · Sunset ${f.format(java.util.Date(set))}"
+                answer("☀", t, "Where you are", t)
+            }
+        }
+        Cmd.Moon -> {
+            val days = (System.currentTimeMillis() - 947_182_440_000L) / 86_400_000.0
+            val phase = ((days / 29.530588853) % 1.0 + 1.0) % 1.0
+            val (name, icon) = when {
+                phase < 0.03 || phase > 0.97 -> "New moon" to "🌑"
+                phase < 0.22 -> "Waxing crescent" to "🌒"
+                phase < 0.28 -> "First quarter" to "🌓"
+                phase < 0.47 -> "Waxing gibbous" to "🌔"
+                phase < 0.53 -> "Full moon" to "🌕"
+                phase < 0.72 -> "Waning gibbous" to "🌖"
+                phase < 0.78 -> "Last quarter" to "🌗"
+                else -> "Waning crescent" to "🌘"
+            }
+            val lit = ((1 - kotlin.math.cos(2 * Math.PI * phase)) / 2 * 100).roundToInt()
+            val toFull = (((0.5 - phase + 1.0) % 1.0) * 29.53).roundToInt()
+            answer(icon, name, "$lit% lit · full moon in $toFull days", "$name · $lit% lit")
+        }
+        Cmd.PlanesNearby -> {
+            val me = lastLocation(context)
+            if (me == null) {
+                Ready("✈", "Planes nearby", "Needs your location", "Allow", Manifest.permission.ACCESS_FINE_LOCATION) { false }
+            } else {
+                val planes = com.kinetic.launcher.planes.PlaneData.nearby(me.latitude, me.longitude, 20)
+                val closest = planes.minByOrNull { com.kinetic.launcher.planes.PlaneData.distanceM(me.latitude, me.longitude, it.lat, it.lon) }
+                if (closest == null) {
+                    answer("✈", "No planes nearby right now", "Within 23 miles", "No planes nearby right now")
+                } else {
+                    val mi = com.kinetic.launcher.planes.PlaneData.distanceM(me.latitude, me.longitude, closest.lat, closest.lon) / 1609.34
+                    val t = "${planes.size} planes nearby"
+                    val s = "Closest: ${closest.label} · %,d ft · %.1f mi".format(closest.altitudeFt, mi)
+                    Ready("✈", t, s, "Spot", answer = true, done = "$t · $s") { ctx ->
+                        start(ctx, Intent(ctx, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java))
+                    }
+                }
+            }
+        }
+        else -> null
+    }
+
+    private fun dur(ms: Long): String {
+        val m = ms / 60_000
+        return if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min"
+    }
+
+    private fun lastLocation(context: Context): android.location.Location? {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return null
+        val lm = context.getSystemService(LocationManager::class.java)
+        return runCatching {
+            listOf(LocationManager.FUSED_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+                .mapNotNull { p -> runCatching { lm.getLastKnownLocation(p) }.getOrNull() }.maxByOrNull { it.time }
+        }.getOrNull()
+    }
+
+    private val JOKES = listOf(
+        "Why did the airplane get sent to its room?" to "Bad altitude.",
+        "What do you call a pilot who's always late?" to "A delayed departure.",
+        "Why don't skeletons fight each other?" to "They don't have the guts.",
+        "What do you call a fake noodle?" to "An impasta.",
+        "Why did the scarecrow win an award?" to "He was outstanding in his field.",
+        "How does a phone propose?" to "With a ring.",
+        "Why was the math book sad?" to "It had too many problems.",
+        "What did the ocean say to the beach?" to "Nothing, it just waved.",
+        "Why can't you trust atoms?" to "They make up everything.",
+        "What do clouds wear?" to "Thunderwear.",
+    )
+
+    private val EIGHT = listOf(
+        "It is certain", "Without a doubt", "Yes, definitely", "Most likely", "Outlook good", "Signs point to yes",
+        "Ask again later", "Better not tell you now", "Cannot predict now", "Don't count on it", "My reply is no", "Very doubtful",
+    )
 
     private fun answer(badge: String, title: String, sub: String, done: String) = Ready(badge, title, sub, "OK", answer = true, done = done) { false }
 
@@ -452,7 +644,7 @@ object MoreCommands {
     /** Drops an "Allow" button down from the island (or opens the page straight away if the island is off). */
     fun askSpecial(context: Context, icon: String, text: String, kind: String, retry: String): Boolean {
         val go = { PermissionActivity.start(context, kind, retry) }
-        if (!IslandBus.ask(icon, text, "Allow", go)) go()
+        if (!IslandBus.ask(icon, text, "Allow", onTap = go)) go()
         return true
     }
 

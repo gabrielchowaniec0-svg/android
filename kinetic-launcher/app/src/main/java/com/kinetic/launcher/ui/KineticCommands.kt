@@ -172,7 +172,7 @@ object KineticCommands {
                 else null
             } else {
                 val name = c?.first ?: number
-                Ready("☏", "Call $name", number + (c?.third?.let { " · $it" } ?: ""), "Call", Manifest.permission.CALL_PHONE, done = "Calling $name") { ctx ->
+                Ready("☏", "Call $name", number + (c?.third?.let { " · $it" } ?: ""), "Call", Manifest.permission.CALL_PHONE, confirm = true, done = "Calling $name") { ctx ->
                     // With permission it calls straight away; otherwise the dialer opens ready to go.
                     val action = if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) Intent.ACTION_CALL else Intent.ACTION_DIAL
                     start(ctx, Intent(action, Uri.parse("tel:" + Uri.encode(number))))

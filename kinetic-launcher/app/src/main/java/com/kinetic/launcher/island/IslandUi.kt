@@ -255,7 +255,7 @@ fun DynamicIsland(
             is IslandAlert.Charging -> ChargingW to pillH
             is IslandAlert.Earbuds -> ChargingW to pillH
             // A message with a button, hanging below the camera.
-            is IslandAlert.Ask -> fullW to (pillH + 86.dp)
+            is IslandAlert.Ask -> fullW to (pillH + if (md.alert.text.length > 38) 106.dp else 88.dp)
             // Face ID: a small rounded square hanging just below the camera
             // (kept short so it clears the lock-screen clock).
             is IslandAlert.Scan -> 74.dp to (pillH + 46.dp)
@@ -701,7 +701,7 @@ private fun IslandContent(
     Box(Modifier.fillMaxSize().padding(top = if (big) cameraRoom else 0.dp)) {
                     when (shown) {
                         IslandMode.Idle -> IdleContent()
-                        is IslandMode.Alert -> AlertContent(shown.alert)
+                        is IslandMode.Alert -> AlertContent(shown.alert) { model.answerAsk(it) }
                         IslandMode.MediaCompact -> media?.let { MediaCompact(it) }
                         IslandMode.MediaMinimal -> media?.let { MediaMinimal(it) }
                         IslandMode.MediaExpanded -> media?.let { MediaExpanded(it, model) }
@@ -837,7 +837,7 @@ private fun NavCompact(n: NotificationHub.NavInfo) {
 }
 
 @Composable
-private fun AlertContent(alert: IslandAlert) {
+private fun AlertContent(alert: IslandAlert, onAsk: (Boolean) -> Unit = {}) {
     val s = LocalPill.current
     when (alert) {
         is IslandAlert.Ringer -> {
@@ -903,11 +903,17 @@ private fun AlertContent(alert: IslandAlert) {
                 Spacer(Modifier.width(10.dp))
                 Text(alert.text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Box(
-                Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(19.dp)).background(Blue),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(alert.button, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                alert.secondary?.let { label ->
+                    Box(
+                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF3A3A3C)).clickable { onAsk(false) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                }
+                Box(
+                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(20.dp)).background(Blue).clickable { onAsk(true) },
+                    contentAlignment = Alignment.Center,
+                ) { Text(alert.button, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
         is IslandAlert.Say -> Box(

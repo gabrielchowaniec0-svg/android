@@ -557,3 +557,18 @@ The scan only shows when the phone is held up. It doesn't show when the phone is
 **Answers:** "where am I" · "tip 20% on 45" / "tip 18% on 120 split 4" · "days until christmas" / "countdown to july 4" · "random number 1 to 50"
 
 **Permissions:** when a command needs something you haven't allowed yet (contacts, location, silent mode, brightness, music controls…), the Dynamic Island drops down with an **Allow** button. Tap it: Android asks, and the command runs as soon as you say yes. For Do Not Disturb, brightness and music controls, it opens the right settings page; switch Kinetic on there and try the command again.
+
+## Commands in the Dynamic Island
+With the island on, S Pen commands now happen in the island instead of opening search:
+- **Texts and calls** drop down with **Send/Call** and **Cancel** ("text mom hello" → "Text Mom: "hello"" [Cancel] [Send]).
+- **Missing permissions** drop down with **Allow** / **Not now**, then carry on by themselves (e.g. Allow contacts → then the Send prompt).
+- **Answers and results** drop down for a few seconds.
+- **Anything it doesn't understand** drops down with **Search** (Kinetic search) and **Web**.
+
+New commands:
+- "screen time" (today's total and top apps; asks once for usage access)
+- "storage left" · "what did I miss" (unread count per app) · "clear notifications" (asks first)
+- "share my location with mom" (a Maps link, confirmed in the island)
+- "copy 555-0123" (to the clipboard)
+- "how far is Chicago" · "sunset" / "sunrise" · "moon phase" · "planes nearby" (count plus the closest flight)
+- "tell me a joke" · "magic 8 ball will I pass my test" / "should I get pizza"
