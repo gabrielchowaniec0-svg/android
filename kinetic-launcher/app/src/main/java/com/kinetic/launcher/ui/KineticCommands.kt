@@ -45,6 +45,7 @@ object KineticCommands {
         data class FocusTimer(val seconds: Int) : Parsed
         data class Note(val text: String) : Parsed
         data class Chain(val name: String, val lines: List<String>) : Parsed
+        data class More(val cmd: MoreCommands.Cmd, val original: String) : Parsed
     }
 
     /** Hidden apps (while they're hidden): "open …" never reveals them. Set by the home screen. */
@@ -97,6 +98,7 @@ object KineticCommands {
         // Your own command chains come first ("gaming mode").
         com.kinetic.launcher.KineticApp.context?.let { c -> com.kinetic.launcher.pen.CommandChains.find(c, input)?.let { return Parsed.Chain(it.first, it.second) } }
         NOTE.matchEntire(input.trim())?.let { return Parsed.Note(it.groupValues[1].trim()) }
+        MoreCommands.parse(input)?.let { return Parsed.More(it, input) }
         // Things the assistant should get first ("open camera" isn't "open" + a contact…).
         Assistant.parse(input)?.let { if (it is Parsed.Act || it is Parsed.Ask) return it }
         CALL.matchEntire(q)?.let { return Parsed.Call(it.groupValues[1].trim()) }
@@ -268,6 +270,7 @@ object KineticCommands {
         is Parsed.Ask -> Assistant.resolveQuestion(context, parsed.question)
         is Parsed.Search -> Assistant.resolveSearch(parsed.query)
         is Parsed.FocusTimer -> Assistant.resolveFocusTimer(context, parsed.seconds)
+        is Parsed.More -> MoreCommands.resolve(context, parsed.cmd, parsed.original)
         is Parsed.Note -> Ready("📝", "Sticky note", parsed.text, "Add", done = "Note added to your home screen") { ctx ->
             com.kinetic.launcher.pen.StickyNotes.add(ctx, parsed.text)
             true

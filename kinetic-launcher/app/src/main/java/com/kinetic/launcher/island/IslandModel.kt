@@ -71,6 +71,8 @@ sealed interface IslandAlert {
     data class Scan(val success: Boolean, val failed: Boolean = false) : IslandAlert
     /** A short message from elsewhere in Kinetic (S Pen answers, "Calling Mom"…). */
     data class Say(val icon: String, val text: String) : IslandAlert
+    /** A message with a button, e.g. a command asking for permission. */
+    data class Ask(val icon: String, val text: String, val button: String) : IslandAlert
     /** Battery just dropped to 15% (when One UI warns too). */
     data class LowBattery(val level: Int) : IslandAlert
     /** A Focus was switched on or off. */
@@ -357,6 +359,12 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         scope.launch {
             IslandBus.says.collect { s -> showAlert(IslandAlert.Say(s.icon, s.text)) }
         }
+        scope.launch {
+            IslandBus.asks.collect { a ->
+                askAction = a.onTap
+                showAlert(IslandAlert.Ask(a.icon, a.text, a.button))
+            }
+        }
     }
 
     /** (Re)connects to media sessions — needs Kinetic's Notification access. */
@@ -395,6 +403,17 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         _replying.value = false
         _peekOpen.value = false
         _peek.value = null
+    }
+
+    private var askAction: (() -> Unit)? = null
+
+    /** The island's button was pressed (e.g. "Allow"). */
+    fun answerAsk() {
+        val a = askAction
+        askAction = null
+        alertJob?.cancel()
+        _alert.value = null
+        a?.invoke()
     }
 
     /** Opens the notification peek into its buttons (pull down or hold). */
@@ -645,6 +664,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     is IslandAlert.LowBattery -> 5000
                     is IslandAlert.Say -> (2600L + alert.text.length * 45L).coerceAtMost(7000L)
                     is IslandAlert.Earbuds -> 3500
+                    is IslandAlert.Ask -> 9000
                     else -> 2200
                 }
             )
