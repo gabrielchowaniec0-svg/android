@@ -604,3 +604,10 @@ New commands:
 - `again` repeats your last command. `undo` puts back the last volume, brightness, ringer or Do Not Disturb change.
 - Writing shortcuts: `shortcut m = call mom`, or Settings → Writing shortcuts.
 - If you write the start of a command you've used before ("ca"), the island offers to finish it ("call mom?" → Do it).
+
+## "What can I write?" (all commands)
+- Write `help`, `?` or `commands` (or open **Commands** in the app list, or Settings → All commands).
+- Every command is grouped (People, Notifications, Remember things, School, Planes…), searchable, and has a **Try** button. Your own shortcuts, chains and recent commands appear at the top under "Yours".
+
+## Island fix
+- The island's contents could fade out and stay invisible after pulling it open or closed (leaving an empty black pill or box). The fade-back no longer gets cut short, and a safety check restores the contents whenever nothing is being pulled.

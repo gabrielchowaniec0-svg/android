@@ -734,7 +734,7 @@ fun KineticHome(
         if (prefs.getBoolean(SYSTEM_FOLDER_DONE, false)) return@LaunchedEffect
         // Let a first-run "use my phone's layout" finish first.
         delay(1500)
-        val order = listOf("Settings", "Vault", "Focus", "PlaneSpotter", "Wallpaper")
+        val order = listOf("Settings", "Vault", "Focus", "Commands", "PlaneSpotter", "Wallpaper")
         val mine = list.filter { it.packageName == activity.packageName }
             .sortedBy { e -> order.indexOfFirst { e.component.className.endsWith(".shortcut.$it") }.let { if (it < 0) 99 else it } }
         if (mine.isEmpty()) return@LaunchedEffect

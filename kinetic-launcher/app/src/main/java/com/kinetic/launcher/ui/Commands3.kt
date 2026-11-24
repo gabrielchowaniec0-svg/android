@@ -171,6 +171,7 @@ object Commands3 {
             "stop stopwatch", "stop the stopwatch" -> return Cmd.Stopwatch("stop")
             "stop" -> if (swStart != 0L) return Cmd.Stopwatch("stop")
             "what's that plane", "whats that plane", "what plane is that", "which plane is that" -> return Cmd.Tool("planes")
+            "help", "commands", "all commands", "what can i write", "what can i say", "what can you do", "command list", "cheat sheet" -> return Cmd.Tool("help")
             "level", "bubble level", "spirit level" -> return Cmd.Tool("level")
             "ruler", "measure" -> return Cmd.Tool("ruler")
             "decibels", "how loud is it", "sound meter", "noise level" -> return Cmd.Tool("decibels")
@@ -364,6 +365,9 @@ object Commands3 {
             else answer("◷", parts.first(), parts.drop(1).joinToString(" · "), parts.joinToString(" · "))
         }
         is Cmd.Tool -> when (cmd.which) {
+            "help" -> Ready("?", "What can I write?", "Every command, with Try buttons", "Open", done = "Here's everything you can write") { ctx ->
+                start(ctx, Intent(ctx, HelpActivity::class.java))
+            }
             "planes" -> Ready("✈", "What's that plane?", "Point at it", "Open", done = "Point at the plane") { ctx ->
                 start(ctx, Intent(ctx, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java))
             }
