@@ -258,6 +258,9 @@
                 android:resource="@xml/island_accessibility" />
         </service>
 
+        <!-- Ends a timed Focus ("focus 25 min"). -->
+        <receiver android:name=".FocusEndReceiver" android:exported="false" />
+
         <!-- Kinetic's own "system apps". They show in Kinetic's app list (in the "Kinetic"
              folder); each opens one of Kinetic's screens. -->
         <activity-alias

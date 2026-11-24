@@ -339,6 +339,8 @@ class SettingsActivity : ComponentActivity() {
                         requestPermissions(arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION), 41)
                     }
                 }
+                SwitchRow("Snow, fog & wind", "Snowflakes, a rising haze, and rain that slants with the wind", s.wpWeatherExtra, bool(WallpaperSignals.KEY_WEATHER_EXTRA))
+                SwitchRow("Sunset & moon", "Warmer colours at sunrise and sunset; at night, the real moon in its current phase", s.wpSky, bool(WallpaperSignals.KEY_SKY))
                 SwitchRow("Battery tide", "A glowing waterline: high tide when full, green while charging, red when low", s.wpBatteryTide, bool(WallpaperSignals.KEY_BATTERY_TIDE))
                 SwitchRow("Fireflies", "One firefly drifts for each app with unread notifications", s.wpFireflies, bool(WallpaperSignals.KEY_FIREFLIES))
             }

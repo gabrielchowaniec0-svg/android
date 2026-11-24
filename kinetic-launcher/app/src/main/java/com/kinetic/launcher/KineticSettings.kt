@@ -70,6 +70,8 @@ object KineticSettings {
         val wpWeatherRain: Boolean = true,
         val wpBatteryTide: Boolean = true,
         val wpFireflies: Boolean = true,
+        val wpWeatherExtra: Boolean = true,
+        val wpSky: Boolean = true,
         /** S Pen: write on the home screen to run Commands / search. */
         val penInk: Boolean = true,
     )
@@ -174,6 +176,8 @@ object KineticSettings {
         wpWeatherRain = p.getBoolean(WallpaperSignals.KEY_WEATHER_RAIN, true),
         wpBatteryTide = p.getBoolean(WallpaperSignals.KEY_BATTERY_TIDE, true),
         wpFireflies = p.getBoolean(WallpaperSignals.KEY_FIREFLIES, true),
+        wpWeatherExtra = p.getBoolean(WallpaperSignals.KEY_WEATHER_EXTRA, true),
+        wpSky = p.getBoolean(WallpaperSignals.KEY_SKY, true),
         penInk = p.getBoolean(PEN_INK, true),
     )
 }

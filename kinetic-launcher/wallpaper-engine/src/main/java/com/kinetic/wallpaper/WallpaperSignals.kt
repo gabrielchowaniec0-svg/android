@@ -27,6 +27,8 @@ object WallpaperSignals {
     const val KEY_WEATHER_RAIN = "wp_weather_rain"
     const val KEY_BATTERY_TIDE = "wp_battery_tide"
     const val KEY_FIREFLIES = "wp_fireflies"
+    const val KEY_WEATHER_EXTRA = "wp_weather_extra"
+    const val KEY_SKY = "wp_sky"
 
     enum class Kind { App, Unlock, Notification, Charging }
 
@@ -81,6 +83,27 @@ object WallpaperSignals {
     /** 0 = dry, 1 = heavy rain right now (from the weather, set by the launcher). */
     @Volatile
     var rain: Float = 0f
+
+    /** 0..1 snowfall, 0..1 fog, -1..1 wind (negative = blowing left). */
+    @Volatile
+    var snow: Float = 0f
+
+    @Volatile
+    var fog: Float = 0f
+
+    @Volatile
+    var wind: Float = 0f
+
+    /** 0..1 golden-hour warmth around sunrise/sunset; 0..1 how much it's night. */
+    @Volatile
+    var warm: Float = 0f
+
+    @Volatile
+    var night: Float = 0f
+
+    /** Moon phase 0..1 (0 new, 0.5 full), or -1 to hide the moon. */
+    @Volatile
+    var moon: Float = -1f
 
     /** Apps with unread notifications (each one is a firefly), 0–8. */
     @Volatile

@@ -69,6 +69,7 @@ object Assistant {
     private val TIME_IN = Regex("""^(?:what(?:'s| is)?\s+)?(?:the\s+)?time(?:\s+is\s+it)?\s+in\s+(.+)$""")
     private val CONVERT = Regex("""^([\d.,]+)\s*([a-z°"'/ .]+?)\s+(?:in|to|into|as)\s+([a-z°"'/ .]+)$""")
     private val FLIGHT = Regex("""^(?:where(?:'s| is)|track|find|flight|status of|where is flight)\s+(?:flight\s+)?([a-z][a-z0-9]|[a-z]{3})\s?(\d{1,4})$""")
+    private val FOCUS_TIMER = Regex("""^(?:focus|study|deep work|work|pomodoro)\s+(?:for\s+)?(.+)$""")
     private val DICE = Regex("""^roll\s+(?:a|one|the)?\s*(?:d(\d+)|dice|die)$""")
 
     fun parse(raw: String): Parsed? {
@@ -106,6 +107,7 @@ object Assistant {
         REMIND_IN.matchEntire(q)?.let { m -> KineticCommands.parseDuration(m.groupValues[2])?.let { return Parsed.Timer(it, m.groupValues[1].trim()) } }
         REMIND_IN_FIRST.matchEntire(q)?.let { m -> KineticCommands.parseDuration(m.groupValues[1])?.let { return Parsed.Timer(it, m.groupValues[2].trim()) } }
 
+        FOCUS_TIMER.matchEntire(q)?.let { m -> KineticCommands.parseDuration(m.groupValues[1])?.let { return Parsed.FocusTimer(it) } }
         SEARCH.matchEntire(q)?.let { return Parsed.Search(it.groupValues[1].trim()) }
         OPEN.matchEntire(q)?.let { m ->
             val name = m.groupValues[1].trim()
@@ -223,6 +225,25 @@ object Assistant {
             ?: return null
         val launch = pm.getLaunchIntentForPackage(best.first) ?: return null
         return Ready("↗", "Open ${best.second}", "App", "Open", done = "Opened ${best.second}") { ctx -> start(ctx, launch) }
+    }
+
+    /** "focus 25 min": turns on a Focus for that long, with a countdown timer. */
+    fun resolveFocusTimer(context: Context, seconds: Int): Ready {
+        com.kinetic.launcher.FocusModes.init(context)
+        val modes = com.kinetic.launcher.FocusModes.modes.value
+        val mode = modes.firstOrNull { it.name.lowercase() in setOf("study", "school", "work", "focus") } ?: modes.firstOrNull()
+        val len = KineticCommands.prettyDuration(seconds)
+        return Ready("☾", "Focus for $len", (mode?.name ?: "Focus") + " turns off by itself when the time's up", "Start", done = "Focus · $len") { ctx ->
+            if (mode != null) com.kinetic.launcher.FocusModes.turnOn(ctx, mode.id)
+            com.kinetic.launcher.FocusEndReceiver.schedule(ctx, seconds)
+            start(
+                ctx,
+                Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
+                    .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds)
+                    .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "Focus")
+                    .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true),
+            )
+        }
     }
 
     fun resolveSearch(query: String): Ready = Ready("⌕", "Search the web", query, "Search") { ctx ->

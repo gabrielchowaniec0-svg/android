@@ -95,6 +95,11 @@ class FluidWallpaperService : WallpaperService() {
         private var calm = 0f
         private var rain = 0f
         private var flies = 0f
+        private var snow = 0f
+        private var fog = 0f
+        private var windU = 0f
+        private var warmU = 0f
+        private var nightU = 0f
         private var tideOn = false
         private var tideLevel = 1f
         private var tideCharging = false
@@ -305,6 +310,17 @@ class FluidWallpaperService : WallpaperService() {
             shader.setFloatUniform("iTide", if (tideOn) tideLevel else -1f, if (tideCharging) 1f else 0f, 0f)
             flies += (WallpaperSignals.fireflies.coerceIn(0, 8) - flies) * 0.03f
             shader.setFloatUniform("iFlies", kotlin.math.round(flies))
+            snow += (WallpaperSignals.snow - snow) * 0.01f
+            fog += (WallpaperSignals.fog - fog) * 0.01f
+            windU += (WallpaperSignals.wind - windU) * 0.01f
+            warmU += (WallpaperSignals.warm - warmU) * 0.005f
+            nightU += (WallpaperSignals.night - nightU) * 0.005f
+            shader.setFloatUniform("iSnow", snow)
+            shader.setFloatUniform("iFog", fog)
+            shader.setFloatUniform("iWind", windU)
+            shader.setFloatUniform("iWarm", warmU)
+            shader.setFloatUniform("iNight", nightU)
+            shader.setFloatUniform("iMoon", WallpaperSignals.moon)
             // A Focus can dim the wallpaper.
             dim += (WallpaperSignals.focusDim - dim) * 0.04f
             shader.setFloatUniform("iDim", dim)
