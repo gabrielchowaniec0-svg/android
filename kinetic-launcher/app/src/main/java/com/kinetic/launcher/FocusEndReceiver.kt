@@ -10,6 +10,7 @@ import android.content.Intent
 class FocusEndReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         FocusModes.init(context)
+        com.kinetic.launcher.island.FocusLive.finished(context)
         FocusModes.turnOff(context)
     }
 

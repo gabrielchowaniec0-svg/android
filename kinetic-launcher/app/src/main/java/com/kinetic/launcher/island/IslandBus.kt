@@ -45,4 +45,24 @@ object IslandBus {
         if (!DynamicIslandService.isRunning) return false
         return _says.tryEmit(Say(icon, text))
     }
+
+    /** A level slider in the island: [kind] is "volume", "ring", "call" or "brightness". */
+    data class Level(val kind: String, val percent: Int)
+
+    private val _levels = MutableSharedFlow<Level>(extraBufferCapacity = 8)
+    val levels: SharedFlow<Level> = _levels.asSharedFlow()
+
+    fun level(kind: String, percent: Int): Boolean {
+        if (!DynamicIslandService.isRunning) return false
+        return _levels.tryEmit(Level(kind, percent.coerceIn(0, 100)))
+    }
+
+    /** A little confetti burst with a message ("Math is done!"). */
+    private val _celebrations = MutableSharedFlow<Say>(extraBufferCapacity = 2)
+    val celebrations: SharedFlow<Say> = _celebrations.asSharedFlow()
+
+    fun celebrate(icon: String, text: String): Boolean {
+        if (!DynamicIslandService.isRunning) return false
+        return _celebrations.tryEmit(Say(icon, text))
+    }
 }

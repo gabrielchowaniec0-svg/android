@@ -57,6 +57,8 @@ object Commands3 {
         data class SaveWord(val deck: String, val front: String, val back: String) : Cmd
         data class Flashcards(val deck: String?) : Cmd
         data class Stopwatch(val action: String) : Cmd
+        data class PlaneWatch(val on: Boolean) : Cmd
+        data class TrackFlight(val shown: String?, val callsign: String?) : Cmd
         data class SchoolDays(val until: String) : Cmd
         data class SetSummer(val day: LocalDate) : Cmd
         data class Metar(val station: String) : Cmd
@@ -169,7 +171,10 @@ object Commands3 {
             "stopwatch", "start stopwatch", "start the stopwatch" -> return Cmd.Stopwatch("start")
             "lap" -> return Cmd.Stopwatch("lap")
             "stop stopwatch", "stop the stopwatch" -> return Cmd.Stopwatch("stop")
-            "stop" -> if (swStart != 0L) return Cmd.Stopwatch("stop")
+            "stop" -> if (com.kinetic.launcher.island.Stopwatch.running) return Cmd.Stopwatch("stop")
+            "plane watch", "plane watch on", "watch for planes", "tell me when planes fly over", "planes overhead" -> return Cmd.PlaneWatch(true)
+            "plane watch off", "stop plane watch", "stop watching planes" -> return Cmd.PlaneWatch(false)
+            "stop tracking", "stop tracking flight", "stop tracking the flight", "untrack" -> return Cmd.TrackFlight(null, null)
             "what's that plane", "whats that plane", "what plane is that", "which plane is that" -> return Cmd.Tool("planes")
             "help", "commands", "all commands", "what can i write", "what can i say", "what can you do", "command list", "cheat sheet" -> return Cmd.Tool("help")
             "level", "bubble level", "spirit level" -> return Cmd.Tool("level")
@@ -212,6 +217,11 @@ object Commands3 {
         r("""(?:metar|weather at|airport weather)\s+([a-z]{3,4})""")?.let { m ->
             val id = m.groupValues[1].uppercase()
             return Cmd.Metar(if (id.length == 3) "K$id" else id)
+        }
+        r("""(?:track|follow)\s+(?:flight\s+)?([a-z][a-z0-9]|[a-z]{3})\s?(\d{1,4})""")?.let { m ->
+            val air = m.groupValues[1]
+            val icao = if (air.length == 3) air.uppercase() else (Assistant.AIRLINE[air] ?: air).uppercase()
+            return Cmd.TrackFlight(air.uppercase() + m.groupValues[2], icao + m.groupValues[2])
         }
         r("""(?:phonetic|spell|nato)\s+(.+)""")?.let { return Cmd.Phonetic(it.groupValues[1]) }
         r("""(?:flight level|fl)\s*(\d{2,3})(?:\s+in\s+feet)?""")?.let { return Cmd.FlightLevel(it.groupValues[1].toInt()) }
@@ -326,8 +336,11 @@ object Commands3 {
                 answer("📚", "${all.size} to do", list, "${all.size} to do: $list")
             }
         }
-        is Cmd.DoneHomework -> Ready("✓", "Done: ${cmd.text}", "Removes it from your list", "Done", done = "Nice! ${cmd.text} is done ✓") { ctx ->
+        is Cmd.DoneHomework -> Ready("✓", "Done: ${cmd.text}", "Removes it from your list", "Done", quiet = true) { ctx ->
             Homework.done(ctx, cmd.text)
+            val left = Homework.all(ctx).size
+            val msg = "${cmd.text.replaceFirstChar { it.uppercase() }} is done!" + if (left == 0) " All homework finished" else ""
+            if (!IslandBus.celebrate("🎉", msg)) tell(ctx, "🎉", msg)
             true
         }
         is Cmd.SaveWord -> Ready("🃏", "${cmd.front} = ${cmd.back}", "Saved to ${cmd.deck}", "Save", done = "Saved: ${cmd.front} = ${cmd.back}") { ctx ->
@@ -339,6 +352,24 @@ object Commands3 {
             true
         }.copy(quiet = true)
         is Cmd.Stopwatch -> stopwatch(context, cmd.action)
+        is Cmd.PlaneWatch -> if (cmd.on) {
+            Ready("✈", "Plane watch", "Planes flying over you pop up in the island for the next hour", "Start", done = "Plane watch on for 1 hour ✈") { ctx ->
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) false
+                else { com.kinetic.launcher.island.PlaneWatch.start(ctx); true }
+            }.copy(permission = Manifest.permission.ACCESS_FINE_LOCATION)
+        } else {
+            Ready("✈", "Plane watch off", "", "Stop", done = "Plane watch off") { _ -> com.kinetic.launcher.island.PlaneWatch.stop(); true }
+        }
+        is Cmd.TrackFlight -> if (cmd.shown == null || cmd.callsign == null) {
+            val now = com.kinetic.launcher.island.FlightWatch.tracking
+            if (now == null) answer("✈", "Not tracking a flight", "Write \"track UA123\"", "Not tracking a flight")
+            else Ready("✈", "Stop tracking $now", "", "Stop", done = "Stopped tracking $now") { _ -> com.kinetic.launcher.island.FlightWatch.stop(); true }
+        } else {
+            Ready("✈", "Track ${cmd.shown}", "Live in the island until it lands", "Track", done = "Tracking ${cmd.shown} ✈") { ctx ->
+                com.kinetic.launcher.island.FlightWatch.track(ctx, cmd.shown, cmd.callsign)
+                true
+            }
+        }
         is Cmd.SchoolDays -> schoolDays(context, cmd.until)
         is Cmd.SetSummer -> Ready("🏫", "Summer starts " + cmd.day.format(DateTimeFormatter.ofPattern("MMMM d")), "Used by \u201Cschool days until summer\u201D", "Save", done = "Got it: summer starts " + cmd.day.format(DateTimeFormatter.ofPattern("MMMM d"))) { ctx ->
             prefs(ctx).edit().putString("summer", cmd.day.toString()).apply()
@@ -548,41 +579,16 @@ object Commands3 {
 
     // ---- stopwatch, school days, METAR ----------------------------------------------------------
 
-    @Volatile
-    private var swStart = 0L
-    private var laps = 0
-
-    private fun swText(ms: Long): String {
-        val t = ms / 100
-        val s = t / 10
-        return "%d:%02d.%d".format(s / 60, s % 60, t % 10)
-    }
-
     private fun stopwatch(context: Context, action: String): Ready {
+        val sw = com.kinetic.launcher.island.Stopwatch
         return when (action) {
-            "start" -> Ready("⏱", "Stopwatch", "Write \"lap\" or \"stop\"", "Start", done = "Stopwatch started · write “lap” or “stop”") { _ ->
-                swStart = android.os.SystemClock.elapsedRealtime()
-                laps = 0
+            "start" -> Ready("⏱", "Stopwatch", "Counts in the island · write \"lap\" or \"stop\"", "Start", quiet = true) { ctx ->
+                sw.start(ctx)
+                if (!com.kinetic.launcher.island.DynamicIslandService.isRunning) tell(ctx, "⏱", "Stopwatch started · write \u201Clap\u201D or \u201Cstop\u201D")
                 true
             }
-            "lap" -> Ready("⏱", "Lap", "", "Lap", quiet = true) { ctx ->
-                val t = android.os.SystemClock.elapsedRealtime()
-                if (swStart == 0L) tell(ctx, "⏱", "Stopwatch isn't running. Write \u201Cstopwatch\u201D")
-                else {
-                    laps++
-                    tell(ctx, "⏱", "Lap $laps · ${swText(t - swStart)}")
-                }
-                true
-            }
-            else -> Ready("⏱", "Stop stopwatch", "", "Stop", quiet = true) { ctx ->
-                val t = android.os.SystemClock.elapsedRealtime()
-                if (swStart == 0L) tell(ctx, "⏱", "Stopwatch isn't running")
-                else {
-                    tell(ctx, "⏱", "Stopped at ${swText(t - swStart)}" + if (laps > 0) " · $laps laps" else "")
-                    swStart = 0L
-                }
-                true
-            }
+            "lap" -> Ready("⏱", "Lap", "", "Lap", quiet = true) { ctx -> sw.lap(ctx); true }
+            else -> Ready("⏱", "Stop stopwatch", "", "Stop", quiet = true) { ctx -> sw.stop(ctx); true }
         }
     }
 
@@ -832,7 +838,7 @@ object Flashcards {
 
     private fun show(c: Context, cards: List<Card>, i: Int) {
         if (i >= cards.size) {
-            IslandBus.say("🃏", "Done! ${cards.size} cards 🎉")
+            if (!IslandBus.celebrate("🃏", "Done! ${cards.size} cards")) IslandBus.say("🃏", "Done! ${cards.size} cards 🎉")
             return
         }
         val card = cards[i]

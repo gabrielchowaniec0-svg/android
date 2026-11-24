@@ -31,6 +31,14 @@ object KineticSettings {
         val newAppsFolder: Boolean = true,
         /** Earbuds/headphones connecting show in the island, with battery. */
         val islandEarbuds: Boolean = true,
+        /** Volume keys show Kinetic's slider in the island instead of One UI's. */
+        val islandVolume: Boolean = true,
+        /** Brightness changes show a slider in the island. */
+        val islandBrightness: Boolean = true,
+        /** The next calendar event counts down in the island 15 minutes before. */
+        val islandUpNext: Boolean = true,
+        /** "Rain in 15 min" when rain is about to start where you are. */
+        val islandRain: Boolean = true,
         /** "black", "glass" or "outline". */
         val islandTheme: String = "black",
         /** A soft glow in the album's colours around the island while music plays. */
@@ -91,6 +99,10 @@ object KineticSettings {
     const val INTRUDER = "intruder_photo"
     const val NEW_APPS_FOLDER = "new_apps_folder"
     const val ISLAND_EARBUDS = "island_earbuds"
+    const val ISLAND_VOLUME = "island_volume"
+    const val ISLAND_BRIGHTNESS = "island_brightness"
+    const val ISLAND_UP_NEXT = "island_up_next"
+    const val ISLAND_RAIN = "island_rain"
     const val ISLAND_MUSIC_GLOW = "island_music_glow"
     const val ISLAND_PROGRESS = "island_progress"
     const val MY_TEAMS = "my_teams"
@@ -156,6 +168,10 @@ object KineticSettings {
         intruderPhoto = p.getBoolean(INTRUDER, true),
         newAppsFolder = p.getBoolean(NEW_APPS_FOLDER, true),
         islandEarbuds = p.getBoolean(ISLAND_EARBUDS, true),
+        islandVolume = p.getBoolean(ISLAND_VOLUME, true),
+        islandBrightness = p.getBoolean(ISLAND_BRIGHTNESS, true),
+        islandUpNext = p.getBoolean(ISLAND_UP_NEXT, true),
+        islandRain = p.getBoolean(ISLAND_RAIN, true),
         islandMusicGlow = p.getBoolean(ISLAND_MUSIC_GLOW, true),
         islandProgress = p.getBoolean(ISLAND_PROGRESS, true),
         myTeams = p.getString(MY_TEAMS, "") ?: "",

@@ -1,0 +1,528 @@
+package com.kinetic.launcher.island
+
+import android.Manifest
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.ContentUris
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.location.Location
+import android.location.LocationManager
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.CalendarContract
+import android.provider.Settings
+import android.view.KeyEvent
+import androidx.core.content.ContextCompat
+import com.kinetic.launcher.KineticSettings
+import com.kinetic.launcher.NotificationHub
+import com.kinetic.launcher.planes.PlaneData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
+
+private const val PURPLE = 0xFFBF5AF2.toInt()
+private const val ORANGE = 0xFFFF9F0A.toInt()
+private const val SKY = 0xFF64D2FF.toInt()
+private const val BLUE = 0xFF0A84FF.toInt()
+
+private fun hhmm(ms: Long) = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(ms))
+
+private fun lastLocation(context: Context): Location? {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return null
+    val lm = context.getSystemService(LocationManager::class.java) ?: return null
+    return listOf(LocationManager.FUSED_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        .mapNotNull { p -> runCatching { lm.getLastKnownLocation(p) }.getOrNull() }
+        .maxByOrNull { it.time }
+}
+
+private fun getJson(url: String): JSONObject? = runCatching {
+    val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+        connectTimeout = 8_000
+        readTimeout = 8_000
+        setRequestProperty("User-Agent", "Kinetic-Launcher")
+    }
+    try {
+        if (c.responseCode !in 200..299) null else JSONObject(c.inputStream.bufferedReader().readText())
+    } finally {
+        c.disconnect()
+    }
+}.getOrNull()
+
+/** Says something in the island, or as a toast when the island is off. */
+private fun tell(context: Context, icon: String, text: String) {
+    if (!IslandBus.say(icon, text)) {
+        Handler(Looper.getMainLooper()).post { android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_LONG).show() }
+    }
+}
+
+/**
+ * The island's own live things: up next, rain, brightness, Focus, stopwatch,
+ * plane watch, tracked flights and "done" ticks for progress bars.
+ */
+object LiveFeatures {
+    private var observer: ContentObserver? = null
+
+    fun start(context: Context, scope: CoroutineScope) {
+        val app = context.applicationContext
+        FocusLive.restore(app)
+        // Brightness slider (only when auto-brightness is off; otherwise it changes by itself all day).
+        val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                if (!KineticSettings.current.islandBrightness) return
+                if (!app.getSystemService(PowerManager::class.java).isInteractive) return
+                val auto = Settings.System.getInt(app.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1
+                if (auto) return
+                IslandBus.level("brightness", brightnessPercent(app))
+            }
+        }
+        observer = obs
+        runCatching { app.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, obs) }
+
+        scope.launch(Dispatchers.IO) { UpNext.loop(app) }
+        scope.launch(Dispatchers.IO) { Rain.loop(app) }
+        // A progress bar that finishes gets a tick ("Download done ✓").
+        scope.launch {
+            var last: NotificationHub.TripInfo? = null
+            NotificationHub.trip.collect { t ->
+                val prev = last
+                if (prev != null && prev.generic && (prev.progress ?: 0f) >= 0.85f && t?.key != prev.key) {
+                    IslandBus.say("✓", "${prev.title} · done")
+                }
+                last = t
+            }
+        }
+    }
+
+    fun stop(context: Context) {
+        observer?.let { runCatching { context.applicationContext.contentResolver.unregisterContentObserver(it) } }
+        observer = null
+    }
+
+    /** 0..100 as the slider shows it (the slider isn't linear, so neither is this). */
+    fun brightnessPercent(context: Context): Int {
+        val v = Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+        return (sqrt(v.coerceIn(0, 255) / 255.0) * 100).roundToInt()
+    }
+}
+
+// ======================================================================================
+// Volume buttons → the island's slider (instead of One UI's panel).
+// ======================================================================================
+object VolumeHud {
+    private var consumedDown = false
+
+    fun enabled(): Boolean = KineticSettings.current.islandVolume && DynamicIslandService.isRunning
+
+    fun onKey(context: Context, e: KeyEvent): Boolean {
+        val code = e.keyCode
+        if (code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) return false
+        if (e.action == KeyEvent.ACTION_UP) return consumedDown.also { consumedDown = false }
+        if (e.action != KeyEvent.ACTION_DOWN) return consumedDown
+        consumedDown = false
+        if (!enabled()) return false
+        val audio = context.getSystemService(AudioManager::class.java)
+        // Calls keep One UI's own controls; so does the screen being off.
+        if (audio.mode != AudioManager.MODE_NORMAL) return false
+        if (!context.getSystemService(PowerManager::class.java).isInteractive) return false
+        val dir = if (code == KeyEvent.KEYCODE_VOLUME_UP) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        val ok = runCatching { audio.adjustSuggestedStreamVolume(dir, AudioManager.USE_DEFAULT_STREAM_TYPE, 0) }.isSuccess
+        if (!ok) return false
+        consumedDown = true
+        show(context)
+        return true
+    }
+
+    fun show(context: Context, forced: Int? = null) {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val stream = forced ?: if (audio.isMusicActive) AudioManager.STREAM_MUSIC else AudioManager.STREAM_RING
+        val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
+        val pct = audio.getStreamVolume(stream) * 100 / max
+        IslandBus.level(if (stream == AudioManager.STREAM_MUSIC) "volume" else "ring", pct)
+    }
+}
+
+// ======================================================================================
+// Stopwatch: counts live in the island, with Lap and Stop.
+// ======================================================================================
+object Stopwatch {
+    @Volatile
+    var startedAt = 0L
+        private set
+    private val laps = ArrayList<Long>()
+    val running get() = startedAt != 0L
+
+    fun start(context: Context) {
+        startedAt = SystemClock.elapsedRealtime()
+        laps.clear()
+        publish(context)
+    }
+
+    fun lap(context: Context) {
+        if (!running) {
+            tell(context, "⏱", "Stopwatch isn't running. Write “stopwatch”")
+            return
+        }
+        laps += SystemClock.elapsedRealtime() - startedAt
+        publish(context)
+        if (!DynamicIslandService.isRunning) tell(context, "⏱", "Lap ${laps.size} · ${LiveHub.clock(laps.last(), true)}")
+    }
+
+    fun stop(context: Context) {
+        if (!running) {
+            tell(context, "⏱", "Stopwatch isn't running")
+            return
+        }
+        val t = SystemClock.elapsedRealtime() - startedAt
+        startedAt = 0L
+        LiveHub.remove("stopwatch")
+        tell(context, "⏱", "Stopped at ${LiveHub.clock(t, true)}" + if (laps.isNotEmpty()) " · ${laps.size} laps" else "")
+    }
+
+    private fun publish(context: Context) {
+        val app = context.applicationContext
+        val detail = if (laps.isEmpty()) "Pull down for Lap and Stop" else {
+            val n = laps.size
+            val split = laps.last() - (if (n > 1) laps[n - 2] else 0L)
+            "Lap $n · ${LiveHub.clock(split, true)}"
+        }
+        LiveHub.put(
+            Live(
+                "stopwatch", "⏱", "Stopwatch", detail, countUpFrom = startedAt, accent = ORANGE, priority = 3,
+                actions = listOf(LiveAction("Lap") { lap(app) }, LiveAction("Stop") { stop(app) }),
+            ),
+        )
+    }
+}
+
+// ======================================================================================
+// Focus sessions: a ring that empties, then a little celebration.
+// ======================================================================================
+object FocusLive {
+    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+
+    fun start(context: Context, seconds: Int, name: String, color: Int) {
+        val end = System.currentTimeMillis() + seconds * 1000L
+        prefs(context).edit().putLong("focus_end", end).putLong("focus_len", seconds * 1000L).putString("focus_name", name).putInt("focus_color", color).apply()
+        publish(context.applicationContext)
+    }
+
+    fun restore(context: Context) {
+        if (prefs(context).getLong("focus_end", 0L) > System.currentTimeMillis()) publish(context) else clear(context)
+    }
+
+    private fun publish(app: Context) {
+        val p = prefs(app)
+        val end = p.getLong("focus_end", 0L)
+        LiveHub.put(
+            Live(
+                "focus", "☾", (p.getString("focus_name", null) ?: "Focus"), "Ends at ${hhmm(end)}",
+                countDownTo = end, totalMs = p.getLong("focus_len", 0L).takeIf { it > 0 },
+                accent = p.getInt("focus_color", PURPLE).let { if (it == 0) PURPLE else it }, priority = 2,
+                actions = listOf(LiveAction("End now") { endEarly(app) }),
+            ),
+        )
+    }
+
+    fun clear(context: Context) {
+        prefs(context).edit().remove("focus_end").remove("focus_len").remove("focus_name").remove("focus_color").apply()
+        LiveHub.remove("focus")
+    }
+
+    /** The session ran its full length. */
+    fun finished(context: Context) {
+        val len = prefs(context).getLong("focus_len", 0L)
+        clear(context)
+        val mins = (len / 60_000).toInt()
+        runCatching { RingtoneManager.getRingtone(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))?.play() }
+        if (!IslandBus.celebrate("🎉", "Focus done" + if (mins > 0) " · $mins min" else "")) tell(context, "🎉", "Focus done")
+    }
+
+    private fun endEarly(context: Context) {
+        com.kinetic.launcher.FocusModes.turnOff(context)
+        runCatching {
+            val pi = PendingIntent.getBroadcast(
+                context, 7, Intent(context, com.kinetic.launcher.FocusEndReceiver::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            context.getSystemService(AlarmManager::class.java)?.cancel(pi)
+        }
+        clear(context)
+        tell(context, "☾", "Focus ended")
+    }
+}
+
+// ======================================================================================
+// Up next: the next calendar event counts down 15 minutes before it starts.
+// ======================================================================================
+private object UpNext {
+    private val hidden = HashSet<Long>()
+
+    suspend fun loop(app: Context) {
+        val power = app.getSystemService(PowerManager::class.java)
+        while (true) {
+            if (KineticSettings.current.islandUpNext && power.isInteractive &&
+                ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            ) {
+                runCatching { check(app) }
+            } else if (!KineticSettings.current.islandUpNext) {
+                LiveHub.remove("upnext")
+            }
+            delay(30_000)
+        }
+    }
+
+    private fun check(app: Context) {
+        val now = System.currentTimeMillis()
+        val b = CalendarContract.Instances.CONTENT_URI.buildUpon()
+        ContentUris.appendId(b, now - 5 * 60_000)
+        ContentUris.appendId(b, now + 16 * 60_000)
+        var found: Triple<Long, String, Long>? = null
+        app.contentResolver.query(
+            b.build(),
+            arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN, CalendarContract.Instances.ALL_DAY),
+            null, null, "${CalendarContract.Instances.BEGIN} ASC",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.getInt(3) == 1) continue
+                val begin = c.getLong(2)
+                val id = c.getLong(0) * 31 + begin
+                if (begin < now - 5 * 60_000 || begin > now + 15 * 60_000 || id in hidden) continue
+                found = Triple(id, c.getString(1) ?: "Event", begin)
+                break
+            }
+        }
+        val f = found
+        if (f == null) {
+            LiveHub.remove("upnext")
+            return
+        }
+        val (id, title, begin) = f
+        val started = begin <= now
+        LiveHub.put(
+            Live(
+                "upnext", "📅", title, if (started) "Started at ${hhmm(begin)}" else "Starts at ${hhmm(begin)}",
+                value = if (started) "Now" else null, countDownTo = if (started) null else begin, totalMs = 15 * 60_000L,
+                accent = PURPLE, priority = 0,
+                actions = listOf(
+                    LiveAction("Open") {
+                        runCatching {
+                            app.startActivity(
+                                Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id / 31))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    },
+                    LiveAction("Hide") {
+                        hidden += id
+                        LiveHub.remove("upnext")
+                    },
+                ),
+            ),
+        )
+    }
+}
+
+// ======================================================================================
+// Rain alerts: "Rain in about 15 min" (Open-Meteo, 15-minute forecast).
+// ======================================================================================
+private object Rain {
+    private var lastCheck = 0L
+    private var lastAlert = 0L
+
+    suspend fun loop(app: Context) {
+        val power = app.getSystemService(PowerManager::class.java)
+        while (true) {
+            val now = System.currentTimeMillis()
+            if (KineticSettings.current.islandRain && power.isInteractive && now - lastCheck > 20 * 60_000) {
+                lastCheck = now
+                runCatching { check(app) }
+            }
+            delay(60_000)
+        }
+    }
+
+    private fun check(app: Context) {
+        if (System.currentTimeMillis() - lastAlert < 3 * 3600_000L) return
+        val loc = lastLocation(app) ?: return
+        val json = getJson(
+            "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f&minutely_15=precipitation&forecast_minutely_15=4&timezone=auto"
+                .format(Locale.US, loc.latitude, loc.longitude),
+        ) ?: return
+        val arr = json.optJSONObject("minutely_15")?.optJSONArray("precipitation") ?: return
+        if (arr.length() < 2) return
+        if (arr.optDouble(0, 0.0) >= 0.1) return // already raining
+        for (i in 1 until arr.length()) {
+            if (arr.optDouble(i, 0.0) >= 0.2) {
+                lastAlert = System.currentTimeMillis()
+                IslandBus.say("🌧", "Rain starting in about ${i * 15} min")
+                return
+            }
+        }
+    }
+}
+
+// ======================================================================================
+// Plane watch: planes passing over you pop up in the island (for an hour at a time).
+// ======================================================================================
+object PlaneWatch {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
+    private var hideJob: Job? = null
+    val on get() = job?.isActive == true
+
+    fun start(context: Context) {
+        val app = context.applicationContext
+        job?.cancel()
+        job = scope.launch {
+            val seen = HashMap<String, Long>()
+            val until = System.currentTimeMillis() + 60 * 60_000L
+            while (isActive && System.currentTimeMillis() < until) {
+                val me = lastLocation(app)
+                if (me != null && app.getSystemService(PowerManager::class.java).isInteractive) {
+                    val now = System.currentTimeMillis()
+                    val near = runCatching { PlaneData.nearby(me.latitude, me.longitude, 5) }.getOrDefault(emptyList())
+                        .map { it to PlaneData.distanceM(me.latitude, me.longitude, it.lat, it.lon) }
+                        .filter { (p, d) -> d < 6_000 && p.altitudeFt in 200..20_000 && (seen[p.hex] ?: 0L) < now - 15 * 60_000 }
+                        .minByOrNull { it.second }
+                    if (near != null) {
+                        val (p, d) = near
+                        seen[p.hex] = now
+                        announce(app, p, d)
+                    }
+                }
+                delay(15_000)
+            }
+            if (isActive) tell(app, "✈", "Plane watch off")
+        }
+    }
+
+    fun stop() {
+        job?.cancel()
+        job = null
+        LiveHub.remove("plane")
+    }
+
+    private fun announce(app: Context, p: com.kinetic.launcher.planes.Plane, distM: Double) {
+        val route = p.callsign.takeIf { it.isNotBlank() }?.let { runCatching { PlaneData.route(it) }.getOrNull() }
+        val title = p.label + (route?.let { " · ${it.fromCode} → ${it.toCode}" } ?: "")
+        val detail = buildList {
+            add("%,d ft".format(p.altitudeFt))
+            p.typeCode?.let { add(it) }
+            add("%.1f mi away".format(distM / 1609.34))
+            route?.toCity?.let { add("to $it") }
+        }.joinToString(" · ")
+        LiveHub.put(
+            Live(
+                "plane", "✈", title, detail, value = route?.toCode ?: "%,d ft".format(p.altitudeFt), accent = SKY, priority = 4,
+                onTap = {
+                    runCatching {
+                        app.startActivity(Intent(app, com.kinetic.launcher.planes.PlaneSpotterActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                },
+            ),
+        )
+        hideJob?.cancel()
+        hideJob = scope.launch {
+            delay(25_000)
+            LiveHub.remove("plane")
+        }
+    }
+}
+
+// ======================================================================================
+// Flight tracking: follow one flight live until it lands.
+// ======================================================================================
+object FlightWatch {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
+    var tracking: String? = null
+        private set
+
+    /** [shown] e.g. "UA123"; [callsign] the ICAO one, e.g. "UAL123". */
+    fun track(context: Context, shown: String, callsign: String) {
+        val app = context.applicationContext
+        job?.cancel()
+        tracking = shown
+        job = scope.launch {
+            val route = runCatching { PlaneData.route(callsign) ?: PlaneData.route(shown) }.getOrNull()
+            val routeText = route?.let { " · ${it.fromCode} → ${it.toCode}" }.orEmpty()
+            var seen = false
+            var lastAlt = -1
+            var lastSeenAt = 0L
+            val until = System.currentTimeMillis() + 20 * 3600_000L
+            while (isActive && System.currentTimeMillis() < until) {
+                val p = runCatching { PlaneData.byCallsign(callsign) }.getOrNull()
+                val now = System.currentTimeMillis()
+                if (p != null) {
+                    seen = true
+                    lastSeenAt = now
+                    val phase = when {
+                        lastAlt < 0 -> "In the air"
+                        p.altitudeFt > lastAlt + 300 -> "Climbing"
+                        p.altitudeFt < lastAlt - 300 -> if (p.altitudeFt < 12_000) "Landing soon" else "Descending"
+                        else -> "Cruising"
+                    }
+                    lastAlt = p.altitudeFt
+                    val detail = listOfNotNull(phase, "%,d ft".format(p.altitudeFt), p.speedKt?.let { "${(it * 1.15078).roundToInt()} mph" }).joinToString(" · ")
+                    publish(app, shown, callsign, shown + routeText, detail, if (phase == "Landing soon") "Landing" else "${(p.altitudeFt + 500) / 1000}k ft")
+                } else if (seen && (lastAlt in 0..5_000 || now - lastSeenAt > 25 * 60_000)) {
+                    // Gone from the radar low down: it's landed.
+                    withContext(Dispatchers.Main) {
+                        if (!IslandBus.celebrate("🛬", "$shown landed" + (route?.toCity?.let { " in $it" } ?: ""))) tell(app, "🛬", "$shown landed")
+                    }
+                    break
+                } else if (!seen) {
+                    publish(app, shown, callsign, shown + routeText, route?.let { "${it.fromCity} to ${it.toCity} · not in the air yet" } ?: "Not in the air yet", "Waiting")
+                }
+                delay(if (lastAlt in 0..12_000) 30_000 else 60_000)
+            }
+            LiveHub.remove("flight")
+            tracking = null
+        }
+    }
+
+    fun stop() {
+        job?.cancel()
+        job = null
+        tracking = null
+        LiveHub.remove("flight")
+    }
+
+    private fun publish(app: Context, shown: String, callsign: String, title: String, detail: String, value: String) {
+        LiveHub.put(
+            Live(
+                "flight", "✈", title, detail, value = value, accent = BLUE, priority = 1,
+                actions = listOf(
+                    LiveAction("Map") {
+                        runCatching {
+                            app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.flightaware.com/live/flight/$callsign")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    },
+                    LiveAction("Stop") {
+                        stop()
+                        tell(app, "✈", "Stopped tracking $shown")
+                    },
+                ),
+            ),
+        )
+    }
+}
