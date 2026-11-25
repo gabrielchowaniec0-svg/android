@@ -94,6 +94,11 @@ object KineticSettings {
         val wpFireflies: Boolean = true,
         val wpWeatherExtra: Boolean = true,
         val wpSky: Boolean = true,
+        /** Where the moon, stars, planes, clouds and weather show: "lock", "both", "home", "off". */
+        val wpSkyWhere: String = "lock",
+        val wpStars: Boolean = true,
+        val wpConstellations: Boolean = true,
+        val wpSkyPlanes: Boolean = true,
         /** S Pen: write on the home screen to run Commands / search. */
         val penInk: Boolean = true,
     )
@@ -222,6 +227,10 @@ object KineticSettings {
         wpFireflies = p.getBoolean(WallpaperSignals.KEY_FIREFLIES, true),
         wpWeatherExtra = p.getBoolean(WallpaperSignals.KEY_WEATHER_EXTRA, true),
         wpSky = p.getBoolean(WallpaperSignals.KEY_SKY, true),
+        wpSkyWhere = p.getString(WallpaperSignals.KEY_SKY_WHERE, "lock") ?: "lock",
+        wpStars = p.getBoolean(WallpaperSignals.KEY_STARS, true),
+        wpConstellations = p.getBoolean(WallpaperSignals.KEY_CONSTELLATIONS, true),
+        wpSkyPlanes = p.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true),
         penInk = p.getBoolean(PEN_INK, true),
     )
 }

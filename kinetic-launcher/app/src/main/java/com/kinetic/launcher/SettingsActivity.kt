@@ -475,7 +475,15 @@ class SettingsActivity : ComponentActivity() {
                     }
                 }
                 SwitchRow("Snow, fog & wind", "Snowflakes, a rising haze, and rain that slants with the wind", s.wpWeatherExtra, bool(WallpaperSignals.KEY_WEATHER_EXTRA))
-                SwitchRow("Sunset & moon", "Warmer colours at sunrise and sunset; at night, the real moon in its current phase", s.wpSky, bool(WallpaperSignals.KEY_SKY))
+                SwitchRow("Sunset & moon", "Warmer colours at sunrise and sunset; at night, the real moon with its phase and craters", s.wpSky, bool(WallpaperSignals.KEY_SKY))
+                SwitchRow("Stars & planets", "The real night sky over you, facing south; it turns slowly through the night", s.wpStars, bool(WallpaperSignals.KEY_STARS))
+                if (s.wpStars) SwitchRow("Constellation lines", "Faint lines for Orion, the Big Dipper and Cassiopeia", s.wpConstellations, bool(WallpaperSignals.KEY_CONSTELLATIONS))
+                SwitchRow("Planes & space station", "Real planes flying over you, with their real lights; the ISS when it passes", s.wpSkyPlanes, bool(WallpaperSignals.KEY_SKY_PLANES))
+                ChoiceRow(
+                    "Show the sky on",
+                    listOf("lock" to "Lock screen", "both" to "Both", "home" to "Home", "off" to "Off"),
+                    s.wpSkyWhere,
+                ) { KineticSettings.setString(this@SettingsActivity, WallpaperSignals.KEY_SKY_WHERE, it) }
                 SwitchRow("Battery tide", "A glowing waterline: high tide when full, green while charging, red when low", s.wpBatteryTide, bool(WallpaperSignals.KEY_BATTERY_TIDE))
                 SwitchRow("Fireflies", "One firefly drifts for each app with unread notifications", s.wpFireflies, bool(WallpaperSignals.KEY_FIREFLIES))
             }
