@@ -2,4 +2,6 @@
 <!-- Only the Vault camera's temporary folder is shared (with the camera app, for one photo). -->
 <paths>
     <cache-path name="vault_capture" path="vault_capture/" />
+    <!-- Problem reports ("report problem"). -->
+    <cache-path name="diag" path="diag/" />
 </paths>

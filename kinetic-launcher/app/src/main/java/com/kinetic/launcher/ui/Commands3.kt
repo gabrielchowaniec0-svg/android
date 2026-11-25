@@ -176,6 +176,7 @@ object Commands3 {
             "plane watch off", "stop plane watch", "stop watching planes" -> return Cmd.PlaneWatch(false)
             "stop tracking", "stop tracking flight", "stop tracking the flight", "untrack" -> return Cmd.TrackFlight(null, null)
             "what's that plane", "whats that plane", "what plane is that", "which plane is that" -> return Cmd.Tool("planes")
+            "report problem", "report a problem", "report bug", "report a bug", "send logs", "send report", "something's wrong", "somethings wrong" -> return Cmd.Tool("report")
             "help", "commands", "all commands", "what can i write", "what can i say", "what can you do", "command list", "cheat sheet" -> return Cmd.Tool("help")
             "level", "bubble level", "spirit level" -> return Cmd.Tool("level")
             "ruler", "measure" -> return Cmd.Tool("ruler")
@@ -396,6 +397,10 @@ object Commands3 {
             else answer("◷", parts.first(), parts.drop(1).joinToString(" · "), parts.joinToString(" · "))
         }
         is Cmd.Tool -> when (cmd.which) {
+            "report" -> Ready("!", "Report a problem", "Makes one file with Kinetic's log to send", "Make", done = "Making a problem report") { ctx ->
+                com.kinetic.launcher.ProblemReport.send(ctx)
+                true
+            }
             "help" -> Ready("?", "What can I write?", "Every command, with Try buttons", "Open", done = "Here's everything you can write") { ctx ->
                 start(ctx, Intent(ctx, HelpActivity::class.java))
             }

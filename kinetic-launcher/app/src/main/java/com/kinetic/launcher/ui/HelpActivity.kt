@@ -289,6 +289,7 @@ class HelpActivity : ComponentActivity() {
                     listOf(
                         ex("shortcut m = call mom", "Then just write “m”"),
                         ex("help", "Opens this list"),
+                        ex("report problem", "Makes a file with Kinetic's log to send for fixing"),
                     ),
                 ),
             )

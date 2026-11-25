@@ -92,6 +92,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        com.kinetic.wallpaper.DiagLog.i("island", "connected")
         instance = this
         shake = ShakeDetector(this).also { it.start() }
         standBy = com.kinetic.launcher.standby.StandByWatcher(this).also { it.start() }

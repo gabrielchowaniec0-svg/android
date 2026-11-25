@@ -96,9 +96,10 @@ object WallpaperStyles {
 
     fun shaderFor(style: Style): RuntimeShader = try {
         RuntimeShader(HEADER + scene(style) + MAIN)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
         // If this phone's shader compiler ever rejects the moon or clouds, draw without them
         // rather than lose the whole wallpaper.
+        DiagLog.e("wallpaper", "shader for $style didn't compile; drawing without moon/clouds", e)
         RuntimeShader(safeHeader() + scene(style) + MAIN)
     }
 

@@ -97,6 +97,7 @@
     </queries>
 
     <application
+        android:name=".KineticApplication"
         android:allowBackup="false"
         android:icon="@drawable/ic_kinetic"
         android:roundIcon="@drawable/ic_kinetic"

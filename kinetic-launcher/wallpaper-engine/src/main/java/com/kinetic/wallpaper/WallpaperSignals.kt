@@ -34,6 +34,8 @@ object WallpaperSignals {
     const val KEY_STARS = "wp_stars"
     const val KEY_CONSTELLATIONS = "wp_constellations"
     const val KEY_SKY_PLANES = "wp_sky_planes"
+    /** "balanced" (30 fps while nothing moves) or "full" (always the screen's refresh rate). */
+    const val KEY_MOTION = "wp_motion"
 
     enum class Kind { App, Unlock, Notification, Charging }
 
