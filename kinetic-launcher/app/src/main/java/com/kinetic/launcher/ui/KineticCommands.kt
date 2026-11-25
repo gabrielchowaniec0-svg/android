@@ -365,7 +365,8 @@ object KineticCommands {
                     ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY,
                 ),
                 null, null,
-                ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY + " DESC, " + ContactsContract.CommonDataKinds.Phone.TIMES_CONTACTED + " DESC",
+                // (Android stopped counting how often you contact people, so only "default number" sorts.)
+                ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY + " DESC",
             )?.use { c ->
                 if (!c.moveToFirst()) return null
                 val label = ContactsContract.CommonDataKinds.Phone.getTypeLabel(context.resources, c.getInt(2), c.getString(3)).toString()

@@ -12,7 +12,7 @@ import com.kinetic.launcher.ui.SnoozeEndReceiver
  * reminders would never ring.
  */
 object Recovery {
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun run(context: Context) {
         runCatching { focus(context) }

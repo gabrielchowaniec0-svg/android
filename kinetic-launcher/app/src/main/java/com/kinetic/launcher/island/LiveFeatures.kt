@@ -237,7 +237,7 @@ object Stopwatch {
     }
 
     // Saved by the wall clock, so a running stopwatch survives Kinetic (or the phone) restarting.
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     private fun save(c: Context) {
         if (startedAt == 0L) {
@@ -300,7 +300,7 @@ object Stopwatch {
 // Focus sessions: a ring that empties, then a little celebration.
 // ======================================================================================
 object FocusLive {
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun start(context: Context, seconds: Int, name: String, color: Int) {
         val end = System.currentTimeMillis() + seconds * 1000L
@@ -472,7 +472,7 @@ object PlaneWatch {
     private var hideJob: Job? = null
     val on get() = job?.isActive == true
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     /** Picks up a plane watch that was running when Kinetic restarted. */
     fun restore(c: Context) {
@@ -554,7 +554,7 @@ object FlightWatch {
         private set
 
     /** [shown] e.g. "UA123"; [callsign] the ICAO one, e.g. "UAL123". */
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     /** Picks up a flight that was being tracked when Kinetic restarted (up to 20 h). */
     fun restore(c: Context) {

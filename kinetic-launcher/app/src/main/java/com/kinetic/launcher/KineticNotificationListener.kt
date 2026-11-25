@@ -281,7 +281,7 @@ class KineticNotificationListener : NotificationListenerService() {
                 .mapValues { (_, list) ->
                     list.sumOf { sbn ->
                         val n = sbn.notification
-                        val msgs = n.extras.getParcelableArray(Notification.EXTRA_MESSAGES)?.size ?: 0
+                        val msgs = n.extras.getParcelableArray(Notification.EXTRA_MESSAGES, android.os.Parcelable::class.java)?.size ?: 0
                         when {
                             n.number > 0 -> n.number
                             msgs > 0 -> msgs
