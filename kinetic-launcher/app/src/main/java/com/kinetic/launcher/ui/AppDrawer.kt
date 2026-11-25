@@ -614,7 +614,11 @@ private fun SearchPanel(
     val askForCommand = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val cmd = pendingCommand
         pendingCommand = null
-        if (cmd?.permission == Manifest.permission.READ_CONTACTS) {
+        if (!granted && cmd?.permission != null && (cmd.actionLabel == "Allow" || cmd.permission == Manifest.permission.READ_CONTACTS)) {
+            // Commands like "text Mom …" still run without it (Messages opens instead), so only
+            // the ones that can't work at all say so.
+            PermissionHelp.refused(context, cmd.permission, cmd.title)
+        } else if (cmd?.permission == Manifest.permission.READ_CONTACTS) {
             contactsAllowed = granted
         } else if (cmd != null && cmd.actionLabel == "Allow") {
             // Calendar / location just allowed: look again.

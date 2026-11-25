@@ -102,7 +102,10 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                 com.kinetic.launcher.ui.Haptics.confirm(view)
                 if (::model.isInitialized) model.showVaultSaved()
             },
-            onFailed = { com.kinetic.launcher.ui.Haptics.reject(view) },
+            onFailed = {
+                com.kinetic.launcher.ui.Haptics.reject(view)
+                IslandBus.say("✕", "Couldn't take a secure screenshot. " + com.kinetic.launcher.vault.VaultStore.failReason(this))
+            },
         )
         KineticSettings.init(this)
         com.kinetic.launcher.FocusModes.init(this)

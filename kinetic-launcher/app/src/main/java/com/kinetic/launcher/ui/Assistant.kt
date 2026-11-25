@@ -325,7 +325,7 @@ object Assistant {
         val url = "https://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f".format(Locale.US, loc.latitude, loc.longitude) +
             "&current=temperature_2m,weather_code,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
             "&timezone=auto&forecast_days=1" + if (metric) "" else "&temperature_unit=fahrenheit"
-        val json = get(url) ?: return answer("☁", "Weather", "Couldn't reach the weather service", "")
+        val json = get(url) ?: return answer("☁", "Weather", com.kinetic.launcher.Net.why("Couldn't reach the weather service"), "")
         val cur = json.optJSONObject("current") ?: return null
         val daily = json.optJSONObject("daily")
         val t = cur.optDouble("temperature_2m").roundToInt()
@@ -628,7 +628,7 @@ object Assistant {
         val part = meaning?.optString("partOfSpeech").orEmpty()
         val def = meaning?.optJSONArray("definitions")?.optJSONObject(0)?.optString("definition")
         return if (def.isNullOrBlank()) {
-            answer("📖", "No definition for \u201C$w\u201D", "Check the spelling", "")
+            answer("📖", "No definition for \u201C$w\u201D", com.kinetic.launcher.Net.why("Check the spelling"), "")
         } else {
             answer("📖", w.replaceFirstChar { it.uppercase() } + if (part.isNotBlank()) " ($part)" else "", def, def, done = "$w: $def")
         }

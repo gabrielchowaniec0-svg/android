@@ -114,6 +114,7 @@ class FocusScheduleReceiver : BroadcastReceiver() {
             else -> {
                 FocusScheduler.scheduleNext(context)
                 FocusTriggers.registerPlaces(context)
+                Recovery.run(context)
             }
         }
     }

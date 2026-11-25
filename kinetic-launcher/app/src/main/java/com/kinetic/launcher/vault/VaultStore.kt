@@ -227,6 +227,14 @@ class VaultStore(context: Context, private val key: SecretKey, private val decoy
 
         fun captureDir(context: Context) = File(context.cacheDir, "vault_capture").apply { mkdirs() }
 
+        /** Free space where the Vault keeps its files, in bytes. */
+        fun freeBytes(context: Context): Long =
+            runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrDefault(Long.MAX_VALUE)
+
+        /** Why something couldn't be saved, in plain words. */
+        fun failReason(context: Context): String =
+            if (freeBytes(context) < 200L * 1024 * 1024) "Phone storage is almost full" else "Something went wrong. Try again"
+
         /** Removes decrypted temporary files (called whenever the Vault locks). */
         fun wipeTemp(context: Context) {
             playDir(context).listFiles()?.forEach(::wipe)

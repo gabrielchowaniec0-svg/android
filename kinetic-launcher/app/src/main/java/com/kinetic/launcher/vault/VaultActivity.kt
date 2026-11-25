@@ -218,9 +218,10 @@ class VaultActivity : ComponentActivity() {
             if (ok && f != null) {
                 busy = "Encrypting…"
                 scope.launch {
-                    withContext(Dispatchers.IO) { store.importFile(f, "image/jpeg") }
+                    val ok = withContext(Dispatchers.IO) { store.importFile(f, "image/jpeg") } != null
                     busy = null
                     refresh++
+                    if (!ok) vaultToast("Couldn't save the photo. " + VaultStore.failReason(this@VaultActivity))
                 }
             } else {
                 f?.let(VaultStore::wipe)
@@ -235,9 +236,10 @@ class VaultActivity : ComponentActivity() {
             if (ok && f != null && f.length() > 0) {
                 busy = "Encrypting video…"
                 scope.launch {
-                    withContext(Dispatchers.IO) { store.importFile(f, "video/mp4") }
+                    val ok = withContext(Dispatchers.IO) { store.importFile(f, "video/mp4") } != null
                     busy = null
                     refresh++
+                    if (!ok) vaultToast("Couldn't save the video. " + VaultStore.failReason(this@VaultActivity))
                 }
             } else {
                 f?.let(VaultStore::wipe)
@@ -467,6 +469,14 @@ class VaultActivity : ComponentActivity() {
                             if (ok) moved += g.uri
                         }
                         progress = null
+                        val missed = chosen.size - moved.size
+                        if (missed > 0) {
+                            // Those stay in the gallery, untouched.
+                            vaultToast(
+                                (if (missed == 1) "1 item couldn't be moved" else "$missed items couldn't be moved") +
+                                    " and was left in your gallery. " + VaultStore.failReason(this@VaultActivity),
+                            )
+                        }
                         // Remove the originals from the gallery (Android asks you to confirm once).
                         if (moved.isNotEmpty()) {
                             runCatching {
@@ -582,3 +592,6 @@ class VaultActivity : ComponentActivity() {
         }
     }
 }
+
+private fun android.content.Context.vaultToast(text: String) =
+    android.widget.Toast.makeText(applicationContext, text, android.widget.Toast.LENGTH_LONG).show()

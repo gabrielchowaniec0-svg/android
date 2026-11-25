@@ -21,7 +21,22 @@ class PermissionActivity : ComponentActivity() {
 
     private val ask = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val anyway = intent.getBooleanExtra(EXTRA_ANYWAY, false)
-        if (granted || anyway) retry(confirmed = anyway) else IslandBus.say("✕", "Not allowed")
+        val kind = intent.getStringExtra(EXTRA_KIND).orEmpty()
+        when {
+            granted || anyway -> retry(confirmed = anyway)
+            // Said no twice (or "Don't allow" for good): Android won't ask again,
+            // so the only way back is Kinetic's page in Settings.
+            !shouldShowRequestPermissionRationale(kind) -> {
+                runCatching {
+                    startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+                IslandBus.tell(this, "⚙", "Android blocked ${nameOf(kind)}. Allow it under Permissions, then try again")
+            }
+            else -> IslandBus.tell(this, "✕", "Not allowed. Kinetic can't do that without ${nameOf(kind)}")
+        }
         finish()
     }
 
@@ -97,7 +112,11 @@ class PermissionActivity : ComponentActivity() {
             android.Manifest.permission.READ_CALENDAR -> "your calendar"
             android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION -> "your location"
             android.Manifest.permission.CAMERA -> "the camera"
-            else -> "permission"
+            android.Manifest.permission.RECORD_AUDIO -> "the microphone"
+            android.Manifest.permission.POST_NOTIFICATIONS -> "notifications"
+            android.Manifest.permission.BLUETOOTH_CONNECT -> "nearby devices"
+            android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO -> "your photos"
+            else -> "that permission"
         }
     }
 }

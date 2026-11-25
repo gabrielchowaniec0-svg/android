@@ -58,7 +58,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.lifecycle.lifecycleScope
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -83,7 +82,7 @@ class SecureVideoActivity : ComponentActivity() {
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[Manifest.permission.CAMERA] == true) bindCamera() else {
-            Toast.makeText(this, "Secure video needs the camera", Toast.LENGTH_LONG).show()
+            com.kinetic.launcher.ui.PermissionHelp.refused(this, Manifest.permission.CAMERA, "Secure video")
             finish()
         }
     }
@@ -200,10 +199,17 @@ class SecureVideoActivity : ComponentActivity() {
     @SuppressLint("MissingPermission")
     private fun startRecording() {
         val vc = videoCapture ?: return
+        // Sealing makes an encrypted copy, so a video can use at most half the free space.
+        val free = VaultStore.freeBytes(this)
+        if (free < 300L * 1024 * 1024) {
+            Toast.makeText(this, "Not enough storage for a secure video. Free up some space first", Toast.LENGTH_LONG).show()
+            return
+        }
         // Private, never the gallery; wiped as soon as it's sealed.
         val f = File(VaultStore.captureDir(this), "securevideo-${System.currentTimeMillis()}.mp4")
         recordingFile = f
-        val pending = vc.output.prepareRecording(this, FileOutputOptions.Builder(f).build())
+        val limit = (free - 100L * 1024 * 1024) / 2
+        val pending = vc.output.prepareRecording(this, FileOutputOptions.Builder(f).setFileSizeLimit(limit).build())
         val withAudio = if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             pending.withAudioEnabled()
         } else {
@@ -221,6 +227,11 @@ class SecureVideoActivity : ComponentActivity() {
                     recording = null
                     val file = recordingFile
                     recordingFile = null
+                    if (event.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED ||
+                        event.error == VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE
+                    ) {
+                        Toast.makeText(this, "Storage is almost full, so recording stopped", Toast.LENGTH_LONG).show()
+                    }
                     if (file != null && file.exists() && file.length() > 0) seal(file)
                     else file?.let(VaultStore::wipe)
                 }
@@ -236,10 +247,11 @@ class SecureVideoActivity : ComponentActivity() {
     private fun seal(file: File) {
         sealing = true
         val app = applicationContext
-        lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) { sealFile(app, file) }
-            sealing = false
-            val msg = if (ok) "Secure video saved to the Vault" else "Couldn't save the secure video"
+        // Sealing carries on even if you leave the screen, so the video is never half-saved.
+        sealScope.launch {
+            val ok = sealFile(app, file)
+            withContext(Dispatchers.Main) { sealing = false }
+            val msg = if (ok) "Secure video saved to the Vault" else "Couldn't save the secure video. " + VaultStore.failReason(app)
             com.kinetic.launcher.island.IslandBus.tell(app, if (ok) "🔒" else "✕", msg)
         }
     }
@@ -251,6 +263,8 @@ class SecureVideoActivity : ComponentActivity() {
     }
 
     companion object {
+        private val sealScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
         fun open(context: Context) {
             context.startActivity(Intent(context, SecureVideoActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
@@ -259,8 +273,12 @@ class SecureVideoActivity : ComponentActivity() {
             val name = "Video_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val out = File(VaultStore.dropDir(context), "$name.kdb")
             val tmp = File(out.path + ".part")
-            file.inputStream().buffered().use { i -> tmp.outputStream().buffered().use { o -> VaultCrypto.dropEncrypt(context, i, o) } }
-            tmp.renameTo(out)
+            try {
+                file.inputStream().buffered().use { i -> tmp.outputStream().buffered().use { o -> VaultCrypto.dropEncrypt(context, i, o) } }
+                tmp.renameTo(out)
+            } finally {
+                tmp.delete()
+            }
         } catch (_: Exception) {
             false
         } finally {

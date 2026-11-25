@@ -158,14 +158,18 @@ object ScreenshotPreview {
                     val name = "Screenshot_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                     val out = File(VaultStore.dropDir(c), "$name.kdb")
                     val tmp = File(out.path + ".part")
-                    c.contentResolver.openInputStream(s.uri)?.buffered()?.use { i ->
-                        tmp.outputStream().buffered().use { o -> VaultCrypto.dropEncrypt(c, i, o) }
-                    } ?: error("can't read")
-                    tmp.renameTo(out)
+                    try {
+                        c.contentResolver.openInputStream(s.uri)?.buffered()?.use { i ->
+                            tmp.outputStream().buffered().use { o -> VaultCrypto.dropEncrypt(c, i, o) }
+                        } ?: error("can't read")
+                        tmp.renameTo(out)
+                    } finally {
+                        tmp.delete()
+                    }
                 }.getOrDefault(false)
             }
             if (!ok) {
-                IslandBus.say("✕", "Couldn't move it to the Vault")
+                IslandBus.say("✕", "Couldn't move it to the Vault. " + VaultStore.failReason(c))
                 return@launch
             }
             IslandBus.say("🔒", "Sealed in the Vault · confirm to remove it from Gallery")
