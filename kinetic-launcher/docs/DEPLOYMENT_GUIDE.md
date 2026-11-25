@@ -728,3 +728,10 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
 - A **search box** at the top: type e.g. "volume" or "moon" and only matching settings stay.
 - The long Dynamic Island section is split into **Dynamic Island** (look), **What shows in the island**, and **Status bar, home bar & buttons**.
 - New **Battery & help** section at the bottom.
+
+### Edge-case sweep (round 1)
+- **Survives restarts:** a running stopwatch (with its laps), a plane watch and a tracked flight now carry on if Kinetic is restarted (an update, Android closing it, or a phone restart). Focus sessions already did.
+- **Two live things at once** (e.g. stopwatch + Focus, or a tracked flight + the flashlight): the second one now shows as the little bubble beside the island; swipe the island sideways to swap which one is in front. Before, the second one was hidden.
+- **The open island closes cleanly** when the thing it was showing ends (e.g. you stop the stopwatch while it's open), instead of the next thing suddenly appearing opened. It also folds up when the screen turns off.
+- **Volume holding:** if the screen turns off while a volume button is held, the repeating stops straight away.
+- Full-screen videos: confirmed the island hides (thanks for checking).

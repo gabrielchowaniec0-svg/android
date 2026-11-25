@@ -116,6 +116,18 @@ class CommandsTest {
     }
 
     @Test
+    fun emojiBecomePlain() {
+        val g = com.kinetic.launcher.island.Glyphs
+        assertEquals("", g.plain("🔒"))
+        assertEquals("", g.plain("🎉"))
+        assertTrue(g.plain("🛬").startsWith("✈"))
+        assertEquals("Done! 3 cards", g.text("Done! 3 cards 🎉"))
+        assertEquals("Vault", g.text("🔒 Vault"))
+        // Plain text is left alone.
+        assertEquals("Call Mom · 2:30", g.text("Call Mom · 2:30"))
+    }
+
+    @Test
     fun clockText() {
         assertEquals("0:09.3", LiveHub.clock(9_300, tenths = true))
         assertEquals("1:02:10", LiveHub.clock(3_730_000, tenths = false))

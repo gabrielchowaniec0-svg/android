@@ -135,7 +135,7 @@ private val LocalPill = compositionLocalOf { 35.dp }
 private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 
 /** Things that can live in the island, most important first. */
-private enum class Activity { Call, Torch, Nav, Live, Trip, Timer, Score, Media }
+private enum class Activity { Call, Torch, Nav, Live, Live2, Trip, Timer, Score, Media }
 
 private sealed interface IslandMode {
     data object Idle : IslandMode
@@ -220,6 +220,8 @@ fun DynamicIsland(
         if (torch != null) add(Activity.Torch)
         if (n != null) add(Activity.Nav)
         if (lv != null) add(Activity.Live)
+        // A second live thing (e.g. stopwatch + Focus) gets its own place in the stack.
+        if (lives.size > 1) add(Activity.Live2)
         if (trip != null) add(Activity.Trip)
         if (t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm) add(Activity.Timer)
         if (score != null) add(Activity.Score)
@@ -235,6 +237,11 @@ fun DynamicIsland(
     }
     val primary = stacked.firstOrNull()
     val secondary = stacked.getOrNull(1)
+    /** The live thing the island is showing (the second one after a sideways swipe). */
+    val liveShown: Live? = if (primary == Activity.Live2) lives.getOrNull(1) else lv
+    // When what the open island was showing ends (or another thing takes its place), close it,
+    // so the next thing doesn't suddenly appear opened.
+    LaunchedEffect(primary) { if (expanded) model.collapse() }
 
     val mode: IslandMode = when {
         c != null && c.incoming -> IslandMode.CallExpanded
@@ -245,7 +252,7 @@ fun DynamicIsland(
         expanded -> when (primary) {
             Activity.Call -> IslandMode.CallExpanded
             Activity.Nav -> IslandMode.NavExpanded
-            Activity.Live -> IslandMode.LiveExpanded
+            Activity.Live, Activity.Live2 -> IslandMode.LiveExpanded
             Activity.Torch -> IslandMode.TorchExpanded
             Activity.Timer -> IslandMode.TimerExpanded
             Activity.Trip -> IslandMode.TripExpanded
@@ -254,7 +261,7 @@ fun DynamicIsland(
         }
         primary == Activity.Call -> IslandMode.CallCompact
         primary == Activity.Nav -> IslandMode.NavCompact
-        primary == Activity.Live -> IslandMode.LiveCompact
+        primary == Activity.Live || primary == Activity.Live2 -> IslandMode.LiveCompact
         primary == Activity.Torch -> IslandMode.TorchCompact
         primary == Activity.Timer -> IslandMode.TimerCompact
         primary == Activity.Trip -> IslandMode.TripCompact
@@ -305,7 +312,7 @@ fun DynamicIsland(
         IslandMode.LiveCompact -> (CompactW + 40.dp) to pillH
         IslandMode.TorchCompact -> (restW + pillH * 1.5f) to pillH
         IslandMode.TorchExpanded -> minOf(fullW, 236.dp) to 232.dp + cameraRoom
-        IslandMode.LiveExpanded -> fullW to (if (lv?.actions.isNullOrEmpty()) 96.dp else 136.dp) + cameraRoom
+        IslandMode.LiveExpanded -> fullW to (if (liveShown?.actions.isNullOrEmpty()) 96.dp else 136.dp) + cameraRoom
         IslandMode.TripExpanded -> fullW to 118.dp + cameraRoom
         IslandMode.ScoreExpanded -> fullW to 104.dp + cameraRoom
         IslandMode.Peek -> fullW to (if (replying) ReplyH else PeekH + 52.dp) + cameraRoom
@@ -483,7 +490,7 @@ fun DynamicIsland(
         when (which) {
             Activity.Call -> model.openCall()
             Activity.Nav -> model.openNav()
-            Activity.Live -> lv?.onTap?.invoke() ?: if (expanded) model.collapse() else model.expand()
+            Activity.Live, Activity.Live2 -> liveShown?.onTap?.invoke() ?: if (expanded) model.collapse() else model.expand()
             Activity.Torch -> if (!expanded) model.expand()
             Activity.Timer -> model.openTimer()
             Activity.Trip -> model.openTrip()
@@ -715,7 +722,7 @@ fun DynamicIsland(
                     label = "island",
                 ) { shown ->
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - morph.value * 2.2f).coerceIn(0f, 1f) }) {
-                        IslandContent(shown, media, c, t, n, p, replying, model, cameraRoom)
+                        IslandContent(shown, media, c, t, n, p, replying, model, cameraRoom, liveShown)
                     }
                 }
                 // While pulling, the shape it's turning into fades in, revealed by the growing outline.
@@ -729,7 +736,7 @@ fun DynamicIsland(
                             .requiredSize(pw, ph)
                             .graphicsLayer { alpha = ((morph.value - 0.35f) / 0.5f).coerceIn(0f, 1f) }
                     ) {
-                        IslandContent(preview, media, c, t, n, p, replying, model, cameraRoom)
+                        IslandContent(preview, media, c, t, n, p, replying, model, cameraRoom, liveShown)
                     }
                 }
             }
@@ -749,6 +756,7 @@ private fun IslandContent(
     replying: Boolean,
     model: IslandModel,
     cameraRoom: Dp,
+    live: Live? = null,
 ) {
     val big = shown is IslandMode.MediaExpanded || shown is IslandMode.CallExpanded || shown is IslandMode.TimerExpanded ||
         shown is IslandMode.AlarmExpanded || shown is IslandMode.NavExpanded || shown is IslandMode.Peek ||
@@ -774,8 +782,8 @@ private fun IslandContent(
                         IslandMode.ScoreExpanded -> model.score.value?.let { ScoreExpanded(it) }
                         IslandMode.Peek -> p?.let { PeekContent(it, replying, model) }
                         IslandMode.PeekCompact -> p?.let { PeekCompactContent(it) }
-                        IslandMode.LiveCompact -> LiveHub.lives.value.firstOrNull()?.let { LiveCompactContent(it) }
-                        IslandMode.LiveExpanded -> LiveHub.lives.value.firstOrNull()?.let { LiveExpandedContent(it) }
+                        IslandMode.LiveCompact -> live?.let { LiveCompactContent(it) }
+                        IslandMode.LiveExpanded -> live?.let { LiveExpandedContent(it) }
                         IslandMode.TorchCompact -> TorchLive.state.value?.let { TorchCompactContent(it) }
                         IslandMode.TorchExpanded -> TorchLive.state.value?.let { TorchExpandedContent(it, model) }
                     }
@@ -795,6 +803,7 @@ private fun BubbleContent(which: Activity, m: MediaInfo?, t: NotificationHub.Tim
         Activity.Timer -> TimerGlyph(Orange, Modifier.size(s * 0.55f))
         Activity.Nav -> NavArrow(n, Modifier.size(s * 0.6f))
         Activity.Live -> LiveHub.lives.value.firstOrNull()?.let { l -> Text(l.icon, color = Color(l.accent), fontSize = 13.sp, maxLines = 1) }
+        Activity.Live2 -> LiveHub.lives.value.getOrNull(1)?.let { l -> Text(l.icon, color = Color(l.accent), fontSize = 13.sp, maxLines = 1) }
         Activity.Torch -> TorchGlyph(TorchLive.state.value?.on == true, Modifier.size(s * 0.42f, s * 0.6f))
         Activity.Call -> PhoneGlyph(Green, Modifier.size(s * 0.5f))
         Activity.Trip -> model.trip.value?.icon?.let { bmp ->
