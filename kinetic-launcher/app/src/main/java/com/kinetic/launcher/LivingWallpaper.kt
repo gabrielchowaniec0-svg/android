@@ -58,6 +58,67 @@ object LivingWallpaper {
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
+        // Planes and the space station over you, while the sky is on screen.
+        scope.launch {
+            while (isActive) {
+                val wait = runCatching { updateFlyers(app) }.getOrDefault(15_000L)
+                delay(wait)
+            }
+        }
+    }
+
+    private var lastIss: Triple<Double, Double, Long>? = null
+
+    /** Fetches planes (and the space station) nearby. Returns how long to wait before the next look. */
+    private fun updateFlyers(context: Context): Long {
+        val prefs = WallpaperSignals.prefs(context)
+        val power = context.getSystemService(android.os.PowerManager::class.java)
+        val lat = WallpaperSignals.lat
+        val lon = WallpaperSignals.lon
+        if (!prefs.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true) || !WallpaperSignals.skyShowing ||
+            power?.isInteractive != true || lat.isNaN() || lon.isNaN()
+        ) {
+            if (!WallpaperSignals.skyShowing) WallpaperSignals.planes = emptyList()
+            return 4_000L
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        WallpaperSignals.planes = com.kinetic.launcher.planes.PlaneData.nearby(lat, lon, 12)
+            .filter { it.altitudeFt in 200..45_000 && (it.speedKt ?: 0) > 60 && it.trackDeg != null }
+            .map {
+                WallpaperSignals.SkyPlane(
+                    id = it.hex, lat = it.lat, lon = it.lon, altM = it.altitudeFt * 0.3048,
+                    trackDeg = it.trackDeg ?: 0.0, speedMps = (it.speedKt ?: 0) * 0.514444, at = now,
+                )
+            }
+        // The space station: closer looks while it's anywhere near.
+        val iss = runCatching {
+            val c = (URL("https://api.wheretheiss.at/v1/satellites/25544").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8_000
+                readTimeout = 8_000
+            }
+            try { JSONObject(c.inputStream.bufferedReader().readText()) } finally { c.disconnect() }
+        }.getOrNull()
+        if (iss != null) {
+            val ilat = iss.getDouble("latitude")
+            val ilon = iss.getDouble("longitude")
+            val prev = lastIss
+            lastIss = Triple(ilat, ilon, now)
+            val ground = com.kinetic.launcher.planes.PlaneData.distanceM(lat, lon, ilat, ilon)
+            WallpaperSignals.station = if (prev != null && now - prev.third < 120_000 && ground < 2_600_000) {
+                // Heading from the last two fixes.
+                val y = kotlin.math.sin(Math.toRadians(ilon - prev.second)) * kotlin.math.cos(Math.toRadians(ilat))
+                val x = kotlin.math.cos(Math.toRadians(prev.first)) * kotlin.math.sin(Math.toRadians(ilat)) -
+                    kotlin.math.sin(Math.toRadians(prev.first)) * kotlin.math.cos(Math.toRadians(ilat)) * kotlin.math.cos(Math.toRadians(ilon - prev.second))
+                WallpaperSignals.SkyPlane(
+                    "ISS", ilat, ilon, iss.optDouble("altitude", 420.0) * 1000.0,
+                    (Math.toDegrees(kotlin.math.atan2(y, x)) + 360.0) % 360.0, iss.optDouble("velocity", 27_600.0) / 3.6, now,
+                )
+            } else {
+                null
+            }
+            if (ground < 2_600_000) return 6_000L
+        }
+        return 12_000L
     }
 
     private val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
@@ -93,6 +154,7 @@ object LivingWallpaper {
             WallpaperSignals.snow = 0f
             WallpaperSignals.fog = 0f
             WallpaperSignals.wind = 0f
+            WallpaperSignals.clouds = 0f
         }
         if (!(rainOn || extraOn || skyOn) || !hasLocation(context)) return
         val lm = context.getSystemService(LocationManager::class.java) ?: return
@@ -105,10 +167,14 @@ object LivingWallpaper {
         } ?: return
         val lat = "%.2f".format(java.util.Locale.US, loc.latitude)
         val lon = "%.2f".format(java.util.Locale.US, loc.longitude)
+        // For the stars and planes over you (kept on the phone).
+        WallpaperSignals.lat = loc.latitude
+        WallpaperSignals.lon = loc.longitude
+        prefs.edit().putFloat("wp_lat", loc.latitude.toFloat()).putFloat("wp_lon", loc.longitude.toFloat()).apply()
         val rain = runCatching {
             val url = URL(
                 "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-                    "&current=precipitation,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset&timezone=auto&forecast_days=1"
+                    "&current=precipitation,weather_code,wind_speed_10m,wind_direction_10m,cloud_cover&daily=sunrise,sunset&timezone=auto&forecast_days=1"
             )
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
@@ -126,6 +192,7 @@ object LivingWallpaper {
                         else -> 0f
                     }
                     WallpaperSignals.fog = if (code == 45 || code == 48) 1f else 0f
+                    WallpaperSignals.clouds = (cur.optDouble("cloud_cover", 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
                     // Wind slants the rain and pushes the snow (the side it blows towards).
                     val speed = (cur.optDouble("wind_speed_10m", 0.0) / 40.0).coerceIn(0.0, 1.0)
                     val from = Math.toRadians(cur.optDouble("wind_direction_10m", 0.0))

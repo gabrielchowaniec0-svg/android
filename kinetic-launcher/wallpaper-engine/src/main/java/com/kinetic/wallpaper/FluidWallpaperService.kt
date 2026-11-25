@@ -100,6 +100,16 @@ class FluidWallpaperService : WallpaperService() {
         private var windU = 0f
         private var warmU = 0f
         private var nightU = 0f
+        // Sky details (moon, stars, planes, clouds, weather): lock screen only by default.
+        private val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        private var skyVis = 0f
+        private var skyTarget = 0f
+        private var lastSkyCheck = 0L
+        private var cloudsU = 0f
+        private var starsOn = true
+        private var planesOn = true
+        private var linesOn = true
+        private val density = resources.displayMetrics.density
         private var tideOn = false
         private var tideLevel = 1f
         private var tideCharging = false
@@ -321,6 +331,33 @@ class FluidWallpaperService : WallpaperService() {
             shader.setFloatUniform("iWarm", warmU)
             shader.setFloatUniform("iNight", nightU)
             shader.setFloatUniform("iMoon", WallpaperSignals.moon)
+            // Where the sky shows: checked a few times a second (the lock screen comes and goes).
+            if (nowMs - lastSkyCheck > 250) {
+                lastSkyCheck = nowMs
+                val locked = keyguard?.isKeyguardLocked == true
+                skyTarget = when (prefs.getString(WallpaperSignals.KEY_SKY_WHERE, "lock")) {
+                    "both" -> 1f
+                    "home" -> if (locked) 0f else 1f
+                    "off" -> 0f
+                    else -> if (locked || isPreview) 1f else 0f
+                }
+                WallpaperSignals.skyShowing = skyTarget > 0.5f
+                starsOn = prefs.getBoolean(WallpaperSignals.KEY_STARS, true)
+                planesOn = prefs.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true)
+                linesOn = prefs.getBoolean(WallpaperSignals.KEY_CONSTELLATIONS, true)
+                if (WallpaperSignals.lat.isNaN()) {
+                    val la = prefs.getFloat("wp_lat", Float.NaN)
+                    val lo = prefs.getFloat("wp_lon", Float.NaN)
+                    if (!la.isNaN() && !lo.isNaN()) {
+                        WallpaperSignals.lat = la.toDouble()
+                        WallpaperSignals.lon = lo.toDouble()
+                    }
+                }
+            }
+            skyVis += (skyTarget - skyVis) * 0.06f
+            cloudsU += (WallpaperSignals.clouds - cloudsU) * 0.01f
+            shader.setFloatUniform("iSky", skyVis)
+            shader.setFloatUniform("iClouds", cloudsU)
             // A Focus can dim the wallpaper.
             dim += (WallpaperSignals.focusDim - dim) * 0.04f
             shader.setFloatUniform("iDim", dim)
@@ -336,6 +373,14 @@ class FluidWallpaperService : WallpaperService() {
             try {
                 canvas = surfaceHolder.lockHardwareCanvas() ?: return
                 canvas.drawPaint(paint)
+                // The real sky on top: stars and planets, planes and the space station.
+                if (skyVis > 0.01f) {
+                    SkyOverlay.draw(
+                        canvas, surfaceWidth, surfaceHeight, density, skyVis * (1f - 0.45f * dim), nightU, cloudsU,
+                        (frameTimeNanos / 1_000_000_000.0 % 10_000.0).toFloat(),
+                        stars = starsOn, planes = planesOn, lines = linesOn,
+                    )
+                }
             } finally {
                 if (canvas != null) {
                     try {

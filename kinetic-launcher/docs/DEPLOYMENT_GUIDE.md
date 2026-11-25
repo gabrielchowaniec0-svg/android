@@ -694,3 +694,14 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - Glows in the album's colours while music plays, pulses green during a call, takes on your Focus colour, and a green fill sweeps across when you plug in the charger. Otherwise it's plain white (black over light apps).
 - It never takes touches, so swiping up for home and recents works exactly as before.
 - **Setup:** Good Lock → **NavStar** → turn on and hide Samsung's gesture hint (the bottom bar). Then Kinetic Settings → Island → **Kinetic home bar**.
+
+## The living sky: moon, stars, planes, space station, clouds
+All of these show on the **lock screen only** by default. Kinetic Settings → Living wallpaper → **Show the sky on: Lock screen / Both / Home / Off**. Fades in when you lock and out when you unlock.
+
+- **The moon:** its real phase for tonight (crescent, half, full…), with the dark "seas", shaded craters, a bright Tycho-like crater with faint rays, a rounded edge, the dark side faintly visible (earthshine) and a glow that's stronger near full moon. It sits behind clouds.
+- **Stars & planets:** about 340 stars (the 80 brightest at their real positions, plus a faint field) and Venus, Mars, Jupiter and Saturn, worked out for your location and the exact time. The view faces **south**: the horizon is near the bottom of the screen, straight up is near the top, east on the left. They turn slowly through the night, twinkle (more near the horizon; planets hardly at all), fade near the horizon and hide behind clouds. Optional faint lines for Orion, the Big Dipper and Cassiopeia.
+- **Clouds:** drifting clouds from the real cloud cover: white by day, dark at night, warm at sunset. Rain, snow and fog now follow the same "Show the sky on" setting.
+- **Planes:** real planes within about 25 km, placed where they really are in your sky and moving smoothly between updates (every 12 s while the lock screen is on). At night: a steady **red light on the left wing** and **green on the right** (from the plane's real heading), **white strobes** double-flashing on the wing tips and a **red beacon** on the body. By day: a tiny dark speck with a **contrail** behind high-flying planes.
+- **The International Space Station:** when it passes over at night, a steady bright point gliding across (no blinking). Checked more often while it's within range.
+- Planes and the station are only looked up while the sky is actually on screen (screen on, lock screen), to save battery and data.
+- Turn each part on or off in the same section: Stars & planets, Constellation lines, Planes & space station.

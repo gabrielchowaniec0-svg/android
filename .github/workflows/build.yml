@@ -25,7 +25,7 @@ jobs:
       - name: Tests (commands, status bar fitting)
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest --stacktrace
+          ./gradlew :app:testDebugUnitTest :wallpaper-engine:testDebugUnitTest --stacktrace
       - name: Build (debug + release with R8)
         run: |
           chmod +x gradlew

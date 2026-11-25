@@ -29,6 +29,11 @@ object WallpaperSignals {
     const val KEY_FIREFLIES = "wp_fireflies"
     const val KEY_WEATHER_EXTRA = "wp_weather_extra"
     const val KEY_SKY = "wp_sky"
+    /** Where the sky details (moon, stars, planes, clouds, weather) show: "lock", "both", "home" or "off". */
+    const val KEY_SKY_WHERE = "wp_sky_where"
+    const val KEY_STARS = "wp_stars"
+    const val KEY_CONSTELLATIONS = "wp_constellations"
+    const val KEY_SKY_PLANES = "wp_sky_planes"
 
     enum class Kind { App, Unlock, Notification, Charging }
 
@@ -104,6 +109,40 @@ object WallpaperSignals {
     /** Moon phase 0..1 (0 new, 0.5 full), or -1 to hide the moon. */
     @Volatile
     var moon: Float = -1f
+
+    /** 0..1 cloud cover (drifting clouds in the sky). */
+    @Volatile
+    var clouds: Float = 0f
+
+    /** Where you are (rough), for the stars and planes. NaN until known. */
+    @Volatile
+    var lat: Double = Double.NaN
+
+    @Volatile
+    var lon: Double = Double.NaN
+
+    /** Something flying over you: position at [at] (SystemClock.elapsedRealtime), then dead reckoning. */
+    data class SkyPlane(
+        val id: String,
+        val lat: Double,
+        val lon: Double,
+        val altM: Double,
+        val trackDeg: Double,
+        val speedMps: Double,
+        val at: Long,
+    )
+
+    /** Planes near you right now (set every few seconds while the sky is showing). */
+    @Volatile
+    var planes: List<SkyPlane> = emptyList()
+
+    /** The International Space Station, when it's anywhere near. */
+    @Volatile
+    var station: SkyPlane? = null
+
+    /** True while the sky details are on screen (so the launcher only fetches planes then). */
+    @Volatile
+    var skyShowing: Boolean = false
 
     /** Apps with unread notifications (each one is a firefly), 0–8. */
     @Volatile

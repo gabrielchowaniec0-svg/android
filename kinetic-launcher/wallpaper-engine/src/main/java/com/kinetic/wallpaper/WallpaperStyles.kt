@@ -159,6 +159,8 @@ object WallpaperStyles {
         uniform float  iWarm;
         uniform float  iNight;
         uniform float  iMoon;
+        uniform float  iSky;
+        uniform float  iClouds;
         uniform float3 iColA;
         uniform float3 iColB;
         uniform float3 iColC;
@@ -260,46 +262,101 @@ object WallpaperStyles {
             return smoothstep(0.09, 0.0, d) * (0.5 + 0.5 * h);
         }
 
+        // The moon as it really looks tonight: its phase, the dark "seas", craters and a glow.
+        float3 moonLayer(float2 uv, float3 col) {
+            float vis = iNight * iSky * (1.0 - 0.8 * iClouds);
+            if (iMoon < 0.0 || vis < 0.01) return col;
+            float2 m = uv - float2(0.14, -0.36);
+            float r = 0.030;
+            float d = length(m);
+            if (d > r * 7.0) return col;
+            float frac = 0.5 - 0.5 * cos(6.2831853 * iMoon);
+            // Soft glow (brighter near a full moon).
+            col += float3(0.72, 0.78, 0.95) * exp(-max(d - r, 0.0) * 30.0) * 0.13 * (0.25 + frac) * vis;
+            float2 l = m / r;
+            float rr = dot(l, l);
+            if (rr >= 1.0) return col;
+            float z = sqrt(1.0 - rr);
+            float3 n = float3(l.x, -l.y, z);
+            float ph = 6.2831853 * iMoon;
+            // Sunlight: from the right while it's growing, from the left while it shrinks.
+            float3 L = normalize(float3(sin(ph), 0.0, -cos(ph)));
+            float lit = smoothstep(-0.03, 0.12, dot(n, L));
+            // Surface: the big dark plains ("seas") and craters.
+            float maria = smoothstep(0.50, 0.64, fbm(l * 1.7 + float2(3.1, 1.7)));
+            float albedo = 0.95 - 0.32 * maria;
+            for (int j = 0; j < 3; j++) {
+                float fj = float(j);
+                float2 g = l * (3.5 + fj * 3.0) + float2(13.7 * fj, 4.1 * fj);
+                float2 id = floor(g);
+                float2 f = fract(g) - 0.5;
+                float h = hash21(id + fj * 7.0);
+                if (h > 0.5) {
+                    float2 o = (hash22(id + fj) - 0.5) * 0.5;
+                    float cd = length(f - o);
+                    float cs = 0.14 + 0.14 * h;
+                    // A shaded bowl with a bright rim on the sunlit side.
+                    float bowl = smoothstep(cs, cs * 0.55, cd);
+                    float rim = smoothstep(cs * 1.25, cs, cd) * smoothstep(cs * 0.85, cs, cd);
+                    float side = dot(normalize(f - o + 0.0001), L.xy * float2(1.0, -1.0));
+                    albedo += -0.09 * bowl * (1.0 - 0.6 * side) + 0.07 * rim * max(side, 0.0);
+                }
+            }
+            // A bright young crater with faint rays near the bottom (like Tycho).
+            float2 ty = l - float2(-0.12, 0.58);
+            float tyd = length(ty);
+            albedo += smoothstep(0.08, 0.0, tyd) * 0.22;
+            albedo += smoothstep(0.55, 0.05, tyd) * 0.06 * smoothstep(0.6, 0.95, valueNoise(float2(atan(ty.y, ty.x) * 9.0, 0.0)));
+            float limb = 0.70 + 0.30 * z;
+            float3 surf = float3(0.95, 0.94, 0.88) * albedo * limb;
+            // The dark part still shows faintly (earthshine).
+            float3 c = surf * (0.06 + 0.94 * lit);
+            float edge = smoothstep(1.0, 0.95, sqrt(rr));
+            return mix(col, c, edge * vis);
+        }
+
+        // Drifting clouds, from the real cloud cover: white by day, dark at night, warm at sunset.
+        float3 cloudLayer(float2 uv, float3 col) {
+            float amt = iClouds * iSky;
+            if (amt < 0.01) return col;
+            float2 cp = uv * float2(1.4, 3.0) + float2(iTime * 0.010 * (0.5 + iWind), 0.0);
+            float nz = fbm(cp + float2(0.0, 7.3)) + 0.25 * fbm3(cp * 2.3 + 11.0);
+            float cover = mix(0.92, 0.45, iClouds);
+            float c = smoothstep(cover, cover + 0.25, nz);
+            float upper = smoothstep(0.45, -0.20, uv.y);
+            float3 cc = mix(float3(0.82, 0.85, 0.90), float3(0.13, 0.15, 0.20), iNight);
+            cc = mix(cc, cc * float3(1.25, 0.88, 0.72) + float3(0.06, 0.02, 0.0), iWarm * 0.6);
+            return mix(col, cc, c * upper * 0.6 * iSky);
+        }
+
         float3 sky(float2 uv, float3 col) {
             // Snow: a touch brighter and greyer, with flakes.
-            if (iSnow > 0.01) {
-                col = mix(col, col * 0.9 + 0.05, 0.3 * iSnow);
+            if (iSnow * iSky > 0.01) {
+                col = mix(col, col * 0.9 + 0.05, 0.3 * iSnow * iSky);
                 float s = snowLayer(uv, 14.0, 0.35, 0.0) + 0.7 * snowLayer(uv, 24.0, 0.22, 3.1);
-                col += float3(0.92, 0.95, 1.0) * s * 0.6 * iSnow;
+                col += float3(0.92, 0.95, 1.0) * s * 0.6 * iSnow * iSky;
             }
             // Fog: a slow haze rising from the bottom.
-            if (iFog > 0.01) {
+            if (iFog * iSky > 0.01) {
                 float f = smoothstep(-0.15, 0.5, uv.y) * (0.6 + 0.4 * fbm3(uv * 3.0 + float2(iTime * 0.03, 0.0)));
-                col = mix(col, float3(0.55, 0.58, 0.62), f * 0.45 * iFog);
+                col = mix(col, float3(0.55, 0.58, 0.62), f * 0.45 * iFog * iSky);
             }
             // Golden hour around sunrise and sunset; a little cooler and dimmer at night.
             col = mix(col, col * float3(1.15, 0.92, 0.76) + float3(0.06, 0.02, 0.0), iWarm * 0.5);
             col *= 1.0 - 0.12 * iNight;
-            // The real moon (its phase), top right, at night.
-            if (iMoon >= 0.0 && iNight > 0.01) {
-                float2 m = uv - float2(0.14, -0.36);
-                float r = 0.026;
-                float d = length(m);
-                if (d < r * 4.0) {
-                    float2 l = m / r;
-                    float k = cos(6.2831853 * iMoon);
-                    float sgn = iMoon < 0.5 ? 1.0 : -1.0;
-                    float disc = smoothstep(1.0, 0.9, length(l));
-                    float lit = smoothstep(-0.06, 0.06, sgn * l.x - k * sqrt(max(0.0, 1.0 - l.y * l.y)));
-                    col = mix(col, float3(0.93, 0.92, 0.85), disc * (0.10 + 0.78 * lit) * iNight);
-                    col += float3(0.6, 0.65, 0.8) * exp(-d * 38.0) * 0.07 * iNight;
-                }
-            }
+            // The moon sits behind the clouds.
+            col = moonLayer(uv, col);
+            col = cloudLayer(uv, col);
             return col;
         }
 
         float3 living(float2 uv, float3 col) {
             col = sky(uv, col);
             // Rain: cooler, a little darker, with falling streaks.
-            if (iRain > 0.01) {
-                col = mix(col, col * float3(0.80, 0.88, 1.0), 0.45 * iRain);
+            if (iRain * iSky > 0.01) {
+                col = mix(col, col * float3(0.80, 0.88, 1.0), 0.45 * iRain * iSky);
                 float r = rainLayer(uv, 34.0, 2.6, 0.0) + 0.6 * rainLayer(uv, 52.0, 3.4, 7.3);
-                col += float3(0.62, 0.74, 0.95) * r * 0.32 * iRain;
+                col += float3(0.62, 0.74, 0.95) * r * 0.32 * iRain * iSky;
             }
             // Battery tide: a softly glowing waterline. Full battery = high tide.
             if (iTide.x >= 0.0) {
