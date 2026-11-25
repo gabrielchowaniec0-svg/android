@@ -138,12 +138,12 @@ private val LocalPill = compositionLocalOf { 35.dp }
 private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 
 /** Things that can live in the island, most important first. */
-private enum class Activity { Call, Torch, Nav, Live, Live2, Trip, Timer, Score, Media }
+internal enum class Activity { Call, Torch, Nav, Live, Live2, Trip, Timer, Score, Media }
 
 /** What the island is showing: its shape/mode, and which live thing (if it's showing one). */
 private data class IslandFrame(val mode: IslandMode, val liveId: String?)
 
-private sealed interface IslandMode {
+internal sealed interface IslandMode {
     data object Idle : IslandMode
     data class Alert(val alert: IslandAlert) : IslandMode
     data object MediaCompact : IslandMode
@@ -222,26 +222,26 @@ fun DynamicIsland(
     val n = nav
     val p = peek
 
-    val activities = buildList {
-        if (c != null) add(Activity.Call)
-        if (torch != null) add(Activity.Torch)
-        if (n != null) add(Activity.Nav)
-        if (lv != null) add(Activity.Live)
-        // A second live thing (e.g. stopwatch + Focus) gets its own place in the stack.
-        if (lives.size > 1) add(Activity.Live2)
-        if (trip != null) add(Activity.Trip)
-        if (t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm) add(Activity.Timer)
-        if (score != null) add(Activity.Score)
-        if (m != null && look != IslandModel.MediaLook.Hidden) add(Activity.Media)
-    }
+    val now = IslandDecide.Now(
+        call = c != null,
+        incomingCall = c?.incoming == true,
+        torch = torch != null,
+        nav = n != null,
+        lives = lives.size,
+        trip = trip != null,
+        timer = t != null && t.kind != NotificationHub.TimerInfo.Kind.Alarm,
+        alarm = t != null && t.kind == NotificationHub.TimerInfo.Kind.Alarm,
+        score = score != null,
+        media = m != null && look != IslandModel.MediaLook.Hidden,
+        mediaMinimal = look == IslandModel.MediaLook.Minimal,
+        peek = p != null,
+        peekOpen = peekOpen || replying,
+        alert = alert,
+        expanded = expanded,
+    )
     // Island stacks: a sideways swipe brings the next live thing to the front.
     val stackShift by model.stackShift.collectAsState()
-    val stacked = if (activities.size > 1) {
-        val k = ((stackShift % activities.size) + activities.size) % activities.size
-        activities.drop(k) + activities.take(k)
-    } else {
-        activities
-    }
+    val stacked = IslandDecide.stack(IslandDecide.activities(now), stackShift)
     val primary = stacked.firstOrNull()
     val secondary = stacked.getOrNull(1)
     /** The live thing the island is showing (the second one after a sideways swipe). */
@@ -250,32 +250,7 @@ fun DynamicIsland(
     // so the next thing doesn't suddenly appear opened.
     LaunchedEffect(primary) { if (expanded) model.collapse() }
 
-    val mode: IslandMode = when {
-        c != null && c.incoming -> IslandMode.CallExpanded
-        t != null && t.kind == NotificationHub.TimerInfo.Kind.Alarm -> IslandMode.AlarmExpanded
-        p != null -> if (peekOpen || replying) IslandMode.Peek else IslandMode.PeekCompact
-        alert != null -> IslandMode.Alert(alert!!)
-        primary == null -> IslandMode.Idle
-        expanded -> when (primary) {
-            Activity.Call -> IslandMode.CallExpanded
-            Activity.Nav -> IslandMode.NavExpanded
-            Activity.Live, Activity.Live2 -> IslandMode.LiveExpanded
-            Activity.Torch -> IslandMode.TorchExpanded
-            Activity.Timer -> IslandMode.TimerExpanded
-            Activity.Trip -> IslandMode.TripExpanded
-            Activity.Score -> IslandMode.ScoreExpanded
-            Activity.Media -> IslandMode.MediaExpanded
-        }
-        primary == Activity.Call -> IslandMode.CallCompact
-        primary == Activity.Nav -> IslandMode.NavCompact
-        primary == Activity.Live || primary == Activity.Live2 -> IslandMode.LiveCompact
-        primary == Activity.Torch -> IslandMode.TorchCompact
-        primary == Activity.Timer -> IslandMode.TimerCompact
-        primary == Activity.Trip -> IslandMode.TripCompact
-        primary == Activity.Score -> IslandMode.ScoreCompact
-        look == IslandModel.MediaLook.Minimal -> IslandMode.MediaMinimal
-        else -> IslandMode.MediaCompact
-    }
+    val mode: IslandMode = IslandDecide.mode(now, primary)
 
     val restW = maxOf(pillH * 3.4f, 84.dp)
     val fullW = screenWidth - 20.dp
