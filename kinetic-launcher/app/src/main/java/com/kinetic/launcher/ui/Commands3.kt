@@ -226,7 +226,7 @@ object Commands3 {
         }
         r("""(?:phonetic|spell|nato)\s+(.+)""")?.let { return Cmd.Phonetic(it.groupValues[1]) }
         r("""(?:flight level|fl)\s*(\d{2,3})(?:\s+in\s+feet)?""")?.let { return Cmd.FlightLevel(it.groupValues[1].toInt()) }
-        r("""split\s+\$?(\d+(?:\.\d+)?)\s+(?:between|by|among|with|for|into)\s+(\d+)(?:\s+people)?""")?.let { return Cmd.Split(it.groupValues[1].toDouble(), it.groupValues[2].toInt().coerceIn(1, 100)) }
+        r("""split\s+\$?(\d+(?:\.\d+)?)\s+(?:between|by|among|with|for|into)\s+(\d+)(?:\s+people)?""")?.let { return Cmd.Split(it.groupValues[1].toDouble(), (it.groupValues[2].toIntOrNull() ?: 100).coerceIn(1, 100)) }
         r("""(?:what's\s+|whats\s+)?(\d+(?:\.\d+)?)%\s+off\s+(?:of\s+)?\$?(\d+(?:\.\d+)?)""")?.let { return Cmd.PercentOff(it.groupValues[1].toDouble(), it.groupValues[2].toDouble()) }
         r("""(?:time zones?|times)(?:\s+for(?:\s+my\s+trip)?)?[:\s]+(.+)""")?.let { m ->
             val places = m.groupValues[1].split(',', '&').map { it.trim().removePrefix("and ").trim() }.filter { it.isNotBlank() }

@@ -148,20 +148,22 @@ object KineticCommands {
         val t = text.lowercase().trim()
         if (t == "half an hour" || t == "half hour") return 1800
         if (t == "an hour" || t == "one hour") return 3600
-        var total = 0
+        var total = 0L
         var found = false
         Regex("""(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)?""").findAll(t).forEach { m ->
             if (m.value.isBlank()) return@forEach
             val n = m.groupValues[1].toDoubleOrNull() ?: return@forEach
             val unit = m.groupValues[2]
             total += when {
-                unit.startsWith("h") -> (n * 3600).toInt()
-                unit.startsWith("s") -> n.toInt()
-                else -> (n * 60).toInt() // minutes by default
+                unit.startsWith("h") -> (n * 3600).toLong()
+                unit.startsWith("s") -> n.toLong()
+                else -> (n * 60).toLong() // minutes by default
             }
+            total = total.coerceIn(0L, 1_000_000_000L)
             found = true
         }
-        return if (found && total in 1..86_400) total else null
+        // Longs, so "timer 9999999 hours" is simply too long rather than wrapping round.
+        return if (found && total in 1..86_400) total.toInt() else null
     }
 
     // ---- turning it into an action -------------------------------------------------------

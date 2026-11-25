@@ -251,10 +251,9 @@ object Stopwatch {
     fun restore(c: Context) {
         if (running) return
         val wallStart = prefs(c).getLong("sw_wall", 0L)
-        if (wallStart <= 0L || System.currentTimeMillis() - wallStart > 7L * 86_400_000L) return
-        startedAt = SystemClock.elapsedRealtime() - (System.currentTimeMillis() - wallStart)
+        startedAt = RestoreRules.stopwatchStart(wallStart, System.currentTimeMillis(), SystemClock.elapsedRealtime()) ?: return
         laps.clear()
-        prefs(c).getString("sw_laps", "")?.split(',')?.mapNotNull { it.toLongOrNull() }?.let { laps += it }
+        laps += RestoreRules.laps(prefs(c).getString("sw_laps", ""))
         publish(c)
     }
 
@@ -478,7 +477,7 @@ object PlaneWatch {
     /** Picks up a plane watch that was running when Kinetic restarted. */
     fun restore(c: Context) {
         val until = prefs(c).getLong("pw_until", 0L)
-        if (!on && until > System.currentTimeMillis()) start(c, until)
+        if (!on && RestoreRules.planeWatchResumes(until, System.currentTimeMillis())) start(c, until)
     }
 
     fun start(context: Context, untilAt: Long = System.currentTimeMillis() + 60 * 60_000L) {
@@ -562,7 +561,7 @@ object FlightWatch {
         val p = prefs(c)
         val shown = p.getString("fw_shown", null) ?: return
         val callsign = p.getString("fw_call", null) ?: return
-        if (tracking == null && System.currentTimeMillis() - p.getLong("fw_at", 0L) < 20 * 3600_000L) track(c, shown, callsign, fresh = false)
+        if (tracking == null && RestoreRules.flightResumes(p.getLong("fw_at", 0L), System.currentTimeMillis())) track(c, shown, callsign, fresh = false)
     }
 
     fun track(context: Context, shown: String, callsign: String, fresh: Boolean = true) {

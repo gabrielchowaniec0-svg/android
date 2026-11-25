@@ -167,8 +167,9 @@ object MoreCommands {
             return Cmd.Tip(pct, amount, m.groupValues[4].toIntOrNull()?.coerceIn(1, 50) ?: 1)
         }
         r("""(?:random number|pick a number|number)\s+(?:between|from)?\s*(\d+)\s*(?:to|and|-)\s*(\d+)""")?.let { m ->
-            val a = m.groupValues[1].toInt()
-            val b = m.groupValues[2].toInt()
+            // Huge numbers are capped instead of crashing.
+            val a = (m.groupValues[1].toLongOrNull() ?: MAX_RANDOM).coerceAtMost(MAX_RANDOM).toInt()
+            val b = (m.groupValues[2].toLongOrNull() ?: MAX_RANDOM).coerceAtMost(MAX_RANDOM).toInt()
             return Cmd.Random(minOf(a, b), maxOf(a, b))
         }
         r("""(?:how many )?days (?:until|till|to|left until)\s+(.+)|(?:countdown to|how long until)\s+(.+)""")?.let { m ->
@@ -673,3 +674,5 @@ object MoreCommands {
         false
     }
 }
+
+private const val MAX_RANDOM = 1_000_000_000L

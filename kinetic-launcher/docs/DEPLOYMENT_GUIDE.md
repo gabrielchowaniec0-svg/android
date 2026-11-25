@@ -762,3 +762,12 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
   phone, so there's always room to seal it. Updates check for space first.
 - **Secure video:** sealing finishes even if you leave the screen straight
   away, and half-written files are always cleaned up.
+
+### More automated tests
+- The build check now also tests the island's choices (what shows in front,
+  what shape, how swipes rotate the stack), picking things back up after a
+  restart (stopwatch, plane watch, tracked flight), and thousands of odd or
+  random commands.
+- Those tests found and fixed: "split 84 between 99999999999" and "random
+  number between 1 and 99999999999" crashed, and a stopwatch could count
+  backwards if the phone's clock moved back.
