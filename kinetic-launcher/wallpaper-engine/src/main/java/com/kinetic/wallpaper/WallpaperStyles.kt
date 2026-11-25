@@ -270,9 +270,9 @@ object WallpaperStyles {
             float r = 0.030;
             float d = length(m);
             if (d > r * 7.0) return col;
-            float frac = 0.5 - 0.5 * cos(6.2831853 * iMoon);
+            float fullness = 0.5 - 0.5 * cos(6.2831853 * iMoon);
             // Soft glow (brighter near a full moon).
-            col += float3(0.72, 0.78, 0.95) * exp(-max(d - r, 0.0) * 30.0) * 0.13 * (0.25 + frac) * vis;
+            col += float3(0.72, 0.78, 0.95) * exp(-max(d - r, 0.0) * 30.0) * 0.13 * (0.25 + fullness) * vis;
             float2 l = m / r;
             float rr = dot(l, l);
             if (rr >= 1.0) return col;
