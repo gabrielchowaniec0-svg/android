@@ -197,7 +197,7 @@ class PlaneSpotterActivity : ComponentActivity(), SensorEventListener {
         val locked = stillLocked ?: best?.takeIf { aim(it) < 9f }
         val haptics = LocalHapticFeedback.current
         LaunchedEffect(locked?.plane?.hex) {
-            if (locked != null && locked.plane.hex != lockedHex) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            if (locked != null && locked.plane.hex != lockedHex && com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             lockedHex = locked?.plane?.hex
         }
         var route by remember { mutableStateOf<Route?>(null) }

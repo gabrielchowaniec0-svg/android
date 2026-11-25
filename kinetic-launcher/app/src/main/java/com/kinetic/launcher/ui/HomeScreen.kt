@@ -724,7 +724,7 @@ fun KineticHome(
                         onEditTap = { shown -> menu = widgetMenu(pageIndex, item, shown) },
                         onResize = { dx, dy ->
                             deps.layout.resizeWidget(pageIndex, item.id, dx, dy).also { ok ->
-                                if (ok) haptics.performHapticFeedback(HapticFeedbackType.LongPress) else toast("Not enough room")
+                                if (ok) { if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress) } else toast("Not enough room")
                             }
                         },
                         cell = { id, edit, onTap, resize ->
@@ -749,7 +749,7 @@ fun KineticHome(
                     spanY = item.spanY,
                     onResize = { dx, dy ->
                         deps.layout.resizeWidget(pageIndex, item.id, dx, dy).also { ok ->
-                            if (ok) haptics.performHapticFeedback(HapticFeedbackType.LongPress) else toast("Not enough room")
+                            if (ok) { if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress) } else toast("Not enough room")
                         }
                     },
                 )
@@ -1014,13 +1014,13 @@ fun KineticHome(
                             moved = maxOf(moved, kotlin.math.abs(avgY - startY))
                             if (!fired && maxFingers == 2 && avgY - startY > swipe) {
                                 fired = true
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 openFocus()
                             }
                         }
                     }
                     if (!fired && maxFingers == 3 && moved < swipe / 2 && System.currentTimeMillis() - t0 < 500) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         searchSignal++
                         openDrawer()
                     }
@@ -1176,12 +1176,12 @@ fun KineticHome(
                                 },
                                 onMerge = { dragged, target ->
                                     if (deps.layout.mergeInto(pageIndex, dragged, target)) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     }
                                 },
                                 onSwap = { dragged, target -> deps.layout.swapItems(pageIndex, dragged, target) },
                                 onEmptyLongPress = if (editMode) null else fun() {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     editMode = true
                                 },
                                 emptyHoldMillis = EDIT_HOLD_MS,
@@ -1376,9 +1376,9 @@ fun KineticHome(
         DisposableEffect(Unit) {
             AppDrag.onStart = {
                 quickMenu = null
-                dragView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                com.kinetic.launcher.ui.Haptics.hold(dragView)
             }
-            AppDrag.onHoverChange = { dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK) }
+            AppDrag.onHoverChange = { com.kinetic.launcher.ui.Haptics.tick(dragView) }
             AppDrag.onDrop = drop@{ dragKey, folderKey ->
                 if (dragKey.startsWith("home:") && folderKey.startsWith("home:")) {
                     val d = dragKey.split(':', limit = 3)
@@ -1386,13 +1386,13 @@ fun KineticHome(
                     val page = d.getOrNull(1)?.toIntOrNull() ?: return@drop
                     if (f.getOrNull(1)?.toIntOrNull() != page) return@drop
                     if (deps.layout.addToFolder(page, d[2], f[2])) {
-                        dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                        com.kinetic.launcher.ui.Haptics.confirm(dragView)
                     } else {
                         toast("Couldn't add it to that folder")
                     }
                 } else if (dragKey.startsWith("drawer:") && folderKey.startsWith("drawer:")) {
                     if (deps.layout.moveToDrawerFolder(folderKey.removePrefix("drawer:"), dragKey.removePrefix("drawer:"))) {
-                        dragView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                        com.kinetic.launcher.ui.Haptics.confirm(dragView)
                     }
                 }
             }

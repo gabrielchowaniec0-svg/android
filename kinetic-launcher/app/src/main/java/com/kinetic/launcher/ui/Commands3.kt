@@ -597,11 +597,7 @@ object Commands3 {
         }
     }
 
-    private fun tell(ctx: Context, icon: String, text: String) {
-        if (!IslandBus.say(icon, text)) {
-            android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(ctx, text, android.widget.Toast.LENGTH_LONG).show() }
-        }
-    }
+    private fun tell(ctx: Context, icon: String, text: String) = IslandBus.tell(ctx, icon, text)
 
     private fun schoolDays(context: Context, until: String): Ready {
         val today = LocalDate.now()
