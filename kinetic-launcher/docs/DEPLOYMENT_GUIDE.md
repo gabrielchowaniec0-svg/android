@@ -1,5 +1,9 @@
 # Kinetic Launcher — Build & Deploy Guide (Galaxy S25 Ultra)
 
+> **Looking for how to use Kinetic?** Read [USER_MANUAL.md](USER_MANUAL.md): it
+> covers everything in one organised place. This file is the build guide plus a
+> running log of every change, in the order they were made.
+
 This guide takes the Phase 1 code (AGSL fluid wallpaper, cinematic unlock
 transition, launcher grid, customization/private-space manager) into a running
 build on an S25 Ultra, over USB and over Wi‑Fi.
