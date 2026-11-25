@@ -116,7 +116,13 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     private val _stackTick = MutableStateFlow(0)
     val stackTick: StateFlow<Int> = _stackTick.asStateFlow()
 
+    /** Which way the last sideways swipe went (+1 / -1), for the slide animation. */
+    @Volatile
+    var lastStackDir = 1
+        private set
+
     fun cycleStack(direction: Int) {
+        lastStackDir = if (direction >= 0) 1 else -1
         _stackShift.value += direction
         _stackTick.value++
         collapse()
@@ -448,6 +454,14 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     private var askSecondary: (() -> Unit)? = null
 
     /** One of the island's buttons was pressed ([primary] = the blue one). */
+    /** Swiped away (e.g. a "Search / Web" question you didn't mean to ask). */
+    fun dismissAlert() {
+        askAction = null
+        askSecondary = null
+        alertJob?.cancel()
+        _alert.value = null
+    }
+
     fun answerAsk(primary: Boolean = true) {
         val a = if (primary) askAction else askSecondary
         askAction = null
