@@ -47,7 +47,16 @@ object Commands3 {
         data class Eta(val who: String?) : Cmd
         data class Remember(val text: String) : Cmd
         data class Recall(val query: String, val hit: Memory.Item) : Cmd
-        data object Forget : Cmd
+        /** "forget parking", "forget the wifi password"; null = the newest thing remembered. */
+        data class Forget(val what: String?) : Cmd
+        data object ListMemories : Cmd
+        data object ListNotes : Cmd
+        /** null = the newest note; "*" = all of them. */
+        data class RemoveNote(val query: String?) : Cmd
+        data class RemoveWord(val front: String) : Cmd
+        data class RemoveShortcut(val short: String) : Cmd
+        data object EndFocus : Cmd
+        data object Unsnooze : Cmd
         data class LastPhoto(val who: String?) : Cmd
         data class PhotosFrom(val day: String) : Cmd
         data class Schedule(val day: LocalDate, val label: String) : Cmd
@@ -162,7 +171,17 @@ object Commands3 {
             "what's my eta", "whats my eta", "my eta", "eta", "when will i get there" -> return Cmd.Eta(null)
             "where did i park", "where's my car", "wheres my car", "where is my car", "find my car" ->
                 return ctx?.let { c -> Memory.find(c, "park")?.let { Cmd.Recall("park", it) } } ?: Cmd.Recall("park", Memory.Item(0, "No parking spot saved. Write \"remember I parked …\"", 0.0, 0.0))
-            "forget parking", "forget where i parked", "forget that" -> return Cmd.Forget
+            "forget parking", "forget where i parked", "forget my parking spot", "forget where i parked my car" -> return Cmd.Forget("park")
+            "forget that", "forget it", "forget the last thing" -> return Cmd.Forget(null)
+            "what do you remember", "what have i saved", "my memories", "things i saved", "what did i ask you to remember" -> return Cmd.ListMemories
+            "my notes", "sticky notes", "show notes", "show my notes", "list notes", "home notes", "my sticky notes" -> return Cmd.ListNotes
+            "remove note", "delete note", "remove the note", "delete the note", "remove last note", "delete last note",
+            "throw away note", "remove sticky", "delete sticky", "remove sticky note", "delete sticky note" -> return Cmd.RemoveNote(null)
+            "clear notes", "clear all notes", "remove all notes", "delete all notes", "clear sticky notes", "remove all sticky notes",
+            "clear my notes", "delete my notes" -> return Cmd.RemoveNote("*")
+            "end focus", "stop focus", "focus off", "cancel focus", "end focus session", "stop the focus", "turn off focus", "end session" -> return Cmd.EndFocus
+            "unsnooze", "unsnooze notifications", "stop snooze", "end snooze", "notifications on", "notifications back on",
+            "turn notifications back on", "unmute notifications", "unpause notifications" -> return Cmd.Unsnooze
             "last photo", "my last photo", "show last photo", "latest photo" -> return Cmd.LastPhoto(null)
             "my schedule", "schedule today", "my schedule today", "my day", "today's schedule", "what's my day" -> return Cmd.Schedule(LocalDate.now(), "Today")
             "my schedule tomorrow", "schedule tomorrow", "tomorrow's schedule", "what do i have tomorrow" -> return Cmd.Schedule(LocalDate.now().plusDays(1), "Tomorrow")
@@ -188,6 +207,16 @@ object Commands3 {
         }
         r("""(?:send|share|text)\s+my\s+eta\s+(?:to|with)\s+(.+)""")?.let { return Cmd.Eta(it.groupValues[1].trim()) }
         r("""remember\s+(?:that\s+)?(.+)""")?.let { return Cmd.Remember(it.groupValues[1].trim()) }
+        // Taking things away again: every "add" command has a "remove".
+        r("""(?:remove|delete|clear|throw away|bin|trash|get rid of)\s+(?:the\s+|my\s+)?(?:sticky\s+)?note\s+(?:about\s+|that says\s+|saying\s+)?(.+)""")?.let {
+            return Cmd.RemoveNote(it.groupValues[1].trim().removeSurrounding("\""))
+        }
+        r("""(?:remove|delete)\s+(?:the\s+)?(?:flashcard|card|word)\s+(.+)""")?.let { return Cmd.RemoveWord(it.groupValues[1].trim()) }
+        r("""(?:remove|delete|clear)\s+(?:the\s+)?(?:shortcut|alias)\s+(\S+)""")?.let { return Cmd.RemoveShortcut(it.groupValues[1]) }
+        r("""(?:remove|delete|cancel)\s+(?:the\s+|my\s+)?(?:homework|task|assignment)\s+(.+)""")?.let { m ->
+            if (ctx != null && Homework.all(ctx).any { it.text.lowercase().contains(m.groupValues[1]) }) return Cmd.DoneHomework(m.groupValues[1])
+        }
+        r("""forget\s+(?:about\s+)?(?:the\s+|my\s+)?(.+)""")?.let { return Cmd.Forget(it.groupValues[1].trim()) }
         r("""(?:send|share|text)\s+(?:my\s+)?(?:last|latest)\s+(?:photo|picture|pic)\s+(?:to|with)\s+(.+)""")?.let { return Cmd.LastPhoto(it.groupValues[1].trim()) }
         r("""(?:find|show)?\s*photos?\s+(?:from\s+)?(today|yesterday|last week|this week)""")?.let { return Cmd.PhotosFrom(it.groupValues[1]) }
         r("""(?:my\s+)?schedule\s+(?:on\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)""")?.let { m ->
@@ -303,8 +332,112 @@ object Commands3 {
                 }
             }
         }
-        Cmd.Forget -> Ready("📌", "Forget the parking spot", "", "Forget", done = "Forgotten") { ctx ->
-            Memory.remove(ctx, "park")
+        is Cmd.Forget -> {
+            val hit = when (cmd.what) {
+                null -> Memory.all(context).maxByOrNull { it.at }
+                "park" -> Memory.all(context).firstOrNull { it.text.contains("park") }
+                else -> Memory.find(context, cmd.what)
+            }
+            if (hit == null) {
+                answer("📌", if (cmd.what == "park") "No parking spot saved" else "Nothing saved about that", "Write \u201Cwhat do you remember\u201D to see everything", "Nothing to forget")
+            } else {
+                Ready("📌", "Forget: ${hit.text}", "Removes it from what Kinetic remembers", "Forget", done = "Forgotten") { ctx ->
+                    Memory.removeItem(ctx, hit.at)
+                    true
+                }
+            }
+        }
+        Cmd.ListMemories -> {
+            val all = Memory.all(context)
+            if (all.isEmpty()) {
+                answer("📌", "Nothing saved yet", "Write \u201Cremember …\u201D to save something", "Nothing saved yet")
+            } else {
+                val lines = all.take(5).joinToString("\n") { "· " + it.text }
+                answer("📌", "${all.size} saved", lines + "\nForget one with \u201Cforget …\u201D", "${all.size} saved: " + all.take(3).joinToString(" · ") { it.text })
+            }
+        }
+        Cmd.ListNotes -> {
+            com.kinetic.launcher.pen.StickyNotes.load(context)
+            val all = com.kinetic.launcher.pen.StickyNotes.notes.value
+            if (all.isEmpty()) {
+                answer("✎", "No sticky notes", "Write \u201Cnote buy milk\u201D to add one", "No sticky notes")
+            } else {
+                answer(
+                    "✎", if (all.size == 1) "1 sticky note" else "${all.size} sticky notes",
+                    all.joinToString("\n") { "· " + it.text } + "\nRemove one with \u201Cremove note …\u201D, or swipe it sideways",
+                    "Notes: " + all.joinToString(" · ") { it.text },
+                )
+            }
+        }
+        is Cmd.RemoveNote -> {
+            com.kinetic.launcher.pen.StickyNotes.load(context)
+            val all = com.kinetic.launcher.pen.StickyNotes.notes.value
+            val q = cmd.query
+            when {
+                all.isEmpty() -> answer("✎", "No sticky notes to remove", "", "No sticky notes")
+                q == "*" -> Ready("✎", "Remove all ${all.size} sticky notes", "From your home screen", "Remove", confirm = true, done = "Sticky notes removed") { ctx ->
+                    all.forEach { com.kinetic.launcher.pen.StickyNotes.remove(ctx, it.id) }
+                    true
+                }
+                else -> {
+                    val hit = if (q == null) all.first() else com.kinetic.launcher.pen.StickyNotes.find(context, q)
+                    if (hit == null) {
+                        answer("✎", "No note says \u201C$q\u201D", "Your notes: " + all.joinToString(" · ") { it.text }, "No note says \u201C$q\u201D")
+                    } else {
+                        Ready("✎", "Remove note: ${hit.text}", "From your home screen", "Remove", done = "Note removed") { ctx ->
+                            com.kinetic.launcher.pen.StickyNotes.remove(ctx, hit.id)
+                            true
+                        }
+                    }
+                }
+            }
+        }
+        is Cmd.RemoveWord -> {
+            val card = Flashcards.all(context).firstOrNull { it.front.equals(cmd.front, true) || it.back.equals(cmd.front, true) }
+            if (card == null) {
+                answer("🃏", "No flashcard \u201C${cmd.front}\u201D", "", "No flashcard \u201C${cmd.front}\u201D")
+            } else {
+                Ready("🃏", "Remove ${card.front} = ${card.back}", "From ${card.deck}", "Remove", done = "Flashcard removed") { ctx ->
+                    Flashcards.remove(ctx, card.front)
+                    true
+                }
+            }
+        }
+        is Cmd.RemoveShortcut -> {
+            val short = cmd.short.lowercase()
+            val now = shortcuts(context)[short]
+            if (now == null) {
+                answer("⌘", "No shortcut \u201C$short\u201D", "", "No shortcut \u201C$short\u201D")
+            } else {
+                Ready("⌘", "Remove shortcut \u201C$short\u201D", "It runs \u201C$now\u201D", "Remove", done = "Shortcut removed") { ctx ->
+                    setShortcut(ctx, short, "")
+                    true
+                }
+            }
+        }
+        Cmd.EndFocus -> Ready("☾", "End Focus", "Turns the current Focus off", "End", quiet = true) { ctx ->
+            com.kinetic.launcher.FocusModes.init(ctx)
+            val wasOn = com.kinetic.launcher.FocusModes.active.value != null
+            val timer = com.kinetic.launcher.island.FocusLive.running(ctx)
+            if (timer) {
+                com.kinetic.launcher.island.FocusLive.end(ctx)
+            } else if (wasOn) {
+                com.kinetic.launcher.FocusModes.turnOff(ctx)
+                tell(ctx, "☾", "Focus off")
+            } else {
+                tell(ctx, "☾", "No Focus is on")
+            }
+            true
+        }
+        Cmd.Unsnooze -> Ready("🔔", "Notifications back on", "Ends the snooze", "Turn on", quiet = true) { ctx ->
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            runCatching {
+                val pi = PendingIntent.getBroadcast(ctx, 11, Intent(ctx, SnoozeEndReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                ctx.getSystemService(AlarmManager::class.java)?.cancel(pi)
+            }
+            com.kinetic.launcher.KineticApp.pen(ctx).edit().remove(SnoozeEndReceiver.KEY).apply()
+            if (nm.isNotificationPolicyAccessGranted) runCatching { nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+            tell(ctx, "🔔", "Notifications are back on")
             true
         }
         is Cmd.LastPhoto -> lastPhoto(context, cmd.who)
@@ -716,6 +849,9 @@ object Memory {
 
     fun remove(c: Context, word: String) = save(c, all(c).filter { !it.text.contains(word) })
 
+    /** Removes just one saved thing (the one saved at [at]). */
+    fun removeItem(c: Context, at: Long) = save(c, all(c).filter { it.at != at })
+
     /** The newest memory sharing the most words with [query]. */
     fun find(c: Context, query: String): Item? {
         val stop = setOf("the", "my", "a", "an", "is", "was", "what", "where", "did", "i", "put", "at", "on", "in", "of", "to")
@@ -844,6 +980,13 @@ object Flashcards {
 
     fun add(c: Context, deck: String, front: String, back: String) {
         val list = all(c).filter { !it.front.equals(front, true) } + Card(deck, front, back)
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("d", it.deck).put("f", it.front).put("b", it.back)) }
+        prefs(c).edit().putString("cards", arr.toString()).apply()
+    }
+
+    fun remove(c: Context, front: String) {
+        val list = all(c).filter { !it.front.equals(front, true) }
         val arr = JSONArray()
         list.forEach { arr.put(JSONObject().put("d", it.deck).put("f", it.front).put("b", it.back)) }
         prefs(c).edit().putString("cards", arr.toString()).apply()

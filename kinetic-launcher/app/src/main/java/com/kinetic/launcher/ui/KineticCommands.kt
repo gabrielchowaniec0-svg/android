@@ -101,8 +101,9 @@ object KineticCommands {
         if (q.length < 3) return null
         // Your own command chains come first ("gaming mode").
         com.kinetic.launcher.KineticApp.context?.let { c -> com.kinetic.launcher.pen.CommandChains.find(c, input)?.let { return Parsed.Chain(it.first, it.second) } }
-        NOTE.matchEntire(input.trim())?.let { return Parsed.Note(it.groupValues[1].trim()) }
+        // Kinetic's own note commands ("sticky notes", "remove note …") before "note …" adds one.
         Commands3.parse(input)?.let { return Parsed.Three(it, input) }
+        NOTE.matchEntire(input.trim())?.let { return Parsed.Note(it.groupValues[1].trim()) }
         MoreCommands.parse(input)?.let { return Parsed.More(it, input) }
         // Things the assistant should get first ("open camera" isn't "open" + a contact…).
         Assistant.parse(input)?.let { if (it is Parsed.Act || it is Parsed.Ask) return it }

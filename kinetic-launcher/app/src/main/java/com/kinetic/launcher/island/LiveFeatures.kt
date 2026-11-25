@@ -339,6 +339,12 @@ object FocusLive {
         if (!IslandBus.celebrate("🎉", "Focus done" + if (mins > 0) " · $mins min" else "")) tell(context, "🎉", "Focus done")
     }
 
+    /** A Focus session with a timer is running. */
+    fun running(context: Context) = prefs(context).getLong("focus_end", 0L) > System.currentTimeMillis()
+
+    /** "end focus": stops the session now. */
+    fun end(context: Context) = endEarly(context)
+
     private fun endEarly(context: Context) {
         com.kinetic.launcher.FocusModes.turnOff(context)
         runCatching {
