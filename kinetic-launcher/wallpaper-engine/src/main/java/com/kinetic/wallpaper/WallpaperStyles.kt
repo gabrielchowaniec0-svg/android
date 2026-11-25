@@ -94,7 +94,34 @@ object WallpaperStyles {
             .apply()
     }
 
-    fun shaderFor(style: Style): RuntimeShader = RuntimeShader(HEADER + scene(style) + MAIN)
+    fun shaderFor(style: Style): RuntimeShader = try {
+        RuntimeShader(HEADER + scene(style) + MAIN)
+    } catch (_: Exception) {
+        // If this phone's shader compiler ever rejects the moon or clouds, draw without them
+        // rather than lose the whole wallpaper.
+        RuntimeShader(safeHeader() + scene(style) + MAIN)
+    }
+
+    private fun safeHeader(): String {
+        var h = HEADER
+        for (name in listOf("float3 moonLayer(float2 uv, float3 col) {", "float3 cloudLayer(float2 uv, float3 col) {")) {
+            val start = h.indexOf(name)
+            if (start < 0) continue
+            // Find the matching closing brace.
+            var depth = 0
+            var i = h.indexOf('{', start)
+            while (i < h.length) {
+                if (h[i] == '{') depth++
+                if (h[i] == '}') {
+                    depth--
+                    if (depth == 0) break
+                }
+                i++
+            }
+            h = h.substring(0, start) + name + " return col; }" + h.substring(i + 1)
+        }
+        return h
+    }
 
     /** Sets the look uniforms (everything else is set per frame by whoever draws it). */
     fun applyLook(shader: RuntimeShader, look: Look) {
