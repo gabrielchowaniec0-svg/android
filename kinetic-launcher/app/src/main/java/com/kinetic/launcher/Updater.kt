@@ -80,7 +80,7 @@ object Updater {
                 val release = Release(code, json.optString("name", "Kinetic"), json.optString("body"), url ?: return@withContext State.UpToDate, size)
                 if (code > installedCode(context)) State.Available(release) else State.UpToDate
             } catch (e: Exception) {
-                State.Failed("Couldn't reach GitHub")
+                State.Failed(if (Net.online()) "Couldn't reach GitHub" else "You're offline. Try again when you have signal")
             }
         }
         prefs.edit().putLong("last_check", System.currentTimeMillis()).apply()
@@ -104,6 +104,12 @@ object Updater {
             openInstallPermission(context)
             return
         }
+        // The download and Android's copy of it both need room.
+        val free = runCatching { android.os.StatFs(context.cacheDir.path).availableBytes }.getOrDefault(Long.MAX_VALUE)
+        if (release.sizeBytes > 0 && free < release.sizeBytes * 2 + 50L * 1024 * 1024) {
+            _state.value = State.Failed("Not enough storage for the update. It needs about ${(release.sizeBytes * 2 / 1_048_576) + 50} MB free")
+            return
+        }
         _state.value = State.Downloading(release, 0f)
         val file = withContext(Dispatchers.IO) {
             try {
@@ -111,12 +117,17 @@ object Updater {
                 dir.listFiles()?.forEach { it.delete() }
                 val out = File(dir, "Kinetic-${release.code}.apk")
                 var url = URL(release.apkUrl)
-                var conn = url.openConnection() as HttpURLConnection
+                // Timeouts so a dropped connection fails instead of hanging forever.
+                fun open(u: URL) = (u.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                }
+                var conn = open(url)
                 // GitHub redirects downloads to its storage host.
                 var hops = 0
                 while (conn.responseCode in 300..399 && hops < 5) {
                     url = URL(conn.getHeaderField("Location"))
-                    conn = url.openConnection() as HttpURLConnection
+                    conn = open(url)
                     hops++
                 }
                 val total = conn.contentLengthLong.takeIf { it > 0 } ?: release.sizeBytes
@@ -139,11 +150,13 @@ object Updater {
                 }
                 out
             } catch (e: Exception) {
+                // Don't leave half a file behind.
+                runCatching { File(context.cacheDir, "updates").listFiles()?.forEach { it.delete() } }
                 null
             }
         }
         if (file == null) {
-            _state.value = State.Failed("Download failed")
+            _state.value = State.Failed(if (Net.online()) "Download failed. Try again" else "Download stopped: no internet")
             return
         }
         _state.value = State.Installing(release)

@@ -414,7 +414,7 @@ object MoreCommands {
                 @Suppress("DEPRECATION")
                 val there = runCatching { Geocoder(context, Locale.getDefault()).getFromLocationName(cmd.place, 1)?.firstOrNull() }.getOrNull()
                 if (there == null) {
-                    answer("⌖", "Couldn't find “${cmd.place}”", "Try a fuller name or city", "Couldn't find ${cmd.place}")
+                    answer("⌖", "Couldn't find “${cmd.place}”", com.kinetic.launcher.Net.why("Try a fuller name or city"), "Couldn't find ${cmd.place}")
                 } else {
                     val out = FloatArray(1)
                     android.location.Location.distanceBetween(me.latitude, me.longitude, there.latitude, there.longitude, out)

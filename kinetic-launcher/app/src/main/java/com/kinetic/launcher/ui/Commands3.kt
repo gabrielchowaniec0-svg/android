@@ -636,7 +636,7 @@ object Commands3 {
             } finally {
                 c.disconnect()
             }
-        }.getOrNull()?.optJSONObject(0) ?: return answer("📡", "No METAR for $station", "Check the airport code", "No METAR for $station")
+        }.getOrNull()?.optJSONObject(0) ?: return answer("📡", "No METAR for $station", com.kinetic.launcher.Net.why("Check the airport code"), "No METAR for $station")
         val raw = json.optString("rawOb")
         val cat = json.optString("fltCat").ifBlank { null }
         val wdir = json.opt("wdir")
@@ -750,18 +750,26 @@ object Homework {
     fun add(c: Context, text: String, due: LocalDate?) {
         val t = Task(System.currentTimeMillis(), text, due)
         save(c, all(c) + t)
-        if (due != null) {
-            val at = due.minusDays(1).atTime(19, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            if (at > System.currentTimeMillis()) {
-                val pi = PendingIntent.getBroadcast(
-                    c, (t.id % Int.MAX_VALUE).toInt(),
-                    Intent(c, HomeworkReminder::class.java).putExtra("text", text),
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-                )
-                c.getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-            }
-        }
+        remind(c, t)
     }
+
+    /** The evening before it's due, at 7 pm. */
+    private fun remind(c: Context, t: Task) {
+        val due = t.due ?: return
+        val at = due.minusDays(1).atTime(19, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        if (at <= System.currentTimeMillis()) return
+        val pi = PendingIntent.getBroadcast(
+            c, (t.id % Int.MAX_VALUE).toInt(),
+            Intent(c, HomeworkReminder::class.java).putExtra("text", t.text).putExtra("id", t.id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        c.getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+    }
+
+    /** After a restart every alarm is gone, so set them all again. */
+    fun rescheduleAll(c: Context) = all(c).forEach { remind(c, it) }
+
+    fun exists(c: Context, id: Long) = all(c).any { it.id == id }
 
     fun done(c: Context, text: String) {
         val list = all(c)
@@ -780,6 +788,9 @@ object Homework {
 class HomeworkReminder : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val text = intent.getStringExtra("text") ?: return
+        // Already ticked off? Then stay quiet.
+        val id = intent.getLongExtra("id", -1L)
+        if (id != -1L && !Homework.exists(context, id)) return
         IslandBus.say("📚", "Due tomorrow: $text")
         runCatching {
             val nm = context.getSystemService(NotificationManager::class.java)
@@ -796,14 +807,24 @@ class HomeworkReminder : BroadcastReceiver() {
 /** Ends "snooze notifications for …". */
 class SnoozeEndReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        context.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE).edit().remove(KEY).apply()
         runCatching { context.getSystemService(NotificationManager::class.java).setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
         IslandBus.say("🔔", "Notifications are back on")
     }
 
     companion object {
+        const val KEY = "snooze_until"
+
         fun schedule(context: Context, minutes: Int) {
+            val at = System.currentTimeMillis() + minutes * 60_000L
+            // Remembered so a restart can still end the snooze.
+            context.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE).edit().putLong(KEY, at).apply()
+            scheduleAt(context, at)
+        }
+
+        fun scheduleAt(context: Context, at: Long) {
             val pi = PendingIntent.getBroadcast(context, 11, Intent(context, SnoozeEndReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            context.getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + minutes * 60_000L, pi)
+            context.getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
     }
 }

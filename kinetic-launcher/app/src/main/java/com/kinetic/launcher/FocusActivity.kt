@@ -222,6 +222,7 @@ class FocusActivity : ComponentActivity() {
             }
             val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                 if (granted) save(m.copy(carTrigger = true))
+                else com.kinetic.launcher.ui.PermissionHelp.refused(this@FocusActivity, Manifest.permission.BLUETOOTH_CONNECT, "The car trigger")
             }
             Option("When connected to car Bluetooth", "Turns on when your car connects, off when it disconnects", m.carTrigger) { on ->
                 if (on && ContextCompat.checkSelfPermission(this@FocusActivity, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -251,7 +252,9 @@ class FocusActivity : ComponentActivity() {
                     onFail = { locating = false },
                 )
             }
-            val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) setHere() }
+            val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+                if (ok) setHere() else com.kinetic.launcher.ui.PermissionHelp.refused(this@FocusActivity, Manifest.permission.ACCESS_FINE_LOCATION, "The place trigger")
+            }
             Text(
                 when {
                     locating -> "Finding you…"

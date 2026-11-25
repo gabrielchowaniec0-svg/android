@@ -743,3 +743,22 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
 - **Cleaner opening and closing:** growing is slightly bouncy, with the height trailing the width a touch so it "pours" open; shrinking is quicker and settles without wobbling. The old content melts away quickly and the new content settles in from a little smaller with a soft blur, anchored at the top so nothing jumps.
 - **Animated switching:** swiping sideways between live things (music, stopwatch, Focus, flights…) slides the new one in from the side you swiped. Switching between two kinds of message, or two live things, now animates instead of just changing.
 - **More response:** a small bounce whenever a new message or pop-up arrives (not for the volume slider or face scan).
+
+### Edge-case sweep (round 2)
+- **After a restart or update:** a Focus session or "snooze notifications"
+  that was running still ends on time (if it should have ended while the phone
+  was off, it ends as soon as the phone is back on). Homework reminders are set
+  again, and a reminder for homework you already ticked off stays quiet.
+- **No internet:** lookups (weather, definitions, METAR, "how far is …") say
+  "You're offline" instead of a confusing error. Update downloads give up on a
+  dead connection instead of hanging, and say why.
+- **Permission refused:** Kinetic says what it needed. If Android has stopped
+  asking (you said no twice), Kinetic opens its Settings page so you can allow
+  it there.
+- **Low storage:** the Vault camera, Vault video, "Move to Vault" and secure
+  screenshots now tell you when storage is full instead of failing silently.
+  Anything that couldn't be moved stays in your gallery. Secure video won't
+  start with less than about 300 MB free, and stops itself before it fills the
+  phone, so there's always room to seal it. Updates check for space first.
+- **Secure video:** sealing finishes even if you leave the screen straight
+  away, and half-written files are always cleaned up.

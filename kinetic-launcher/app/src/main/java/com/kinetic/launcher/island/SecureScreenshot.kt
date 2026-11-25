@@ -151,6 +151,7 @@ class SecureScreenshot(
 
     private fun seal(result: AccessibilityService.ScreenshotResult): Boolean {
         val buffer = result.hardwareBuffer
+        var tmp: File? = null
         return try {
             val hw = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: return false
             val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
@@ -159,13 +160,15 @@ class SecureScreenshot(
             bmp.recycle()
             val name = "Screenshot_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val out = File(VaultStore.dropDir(service), "$name.kdb")
-            val tmp = File(out.path + ".part")
-            tmp.outputStream().buffered().use { VaultCrypto.dropEncrypt(service, ByteArrayInputStream(png), it) }
+            val part = File(out.path + ".part").also { tmp = it }
+            part.outputStream().buffered().use { VaultCrypto.dropEncrypt(service, ByteArrayInputStream(png), it) }
             png.fill(0)
-            tmp.renameTo(out)
-        } catch (_: Exception) {
+            part.renameTo(out)
+        } catch (_: Throwable) {
+            // Includes running out of memory or storage: never leave half a file.
             false
         } finally {
+            tmp?.delete()
             buffer.close()
         }
     }
