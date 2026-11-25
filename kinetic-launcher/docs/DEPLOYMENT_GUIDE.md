@@ -771,3 +771,14 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
 - Those tests found and fixed: "split 84 between 99999999999" and "random
   number between 1 and 99999999999" crashed, and a stopwatch could count
   backwards if the phone's clock moved back.
+
+### Startup and memory
+- The home screen no longer waits for Focus schedules and place alerts to be
+  set up when it opens; that now happens in the background, once.
+- Pictures are always opened at the size they're shown. Before, a fallback
+  path could try to open a 200-megapixel photo at full size (about 800 MB),
+  for example a Vault thumbnail or a StandBy photo, and crash.
+- Opening a very large photo in the Vault shows nothing instead of crashing if
+  the phone runs out of memory.
+- Checked: every sensor, receiver and observer Kinetic starts is stopped again,
+  and the caches it keeps have limits.

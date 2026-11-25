@@ -327,7 +327,7 @@ class StandByActivity : ComponentActivity(), SensorEventListener {
         val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ids.random())
         return runCatching {
             val size = runCatching { contentResolver.loadThumbnail(uri, android.util.Size(1600, 1600), null) }.getOrNull()
-            (size ?: contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) })?.asImageBitmap()
+            (size ?: com.kinetic.launcher.ui.Bitmaps.decode(1600) { contentResolver.openInputStream(uri) })?.asImageBitmap()
         }.getOrNull()
     }
 

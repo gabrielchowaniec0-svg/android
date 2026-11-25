@@ -118,8 +118,16 @@ class MainActivity : FragmentActivity() {
         KineticApp.init(this)
         LivingWallpaper.start(this)
         FocusModes.init(this)
-        FocusScheduler.scheduleNext(this)
-        FocusTriggers.registerPlaces(this)
+        // Alarms and place alerts are system calls: do them once, off the main thread,
+        // so the home screen draws sooner.
+        if (!startupDone) {
+            startupDone = true
+            val app = applicationContext
+            Thread {
+                runCatching { FocusScheduler.scheduleNext(app) }
+                runCatching { FocusTriggers.registerPlaces(app) }
+            }.apply { priority = Thread.MIN_PRIORITY }.start()
+        }
 
         // 4 columns like One UI Home; the 7th row doubles as the dock.
         // Same geometry as One UI on the S25 Ultra: 14dp side margins, 4 equal columns, no gaps.
@@ -392,6 +400,10 @@ class MainActivity : FragmentActivity() {
     }
 
     companion object {
+        /** Once per process: the one-off startup jobs have been started. */
+        @Volatile
+        private var startupDone = false
+
         /** True while the home screen is in front (StandBy only opens from home or the lock screen). */
         @Volatile
         var homeVisible = false
