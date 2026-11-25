@@ -786,3 +786,16 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
   the phone runs out of memory.
 - Checked: every sensor, receiver and observer Kinetic starts is stopped again,
   and the caches it keeps have limits.
+
+### Every "add" now has a "remove"
+- **Sticky notes:** `my notes` lists them. Remove one by tapping it (the island
+  asks), swiping it sideways, or writing `remove note milk`. `remove note`
+  removes the newest; `clear notes` removes all (asks first).
+- Fixed: up to 6 notes were kept but only 4 showed, so notes 5 and 6 were
+  hidden and couldn't be removed. Now 4 are kept, and the island tells you when
+  a new note replaces the oldest. Fixed: writing "sticky notes" made a note
+  saying "notes".
+- **Also new:** `what do you remember`, `forget <anything>` (before, only the
+  parking spot could be forgotten), `remove word gato` (flashcards),
+  `remove shortcut m`, `end focus`, `unsnooze`, `remove homework math`.
+- A new automated test checks that every add/turn-on command has its remove.

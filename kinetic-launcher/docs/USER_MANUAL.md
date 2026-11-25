@@ -271,6 +271,7 @@ With the island on, written commands happen in the island:
 
 **Making Kinetic yours** (Settings ▸ S Pen)
 - **Writing shortcuts:** `shortcut m = call mom`. Then writing "m" calls Mom.
+  `remove shortcut m` deletes it.
 - **Command chains:** one name runs several commands. For example, "gaming
   mode" = `focus 60 min`, then `open roblox`.
 - **Shapes:** give a heart, circle, check, star or triangle a command. Draw it
@@ -300,13 +301,15 @@ commands are at the top.
 **Notifications**
 - `what did I miss`, `read it` (reads your newest notification out loud),
   `clear notifications` (asks first)
-- `snooze notifications 1 hour` (Do Not Disturb that turns itself off again)
+- `snooze notifications 1 hour` (Do Not Disturb that turns itself off again);
+  `unsnooze` turns notifications back on early
 
 **Timers, alarms and reminders**
 - `timer 10 min`, `alarm 6:30am`, `wake me up at 7`
 - `remind me to call grandma at 6`, `remind me to flip the laundry in 40 min`
 - `stopwatch`, `lap`, `stop` (it counts live in the island)
-- `focus 25 min`, `study 45 min`, `pomodoro 25 min` (see [Focus](#7-focus))
+- `focus 25 min`, `study 45 min`, `pomodoro 25 min` (see [Focus](#7-focus));
+  `end focus` stops it
 
 **Going places**
 - `route to O'Hare` (also "directions to", "navigate to", "take me to")
@@ -335,8 +338,13 @@ commands are at the top.
 - `remember I parked on level 3` (saves where you are), `where did I park`,
   `forget parking`
 - `remember the wifi password is …`, then `what's the wifi password`
-- `note buy milk` (a yellow sticky note on the first home page; swipe it away
-  to throw it out)
+- `what do you remember` lists everything; `forget the wifi password` forgets
+  one thing; `forget that` forgets the newest.
+- `note buy milk` puts a yellow sticky note on the first home page (up to 4; a
+  fifth replaces the oldest, and the island tells you).
+- `my notes` lists them. To remove one: tap it and choose **Remove** in the
+  island, swipe it sideways, or write `remove note milk`. `remove note` removes
+  the newest; `clear notes` removes them all (asks first).
 - `keep buy milk` (Google Keep), `samsung notes ideas for video`
 - `last photo`, `send last photo to mom`, `photos from yesterday`
 
@@ -348,7 +356,8 @@ commands are at the top.
 **School**
 - `homework math page 42 due friday`. It reminds you at 7 pm the evening
   before. `homework` lists it; `done math` ticks it off (with confetti).
-- `save spanish word gato = cat`, then `flashcards spanish`
+- `save spanish word gato = cat`, then `flashcards spanish`;
+  `remove word gato` deletes one
 - `school days until summer`. Set the date with `summer starts june 4`.
 
 **Planes**
