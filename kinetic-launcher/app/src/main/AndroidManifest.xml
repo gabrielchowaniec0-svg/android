@@ -37,7 +37,7 @@
 
     <!-- Plane spotter: the live camera view behind the flight labels. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Control Center brightness slider (Android asks once). -->
+    <!-- "brightness 40" command (Android asks once, on its own settings page). -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <!-- Commands: "when's my dentist appointment", "text mom running late" (send). -->

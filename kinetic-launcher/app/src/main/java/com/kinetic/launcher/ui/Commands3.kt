@@ -76,20 +76,20 @@ object Commands3 {
 
     // ---- shortcuts & history --------------------------------------------------------------
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     /** Your own writing shortcuts ("m" → "call mom"). */
     fun shortcut(c: Context, text: String): String? =
-        runCatching { JSONObject(prefs(c).getString("shortcuts", "{}")).optString(text.trim().lowercase()).takeIf { it.isNotBlank() } }.getOrNull()
+        runCatching { JSONObject(prefs(c).getString("shortcuts", null) ?: "{}").optString(text.trim().lowercase()).takeIf { it.isNotBlank() } }.getOrNull()
 
     fun setShortcut(c: Context, short: String, command: String) {
-        val o = runCatching { JSONObject(prefs(c).getString("shortcuts", "{}")) }.getOrDefault(JSONObject())
+        val o = runCatching { JSONObject(prefs(c).getString("shortcuts", null) ?: "{}") }.getOrDefault(JSONObject())
         if (command.isBlank()) o.remove(short.lowercase()) else o.put(short.lowercase(), command)
         prefs(c).edit().putString("shortcuts", o.toString()).apply()
     }
 
     fun shortcuts(c: Context): Map<String, String> = runCatching {
-        val o = JSONObject(prefs(c).getString("shortcuts", "{}"))
+        val o = JSONObject(prefs(c).getString("shortcuts", null) ?: "{}")
         o.keys().asSequence().associateWith { o.getString(it) }
     }.getOrDefault(emptyMap())
 
@@ -692,7 +692,7 @@ object Commands3 {
 object Memory {
     data class Item(val at: Long, val text: String, val lat: Double, val lon: Double)
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun all(c: Context): List<Item> = runCatching {
         val arr = JSONArray(prefs(c).getString("memory", "[]"))
@@ -738,7 +738,7 @@ object Memory {
 object Homework {
     data class Task(val id: Long, val text: String, val due: LocalDate?)
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun all(c: Context): List<Task> = runCatching {
         val arr = JSONArray(prefs(c).getString("homework", "[]"))
@@ -807,7 +807,7 @@ class HomeworkReminder : BroadcastReceiver() {
 /** Ends "snooze notifications for …". */
 class SnoozeEndReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        context.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE).edit().remove(KEY).apply()
+        com.kinetic.launcher.KineticApp.pen(context).edit().remove(KEY).apply()
         runCatching { context.getSystemService(NotificationManager::class.java).setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
         IslandBus.say("🔔", "Notifications are back on")
     }
@@ -818,7 +818,7 @@ class SnoozeEndReceiver : BroadcastReceiver() {
         fun schedule(context: Context, minutes: Int) {
             val at = System.currentTimeMillis() + minutes * 60_000L
             // Remembered so a restart can still end the snooze.
-            context.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE).edit().putLong(KEY, at).apply()
+            com.kinetic.launcher.KineticApp.pen(context).edit().putLong(KEY, at).apply()
             scheduleAt(context, at)
         }
 
@@ -835,7 +835,7 @@ class SnoozeEndReceiver : BroadcastReceiver() {
 object Flashcards {
     data class Card(val deck: String, val front: String, val back: String)
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun all(c: Context, deck: String? = null): List<Card> = runCatching {
         val arr = JSONArray(prefs(c).getString("cards", "[]"))

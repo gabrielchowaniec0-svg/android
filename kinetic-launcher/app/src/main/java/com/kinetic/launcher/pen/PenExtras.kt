@@ -23,7 +23,7 @@ import kotlin.math.sqrt
 object PenShapes {
     val names = listOf("Heart", "Circle", "Check", "Star", "Triangle")
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     /** The command a shape runs ("" = none). */
     fun command(c: Context, shape: String): String = prefs(c).getString("shape_$shape", "") ?: ""
@@ -170,7 +170,7 @@ object StickyNotes {
     @Volatile
     var pendingInk: List<List<Offset>> = emptyList()
 
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun load(c: Context) {
         if (loaded) return
@@ -229,10 +229,10 @@ object StickyNotes {
 // Command chains: one name runs several commands ("gaming mode" → focus + volume + app).
 // ======================================================================================
 object CommandChains {
-    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+    private fun prefs(c: Context) = com.kinetic.launcher.KineticApp.pen(c)
 
     fun all(c: Context): Map<String, List<String>> = runCatching {
-        val o = JSONObject(prefs(c).getString("chains", "{}"))
+        val o = JSONObject(prefs(c).getString("chains", null) ?: "{}")
         o.keys().asSequence().associateWith { k -> o.getString(k).lines().map { it.trim() }.filter { it.isNotEmpty() } }
     }.getOrDefault(emptyMap())
 
@@ -240,14 +240,14 @@ object CommandChains {
         all(c).entries.firstOrNull { it.key.equals(name.trim(), ignoreCase = true) }?.let { it.key to it.value }
 
     fun put(c: Context, name: String, lines: String) {
-        val o = runCatching { JSONObject(prefs(c).getString("chains", "{}")) }.getOrDefault(JSONObject())
+        val o = runCatching { JSONObject(prefs(c).getString("chains", null) ?: "{}") }.getOrDefault(JSONObject())
         all(c).keys.firstOrNull { it.equals(name.trim(), true) }?.let { o.remove(it) }
         o.put(name.trim(), lines.trim())
         prefs(c).edit().putString("chains", o.toString()).apply()
     }
 
     fun remove(c: Context, name: String) {
-        val o = runCatching { JSONObject(prefs(c).getString("chains", "{}")) }.getOrDefault(JSONObject())
+        val o = runCatching { JSONObject(prefs(c).getString("chains", null) ?: "{}") }.getOrDefault(JSONObject())
         o.remove(name)
         prefs(c).edit().putString("chains", o.toString()).apply()
     }
