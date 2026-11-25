@@ -705,3 +705,7 @@ All of these show on the **lock screen only** by default. Kinetic Settings → L
 - **The International Space Station:** when it passes over at night, a steady bright point gliding across (no blinking). Checked more often while it's within range.
 - Planes and the station are only looked up while the sky is actually on screen (screen on, lock screen), to save battery and data.
 - Turn each part on or off in the same section: Stars & planets, Constellation lines, Planes & space station.
+
+### Emoji-free + moon behind clouds
+- Kinetic is now (mostly) emoji-free: the island, the S Pen answers, the help list and the secure video screen use plain single-colour symbols instead of colourful emoji (or none). E.g. the screenshot preview's button is just "Vault".
+- When it's cloudy, the moon no longer shows as a dim grey disc: the disc fades out and a soft patch of moonlight glows through the clouds (brighter near full moon), like the real thing.

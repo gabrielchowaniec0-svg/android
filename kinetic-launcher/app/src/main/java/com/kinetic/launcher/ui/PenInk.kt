@@ -137,7 +137,9 @@ class InkState(
     /** Shows [text] in the Dynamic Island (or, if it's off, in a pill on the home screen). */
     fun say(text: String, millis: Long = 1800, icon: String = "✎") {
         if (com.kinetic.launcher.island.IslandBus.say(icon, text.replace("\n", " · "))) return
-        pill = if (icon.isBlank()) text else "$icon  $text"
+        val i = com.kinetic.launcher.island.Glyphs.plain(icon)
+        val t = com.kinetic.launcher.island.Glyphs.text(text)
+        pill = if (i.isBlank()) t else "$i  $t"
         pillJob?.cancel()
         pillJob = scope.launch {
             delay(millis)

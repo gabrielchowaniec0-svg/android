@@ -80,7 +80,7 @@ class HelpActivity : ComponentActivity() {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 40.dp)) {
                     shown.forEach { g ->
                         item(key = "h_" + g.title) {
-                            Text("${g.icon}  ${g.title}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp))
+                            Text(g.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp))
                         }
                         items(g.items, key = { g.title + it.write + it.what }) { ex -> CommandRow(ex) }
                     }

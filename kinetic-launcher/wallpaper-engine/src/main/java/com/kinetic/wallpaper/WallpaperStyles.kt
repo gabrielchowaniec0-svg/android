@@ -291,13 +291,19 @@ object WallpaperStyles {
 
         // The moon as it really looks tonight: its phase, the dark "seas", craters and a glow.
         float3 moonLayer(float2 uv, float3 col) {
-            float vis = iNight * iSky * (1.0 - 0.8 * iClouds);
-            if (iMoon < 0.0 || vis < 0.01) return col;
+            float nightSky = iNight * iSky;
+            if (iMoon < 0.0 || nightSky < 0.01) return col;
+            // Behind thick cloud the disc fades out and only a soft glow comes through.
+            float vis = nightSky * (1.0 - 0.95 * smoothstep(0.2, 0.9, iClouds));
             float2 m = uv - float2(0.14, -0.36);
             float r = 0.030;
             float d = length(m);
-            if (d > r * 7.0) return col;
             float fullness = 0.5 - 0.5 * cos(6.2831853 * iMoon);
+            // Moonlight through cloud: a wide, soft patch of light.
+            if (iClouds > 0.05) {
+                col += float3(0.62, 0.66, 0.76) * exp(-d * 9.0) * 0.16 * fullness * iClouds * nightSky;
+            }
+            if (d > r * 7.0) return col;
             // Soft glow (brighter near a full moon).
             col += float3(0.72, 0.78, 0.95) * exp(-max(d - r, 0.0) * 30.0) * 0.13 * (0.25 + fullness) * vis;
             float2 l = m / r;
