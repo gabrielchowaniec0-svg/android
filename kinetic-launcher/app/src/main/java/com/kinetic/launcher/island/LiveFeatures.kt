@@ -87,6 +87,9 @@ object LiveFeatures {
     fun start(context: Context, scope: CoroutineScope) {
         val app = context.applicationContext
         FocusLive.restore(app)
+        Stopwatch.restore(app)
+        PlaneWatch.restore(app)
+        FlightWatch.restore(app)
         // Brightness slider (only when auto-brightness is off; otherwise it changes by itself all day).
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
@@ -142,6 +145,11 @@ object VolumeHud {
     private val repeater = object : Runnable {
         override fun run() {
             val c = repeatCtx ?: return
+            // Never keep going with the screen off (a missed key-up must not run the volume away).
+            if (!c.getSystemService(PowerManager::class.java).isInteractive) {
+                stopRepeat()
+                return
+            }
             step(c, repeatDir)
             handler.postDelayed(this, repeatInterval())
         }
@@ -228,7 +236,30 @@ object Stopwatch {
     fun start(context: Context) {
         startedAt = SystemClock.elapsedRealtime()
         laps.clear()
+        save(context)
         publish(context)
+    }
+
+    // Saved by the wall clock, so a running stopwatch survives Kinetic (or the phone) restarting.
+    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+
+    private fun save(c: Context) {
+        if (startedAt == 0L) {
+            prefs(c).edit().remove("sw_wall").remove("sw_laps").apply()
+            return
+        }
+        val wallStart = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - startedAt)
+        prefs(c).edit().putLong("sw_wall", wallStart).putString("sw_laps", laps.joinToString(",")).apply()
+    }
+
+    fun restore(c: Context) {
+        if (running) return
+        val wallStart = prefs(c).getLong("sw_wall", 0L)
+        if (wallStart <= 0L || System.currentTimeMillis() - wallStart > 7L * 86_400_000L) return
+        startedAt = SystemClock.elapsedRealtime() - (System.currentTimeMillis() - wallStart)
+        laps.clear()
+        prefs(c).getString("sw_laps", "")?.split(',')?.mapNotNull { it.toLongOrNull() }?.let { laps += it }
+        publish(c)
     }
 
     fun lap(context: Context) {
@@ -237,6 +268,7 @@ object Stopwatch {
             return
         }
         laps += SystemClock.elapsedRealtime() - startedAt
+        save(context)
         publish(context)
         if (!DynamicIslandService.isRunning) tell(context, "⏱", "Lap ${laps.size} · ${LiveHub.clock(laps.last(), true)}")
     }
@@ -248,6 +280,7 @@ object Stopwatch {
         }
         val t = SystemClock.elapsedRealtime() - startedAt
         startedAt = 0L
+        save(context)
         LiveHub.remove("stopwatch")
         tell(context, "⏱", "Stopped at ${LiveHub.clock(t, true)}" + if (laps.isNotEmpty()) " · ${laps.size} laps" else "")
     }
@@ -444,12 +477,21 @@ object PlaneWatch {
     private var hideJob: Job? = null
     val on get() = job?.isActive == true
 
-    fun start(context: Context) {
+    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+
+    /** Picks up a plane watch that was running when Kinetic restarted. */
+    fun restore(c: Context) {
+        val until = prefs(c).getLong("pw_until", 0L)
+        if (!on && until > System.currentTimeMillis()) start(c, until)
+    }
+
+    fun start(context: Context, untilAt: Long = System.currentTimeMillis() + 60 * 60_000L) {
         val app = context.applicationContext
+        prefs(app).edit().putLong("pw_until", untilAt).apply()
         job?.cancel()
         job = scope.launch {
             val seen = HashMap<String, Long>()
-            val until = System.currentTimeMillis() + 60 * 60_000L
+            val until = untilAt
             while (isActive && System.currentTimeMillis() < until) {
                 val me = lastLocation(app)
                 if (me != null && app.getSystemService(PowerManager::class.java).isInteractive) {
@@ -466,7 +508,10 @@ object PlaneWatch {
                 }
                 delay(15_000)
             }
-            if (isActive) tell(app, "✈", "Plane watch off")
+            if (isActive) {
+                prefs(app).edit().remove("pw_until").apply()
+                tell(app, "✈", "Plane watch off")
+            }
         }
     }
 
@@ -474,6 +519,7 @@ object PlaneWatch {
         job?.cancel()
         job = null
         LiveHub.remove("plane")
+        com.kinetic.launcher.KineticApp.context?.let { prefs(it).edit().remove("pw_until").apply() }
     }
 
     private fun announce(app: Context, p: com.kinetic.launcher.planes.Plane, distM: Double) {
@@ -513,10 +559,21 @@ object FlightWatch {
         private set
 
     /** [shown] e.g. "UA123"; [callsign] the ICAO one, e.g. "UAL123". */
-    fun track(context: Context, shown: String, callsign: String) {
+    private fun prefs(c: Context) = c.getSharedPreferences("kinetic_pen", Context.MODE_PRIVATE)
+
+    /** Picks up a flight that was being tracked when Kinetic restarted (up to 20 h). */
+    fun restore(c: Context) {
+        val p = prefs(c)
+        val shown = p.getString("fw_shown", null) ?: return
+        val callsign = p.getString("fw_call", null) ?: return
+        if (tracking == null && System.currentTimeMillis() - p.getLong("fw_at", 0L) < 20 * 3600_000L) track(c, shown, callsign, fresh = false)
+    }
+
+    fun track(context: Context, shown: String, callsign: String, fresh: Boolean = true) {
         val app = context.applicationContext
         job?.cancel()
         tracking = shown
+        if (fresh) prefs(app).edit().putString("fw_shown", shown).putString("fw_call", callsign).putLong("fw_at", System.currentTimeMillis()).apply()
         job = scope.launch {
             val route = runCatching { PlaneData.route(callsign) ?: PlaneData.route(shown) }.getOrNull()
             val routeText = route?.let { " · ${it.fromCode} → ${it.toCode}" }.orEmpty()
@@ -552,6 +609,7 @@ object FlightWatch {
             }
             LiveHub.remove("flight")
             tracking = null
+            prefs(app).edit().remove("fw_shown").remove("fw_call").remove("fw_at").apply()
         }
     }
 
@@ -560,6 +618,7 @@ object FlightWatch {
         job = null
         tracking = null
         LiveHub.remove("flight")
+        com.kinetic.launcher.KineticApp.context?.let { prefs(it).edit().remove("fw_shown").remove("fw_call").remove("fw_at").apply() }
     }
 
     private fun publish(app: Context, shown: String, callsign: String, title: String, detail: String, value: String) {

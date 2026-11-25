@@ -300,6 +300,9 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     unlockWatch?.cancel()
                     alertJob?.cancel()
                     _alert.value = null
+                    // Screen off: fold the island back up (it shouldn't wake up opened).
+                    _expanded.value = false
+                    collapseJob?.cancel()
                 }
                 AudioManager.RINGER_MODE_CHANGED_ACTION -> {
                     // The current mode is re-sent when we register; only show real changes.
