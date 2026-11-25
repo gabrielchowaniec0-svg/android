@@ -241,7 +241,8 @@ fun DynamicIsland(
     )
     // Island stacks: a sideways swipe brings the next live thing to the front.
     val stackShift by model.stackShift.collectAsState()
-    val stacked = IslandDecide.stack(IslandDecide.activities(now), stackShift)
+    val activities = IslandDecide.activities(now)
+    val stacked = IslandDecide.stack(activities, stackShift)
     val primary = stacked.firstOrNull()
     val secondary = stacked.getOrNull(1)
     /** The live thing the island is showing (the second one after a sideways swipe). */
