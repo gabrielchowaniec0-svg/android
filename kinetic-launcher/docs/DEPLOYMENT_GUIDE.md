@@ -735,3 +735,9 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
 - **The open island closes cleanly** when the thing it was showing ends (e.g. you stop the stopwatch while it's open), instead of the next thing suddenly appearing opened. It also folds up when the screen turns off.
 - **Volume holding:** if the screen turns off while a volume button is held, the repeating stops straight away.
 - Full-screen videos: confirmed the island hides (thanks for checking).
+
+### Island animations + swipe away
+- **Swipe up to dismiss:** any message or question in the island (e.g. the "Search / Web" one after writing something with the S Pen that isn't a command) can be swiped up and away. The island shrinks back to the pill under your finger and lets go when you release.
+- **Cleaner opening and closing:** growing is slightly bouncy, with the height trailing the width a touch so it "pours" open; shrinking is quicker and settles without wobbling. The old content melts away quickly and the new content settles in from a little smaller with a soft blur, anchored at the top so nothing jumps.
+- **Animated switching:** swiping sideways between live things (music, stopwatch, Focus, flights…) slides the new one in from the side you swiped. Switching between two kinds of message, or two live things, now animates instead of just changing.
+- **More response:** a small bounce whenever a new message or pop-up arrives (not for the volume slider or face scan).

@@ -2,6 +2,9 @@ package com.kinetic.launcher.island
 
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -137,6 +140,9 @@ private val Tabular = TextStyle(fontFeatureSettings = "tnum")
 /** Things that can live in the island, most important first. */
 private enum class Activity { Call, Torch, Nav, Live, Live2, Trip, Timer, Score, Media }
 
+/** What the island is showing: its shape/mode, and which live thing (if it's showing one). */
+private data class IslandFrame(val mode: IslandMode, val liveId: String?)
+
 private sealed interface IslandMode {
     data object Idle : IslandMode
     data class Alert(val alert: IslandAlert) : IslandMode
@@ -173,6 +179,7 @@ private sealed interface IslandMode {
  * [onWindowSize] tells the host how big its overlay window must be (it's kept only
  * as big as the island so it never blocks touches elsewhere).
  */
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
 fun DynamicIsland(
     model: IslandModel,
@@ -343,6 +350,8 @@ fun DynamicIsland(
         IslandMode.TripExpanded -> IslandMode.TripCompact
         IslandMode.LiveExpanded -> IslandMode.LiveCompact
         IslandMode.TorchExpanded -> IslandMode.TorchCompact
+        // Any message or question can be swiped up and away (not the face-unlock scan).
+        is IslandMode.Alert -> if (mode.alert is IslandAlert.Scan) null else IslandMode.Idle
         IslandMode.ScoreExpanded -> IslandMode.ScoreCompact
         else -> null
     }
@@ -366,11 +375,14 @@ fun DynamicIsland(
     var settleTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(targetW, targetH, targetR, settleTick, dragging) {
         if (dragging) return@LaunchedEffect
-        // iOS-like spring: quick, with a little overshoot when it grows.
-        val spec = spring<Dp>(dampingRatio = 0.74f, stiffness = 360f)
-        launch { wA.animateTo(targetW, spec) }
-        launch { hA.animateTo(targetH, spec) }
-        launch { rA.animateTo(targetR, spec) }
+        // iOS-like: growing is a little bouncy (and the height trails the width a touch, so
+        // it pours open); shrinking is quicker and settles without wobbling.
+        val growing = targetH > hA.value + 1.dp || targetW > wA.value + 1.dp
+        val wSpec = if (growing) spring<Dp>(dampingRatio = 0.70f, stiffness = 380f) else spring(dampingRatio = 0.86f, stiffness = 520f)
+        val hSpec = if (growing) spring<Dp>(dampingRatio = 0.72f, stiffness = 300f) else spring(dampingRatio = 0.88f, stiffness = 600f)
+        launch { wA.animateTo(targetW, wSpec) }
+        launch { hA.animateTo(targetH, hSpec) }
+        launch { rA.animateTo(targetR, hSpec) }
     }
     val restAlpha by animateFloatAsState(if (hideResting) 0f else 1f, tween(250), label = "rest")
     // The bubble pops out of the pill like a drop of gel, and back in when it goes.
@@ -445,6 +457,15 @@ fun DynamicIsland(
     val glowTarget by animateFloatAsState(if (glowOn) 1f else 0f, tween(600), label = "glowOn")
     val glowA = glowTarget * breath
     val bump = remember { Animatable(1f) }
+    // A little "hello" bounce whenever a new message or pop-up arrives (not for the volume
+    // slider, which updates constantly, or the face scan).
+    LaunchedEffect(alert) {
+        val a = alert
+        if (a != null && a !is IslandAlert.Level && a !is IslandAlert.Scan && a !is IslandAlert.Lock) {
+            bump.animateTo(1.045f, spring(dampingRatio = 0.5f, stiffness = 900f))
+            bump.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 420f))
+        }
+    }
     val scoreBump by model.scoreBump.collectAsState()
     LaunchedEffect(scoreBump) {
         if (scoreBump > 0) {
@@ -540,7 +561,11 @@ fun DynamicIsland(
             }
             if (commit) {
                 haptic()
-                if (opening) model.expand() else model.collapse()
+                when {
+                    opening -> model.expand()
+                    mode is IslandMode.Alert -> model.dismissAlert()
+                    else -> model.collapse()
+                }
             }
             // Always let go of the pull, so the island can never get stuck half-way.
             morphTo = null
@@ -713,16 +738,46 @@ fun DynamicIsland(
                     },
             ) {
                 AnimatedContent(
-                    targetState = mode,
-                    contentKey = { it::class },
+                    // Which live thing is part of the frame too, so swapping between two live
+                    // things (or two kinds of message) animates instead of just changing.
+                    targetState = IslandFrame(mode, if (mode == IslandMode.LiveCompact || mode == IslandMode.LiveExpanded) liveShown?.id else null),
+                    contentKey = { f -> f.mode::class.simpleName + "|" + ((f.mode as? IslandMode.Alert)?.alert?.let { it::class.simpleName } ?: f.liveId) },
                     transitionSpec = {
-                        (fadeIn(tween(220, delayMillis = 90)) + scaleIn(tween(320, delayMillis = 60), initialScale = 0.88f)) togetherWith
-                            (fadeOut(tween(110)) + scaleOut(tween(160), targetScale = 0.92f))
+                        val from = sizeOf(initialState.mode)
+                        val to = sizeOf(targetState.mode)
+                        val growing = to.second > from.second + 1.dp || to.first > from.first + 24.dp
+                        val sameShape = kotlin.math.abs((to.second - from.second).value) < 1f
+                        val sideways = sameShape &&
+                            initialState.mode !is IslandMode.Alert && targetState.mode !is IslandMode.Alert &&
+                            initialState.mode != IslandMode.Idle && targetState.mode != IslandMode.Idle
+                        val top = TransformOrigin(0.5f, 0f)
+                        if (sideways) {
+                            // Swiping between live things: the new one slides in from the side you swiped.
+                            val dir = model.lastStackDir
+                            (slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { w -> dir * w / 3 } + fadeIn(tween(220, delayMillis = 60))) togetherWith
+                                (slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { w -> -dir * w / 3 } + fadeOut(tween(140)))
+                        } else {
+                            // Opening: the old content melts away fast, the new one settles in from a
+                            // little smaller (and blurred) as the shape finishes growing. Closing is the reverse.
+                            (fadeIn(tween(260, delayMillis = if (growing) 120 else 50)) +
+                                scaleIn(tween(400, delayMillis = if (growing) 80 else 20, easing = FastOutSlowInEasing), initialScale = if (growing) 0.9f else 1.06f, transformOrigin = top)) togetherWith
+                                (fadeOut(tween(if (growing) 100 else 140)) + scaleOut(tween(220, easing = FastOutSlowInEasing), targetScale = if (growing) 1.05f else 0.9f, transformOrigin = top))
+                        }
                     },
                     label = "island",
-                ) { shown ->
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - morph.value * 2.2f).coerceIn(0f, 1f) }) {
-                        IslandContent(shown, media, c, t, n, p, replying, model, cameraRoom, liveShown)
+                ) { frame ->
+                    // A soft blur while content comes and goes (like iOS), crisp once it's settled.
+                    val blur by transition.animateFloat(transitionSpec = { tween(280, easing = FastOutSlowInEasing) }, label = "blur") {
+                        if (it == androidx.compose.animation.EnterExitState.Visible) 0f else 9f
+                    }
+                    val frameLive = frame.liveId?.let { id -> lives.firstOrNull { it.id == id } } ?: liveShown
+                    Box(
+                        Modifier.fillMaxSize().graphicsLayer {
+                            alpha = (1f - morph.value * 2.2f).coerceIn(0f, 1f)
+                            if (blur > 0.3f) renderEffect = androidx.compose.ui.graphics.BlurEffect(blur.dp.toPx(), blur.dp.toPx(), androidx.compose.ui.graphics.TileMode.Decal)
+                        },
+                    ) {
+                        IslandContent(frame.mode, media, c, t, n, p, replying, model, cameraRoom, frameLive)
                     }
                 }
                 // While pulling, the shape it's turning into fades in, revealed by the growing outline.
