@@ -75,6 +75,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     private var view: ComposeView? = null
     private var params: WindowManager.LayoutParams? = null
     private var touchView: View? = null
+    /** Kinetic's home bar at the bottom (its own window, never touchable). */
+    private var homeBarView: ComposeView? = null
     private var touchParams: WindowManager.LayoutParams? = null
 
     /** Camera hole: centre x and centre y in screen pixels. */
@@ -141,6 +143,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         val landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
         view?.visibility = if (landscape) View.GONE else View.VISIBLE
         touchView?.visibility = if (landscape) View.GONE else View.VISIBLE
+        homeBarView?.visibility = if (landscape) View.GONE else View.VISIBLE
         if (!landscape) measureHole()
     }
 
@@ -357,6 +360,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         }
         touchView = t
         runCatching { wm.addView(t, tp) }.onFailure { touchView = null }
+        addHomeBar(wm)
     }
 
     /** Moves the touch window over the island ([r] in screen px), or switches it off (null). */
@@ -398,7 +402,35 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         runCatching { windowManager?.updateViewLayout(v, p) }
     }
 
+    private fun addHomeBar(wm: WindowManager) {
+        if (homeBarView != null) return
+        val hp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, (28 * resources.displayMetrics.density).roundToInt(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            setFitInsetsTypes(0)
+            title = "Kinetic home bar"
+        }
+        val hv = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@DynamicIslandService)
+            setViewTreeSavedStateRegistryOwner(this@DynamicIslandService)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent { KineticHomeBar(model) }
+        }
+        homeBarView = hv
+        runCatching { wm.addView(hv, hp) }.onFailure { homeBarView = null }
+    }
+
     private fun removeIsland() {
+        homeBarView?.let { h -> runCatching { windowManager?.removeView(h) } }
+        homeBarView = null
         StatusBarData.stop()
         touchView?.let { t -> runCatching { windowManager?.removeView(t) } }
         touchView = null

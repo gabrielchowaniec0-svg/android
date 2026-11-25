@@ -19,6 +19,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -273,6 +275,7 @@ fun DynamicIsland(
             // A slider under the camera.
             is IslandAlert.Level -> ChargingW to (pillH + 24.dp)
             // Confetti and a message below the camera.
+            is IslandAlert.Screenshot -> fullW to (pillH + 124.dp)
             is IslandAlert.Celebrate -> minOf(fullW, maxOf(ChargingW, (60 + md.alert.text.length * 8).dp)) to (pillH + 40.dp)
             // A message with a button, hanging below the camera.
             is IslandAlert.Ask -> fullW to (pillH + if (md.alert.text.length > 38) 106.dp else 88.dp)
@@ -1016,6 +1019,7 @@ private fun AlertContent(alert: IslandAlert, onAsk: (Boolean) -> Unit = {}) {
         )
         is IslandAlert.Level -> LevelContent(alert)
         is IslandAlert.Celebrate -> CelebrateContent(alert)
+        is IslandAlert.Screenshot -> ScreenshotContent(alert)
     }
 }
 
@@ -2231,3 +2235,41 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
 }
 
 private fun Float.roundToIntSafe(): Int = kotlin.math.round(this).toInt()
+
+
+// ---- screenshot preview -------------------------------------------------------------------
+
+@Composable
+private fun ScreenshotContent(alert: IslandAlert.Screenshot) {
+    val s = LocalPill.current
+    Row(
+        Modifier.fillMaxSize().padding(top = s + 6.dp, start = 14.dp, end = 14.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val thumb = alert.thumb
+        Box(
+            Modifier.fillMaxHeight().aspectRatio(0.48f).clip(RoundedCornerShape(10.dp)).background(Color(0xFF2C2C2E))
+                .clickable { ScreenshotPreview.open() },
+        ) {
+            if (thumb != null) Image(thumb, "Screenshot", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Screenshot", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text("Tap the picture to open it", color = Grey, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Edit" to { ScreenshotPreview.edit() }, "Share" to { ScreenshotPreview.share() }, "🔒 Vault" to { ScreenshotPreview.toVault() })
+                    .forEachIndexed { i, (label, action) ->
+                        Text(
+                            label, color = if (i == 0) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(50))
+                                .background(if (i == 0) Color.White else Color(0xFF3A3A3C))
+                                .clickable { action() }.padding(vertical = 9.dp),
+                        )
+                    }
+            }
+        }
+    }
+}
