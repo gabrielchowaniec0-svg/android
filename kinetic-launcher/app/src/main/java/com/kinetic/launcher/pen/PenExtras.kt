@@ -205,8 +205,28 @@ object StickyNotes {
             val span = max(all.maxOf { it.x } - minX, all.maxOf { it.y } - minY).coerceAtLeast(1f)
             ink.map { s -> s.filterIndexed { i, _ -> i % 2 == 0 || i == s.lastIndex }.map { Offset((it.x - minX) / span, (it.y - minY) / span) } }
         }
-        _notes.value = (listOf(Note(System.currentTimeMillis(), text, norm)) + _notes.value).take(6)
+        // Only as many as fit on the home page are kept, so none are ever hidden.
+        val all = listOf(Note(System.currentTimeMillis(), text, norm)) + _notes.value
+        if (all.size > MAX) {
+            com.kinetic.launcher.island.IslandBus.tell(c, "✎", "Removed your oldest note (\u201C${all.last().text}\u201D) to make room")
+        }
+        _notes.value = all.take(MAX)
         save(c)
+    }
+
+    /** How many fit on the first home page. */
+    const val MAX = 4
+
+    /** The note that best matches what you wrote ("milk" finds "buy milk"). */
+    fun find(c: Context, query: String): Note? {
+        load(c)
+        val q = query.lowercase().trim()
+        val notes = _notes.value
+        notes.firstOrNull { it.text.lowercase() == q }?.let { return it }
+        notes.firstOrNull { it.text.lowercase().contains(q) }?.let { return it }
+        val words = q.split(' ').filter { it.length > 2 }
+        return notes.map { n -> n to words.count { n.text.lowercase().contains(it) } }
+            .filter { it.second > 0 }.maxByOrNull { it.second }?.first
     }
 
     fun remove(c: Context, id: Long) {

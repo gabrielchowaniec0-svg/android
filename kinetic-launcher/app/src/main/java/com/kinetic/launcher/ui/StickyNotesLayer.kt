@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.kinetic.launcher.pen.StickyNotes
 import kotlinx.coroutines.launch
 
-/** Sticky notes on the first home page (swipe one sideways to throw it away). */
+/** Sticky notes on the first home page (swipe one sideways, or tap it, to throw it away). */
 @Composable
 fun StickyNotesLayer(notes: List<StickyNotes.Note>, onRemove: (Long) -> Unit) {
     Box(Modifier.fillMaxSize()) {
@@ -45,7 +45,7 @@ fun StickyNotesLayer(notes: List<StickyNotes.Note>, onRemove: (Long) -> Unit) {
             Modifier.align(Alignment.CenterEnd).padding(end = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            notes.take(4).forEachIndexed { i, n -> key(n.id) { Sticky(n, if (i % 2 == 0) -2.5f else 2f, onRemove) } }
+            notes.take(StickyNotes.MAX).forEachIndexed { i, n -> key(n.id) { Sticky(n, if (i % 2 == 0) -2.5f else 2f, onRemove) } }
         }
     }
 }
@@ -54,6 +54,7 @@ fun StickyNotesLayer(notes: List<StickyNotes.Note>, onRemove: (Long) -> Unit) {
 private fun Sticky(n: StickyNotes.Note, tilt: Float, onRemove: (Long) -> Unit) {
     val dx = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(
         Modifier
             .width(132.dp)
@@ -66,6 +67,13 @@ private fun Sticky(n: StickyNotes.Note, tilt: Float, onRemove: (Long) -> Unit) {
             .shadow(6.dp, RoundedCornerShape(6.dp))
             .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFFFFE45C))
+            .pointerInput(n.id) {
+                // Tap: the island asks whether to remove it.
+                androidx.compose.foundation.gestures.detectTapGestures(onTap = {
+                    val asked = com.kinetic.launcher.island.IslandBus.ask("✎", n.text, "Remove", secondary = "Keep") { onRemove(n.id) }
+                    if (!asked) android.widget.Toast.makeText(context, "Swipe a note sideways to remove it", android.widget.Toast.LENGTH_SHORT).show()
+                })
+            }
             .pointerInput(n.id) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
