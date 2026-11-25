@@ -76,7 +76,7 @@ object LivingWallpaper {
         val lat = WallpaperSignals.lat
         val lon = WallpaperSignals.lon
         if (!prefs.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true) || !WallpaperSignals.skyShowing ||
-            power?.isInteractive != true || lat.isNaN() || lon.isNaN()
+            power?.isInteractive != true || power.isPowerSaveMode || lat.isNaN() || lon.isNaN()
         ) {
             if (!WallpaperSignals.skyShowing) WallpaperSignals.planes = emptyList()
             return 4_000L

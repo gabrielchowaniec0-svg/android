@@ -709,3 +709,22 @@ All of these show on the **lock screen only** by default. Kinetic Settings → L
 ### Emoji-free + moon behind clouds
 - Kinetic is now (mostly) emoji-free: the island, the S Pen answers, the help list and the secure video screen use plain single-colour symbols instead of colourful emoji (or none). E.g. the screenshot preview's button is just "Vault".
 - When it's cloudy, the moon no longer shows as a dim grey disc: the disc fades out and a soft patch of moonlight glows through the clouds (brighter near full moon), like the real thing.
+
+## Polish: problem reports, battery, settings
+**Report a problem:** write `report problem` (or Settings → Battery & help → Report a problem). Kinetic makes one text file with:
+- the phone model, Android version and Kinetic version,
+- what's switched on and allowed (island, notification access, permissions, power saving),
+- Kinetic's settings (not your location, notes, homework or Vault),
+- Kinetic's own log of crashes and errors (kept on the phone, about the last few hundred problems),
+- the system log for Kinetic.
+Then the share sheet opens so you can send it (e.g. save it and attach it in a chat). Nothing is ever sent by itself.
+
+**Battery:**
+- The wallpaper draws at 30 fps while nothing on it moves, and at your screen's full rate (your 60 Hz) when you touch it or it reacts. Choose **Always smooth** in Settings → Battery & help if you prefer. It always follows your screen's refresh rate and resolution (your HD+).
+- Power saving mode: wallpaper at 30 fps, plane/space station look-ups and the status bar's colour checks pause.
+- The status bar checks the screen colour when you switch apps, plus every 30 s (was 10 s).
+
+**Settings:**
+- A **search box** at the top: type e.g. "volume" or "moon" and only matching settings stay.
+- The long Dynamic Island section is split into **Dynamic Island** (look), **What shows in the island**, and **Status bar, home bar & buttons**.
+- New **Battery & help** section at the bottom.

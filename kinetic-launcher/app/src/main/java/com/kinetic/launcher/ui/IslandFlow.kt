@@ -43,7 +43,11 @@ object IslandFlow {
         }
         // 4. Do it.
         if (!ready.quiet) IslandBus.say(ready.badge, ready.done ?: ready.title)
-        if (!ready.run(app)) IslandBus.say("✕", "Couldn't do “$text”")
+        val ok = runCatching { ready.run(app) }.onFailure { com.kinetic.wallpaper.DiagLog.e("command", "\"$text\" crashed", it) }.getOrDefault(false)
+        if (!ok) {
+            com.kinetic.wallpaper.DiagLog.w("command", "couldn't do \"$text\"")
+            IslandBus.say("✕", "Couldn't do “$text”")
+        }
         return true
     }
 }

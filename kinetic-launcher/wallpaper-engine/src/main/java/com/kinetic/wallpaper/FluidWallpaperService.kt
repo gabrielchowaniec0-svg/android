@@ -237,8 +237,36 @@ class FluidWallpaperService : WallpaperService() {
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
+        private var lastDrawNanos = 0L
+        private var motionMode = "balanced"
+
+        /**
+         * True while nothing on the wallpaper needs full smoothness: no finger on it, no
+         * ripple spreading, no tilt or blur easing. Then (in Balanced) it draws at 30 fps.
+         */
+        private fun stillNow(): Boolean {
+            if (touchActive || kotlin.math.abs(touchX) > 0.5f || kotlin.math.abs(touchY) > 0.5f) return false
+            if (kotlin.math.abs(focusTarget - focus) > 0.01f) return false
+            if (kotlin.math.abs(tiltTargetX - tiltX) > 0.004f || kotlin.math.abs(tiltTargetY - tiltY) > 0.004f) return false
+            if (kotlin.math.abs(skyTarget - skyVis) > 0.01f) return false
+            for (s in rippleSlots) if (s[3] > 0f && time - s[2] < 3.2f) return false
+            return true
+        }
+
         override fun doFrame(frameTimeNanos: Long) {
             if (!running) return
+            // Battery: full smoothness only when something is moving (or "Full" is chosen).
+            val saver = power?.isPowerSaveMode == true
+            val minGap = when {
+                motionMode == "full" && !saver -> 0L
+                stillNow() || saver -> 30_000_000L // ~30 fps
+                else -> 0L
+            }
+            if (minGap > 0L && frameTimeNanos - lastDrawNanos < minGap) {
+                choreographer.postFrameCallback(this)
+                return
+            }
+            lastDrawNanos = frameTimeNanos
             drawFrame(frameTimeNanos)
             // Re-post immediately; Choreographer paces us to the display refresh.
             choreographer.postFrameCallback(this)
@@ -345,6 +373,7 @@ class FluidWallpaperService : WallpaperService() {
                 starsOn = prefs.getBoolean(WallpaperSignals.KEY_STARS, true)
                 planesOn = prefs.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true)
                 linesOn = prefs.getBoolean(WallpaperSignals.KEY_CONSTELLATIONS, true)
+                motionMode = prefs.getString(WallpaperSignals.KEY_MOTION, "balanced") ?: "balanced"
                 if (WallpaperSignals.lat.isNaN()) {
                     val la = prefs.getFloat("wp_lat", Float.NaN)
                     val lo = prefs.getFloat("wp_lon", Float.NaN)

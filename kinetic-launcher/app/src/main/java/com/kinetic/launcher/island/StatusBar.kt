@@ -232,11 +232,13 @@ object StatusBarData {
             netCallback = cb
         }
 
-        // Light or dark behind the bar: check when apps change, and every 10 s.
+        // Light or dark behind the bar: check when apps change, and every 30 s as a backup
+        // (an app can change colour without switching window). Not in Power saving mode.
         loopJob = sc.launch {
             while (true) {
-                delay(10_000)
-                if (wantsSampling(app)) sample()
+                delay(30_000)
+                val saver = app.getSystemService(PowerManager::class.java).isPowerSaveMode
+                if (!saver && wantsSampling(app)) sample()
             }
         }
     }

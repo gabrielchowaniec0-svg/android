@@ -96,6 +96,8 @@ object KineticSettings {
         val wpSky: Boolean = true,
         /** Where the moon, stars, planes, clouds and weather show: "lock", "both", "home", "off". */
         val wpSkyWhere: String = "lock",
+        /** Wallpaper smoothness: "balanced" or "full". */
+        val wpMotion: String = "balanced",
         val wpStars: Boolean = true,
         val wpConstellations: Boolean = true,
         val wpSkyPlanes: Boolean = true,
@@ -228,6 +230,7 @@ object KineticSettings {
         wpWeatherExtra = p.getBoolean(WallpaperSignals.KEY_WEATHER_EXTRA, true),
         wpSky = p.getBoolean(WallpaperSignals.KEY_SKY, true),
         wpSkyWhere = p.getString(WallpaperSignals.KEY_SKY_WHERE, "lock") ?: "lock",
+        wpMotion = p.getString(WallpaperSignals.KEY_MOTION, "balanced") ?: "balanced",
         wpStars = p.getBoolean(WallpaperSignals.KEY_STARS, true),
         wpConstellations = p.getBoolean(WallpaperSignals.KEY_CONSTELLATIONS, true),
         wpSkyPlanes = p.getBoolean(WallpaperSignals.KEY_SKY_PLANES, true),

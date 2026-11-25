@@ -34,6 +34,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -264,6 +265,18 @@ class SettingsActivity : ComponentActivity() {
                 Text("Kinetic settings", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(12.dp))
+            // Search: only matching settings (and their sections) stay on screen.
+            androidx.compose.runtime.DisposableEffect(Unit) { onDispose { SettingsSearch.query = "" } }
+            androidx.compose.foundation.text.BasicTextField(
+                SettingsSearch.query, { SettingsSearch.query = it }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.White),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Card).padding(horizontal = 16.dp, vertical = 13.dp),
+                decorationBox = { inner ->
+                    if (SettingsSearch.query.isEmpty()) Text("Search settings", color = Subtle, fontSize = 16.sp)
+                    inner()
+                },
+            )
 
             // ---- permissions -----------------------------------------------------------
             Section("Setup") {
@@ -337,48 +350,13 @@ class SettingsActivity : ComponentActivity() {
 
             // ---- island -------------------------------------------------------------------
             Section("Dynamic Island") {
-                SwitchRow("Show resting pill", "The black pill around the camera when nothing's going on", s.islandRestingPill, bool(KineticSettings.ISLAND_RESTING))
-                SwitchRow("Chowaniec messages", "New Chowaniec messages drop down from the island, with Reply", s.islandChowaniecPeek, bool(KineticSettings.ISLAND_CHOWANIEC))
-                SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
-                SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
-                SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
-                SwitchRow("Kinetic status bar", "Kinetic's own time, battery and signal around the island. Hide Samsung's first: Good Lock → QuickStar", s.statusBar, bool(KineticSettings.STATUS_BAR))
-                if (s.statusBar) ChoiceRow(
-                    "Status bar text",
-                    listOf("auto" to "Auto", "light" to "White", "dark" to "Black"),
-                    s.statusBarTint,
-                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.STATUS_BAR_TINT, it) }
-                SwitchRow(
-                    "Screenshot preview",
-                    if (com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) "After a screenshot, a preview drops from the island with Edit, Share and Vault"
-                    else "Tap to allow photo access (needed to see new screenshots)",
-                    s.islandScreenshots,
-                ) { on ->
-                    KineticSettings.setBoolean(this@SettingsActivity, KineticSettings.ISLAND_SCREENSHOTS, on)
-                    if (on && !com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) {
-                        com.kinetic.launcher.ui.PermissionActivity.start(this@SettingsActivity, android.Manifest.permission.READ_MEDIA_IMAGES, "")
-                    }
-                }
-                SwitchRow("Kinetic home bar", "Kinetic's own bar at the bottom that glows with music, calls and Focus. Hide Samsung's first: Good Lock → NavStar", s.homeBar, bool(KineticSettings.HOME_BAR))
-                SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
-                if (s.islandVolume) ChoiceRow(
-                    "Volume buttons change",
-                    listOf("media" to "Media", "ring" to "Ringtone"),
-                    s.volumeKeys,
-                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.VOLUME_KEYS, it) }
-                SwitchRow("Brightness slider", "Changing brightness shows it in the island (when auto-brightness is off)", s.islandBrightness, bool(KineticSettings.ISLAND_BRIGHTNESS))
-                SwitchRow("Up next", "Your next calendar event counts down 15 minutes before", s.islandUpNext, bool(KineticSettings.ISLAND_UP_NEXT))
-                SwitchRow("Rain alerts", "\u201CRain in 15 min\u201D when it's about to rain where you are", s.islandRain, bool(KineticSettings.ISLAND_RAIN))
-                SwitchRow("Earbuds & headphones", "Show when they connect, with their battery", s.islandEarbuds, bool(KineticSettings.ISLAND_EARBUDS))
-                SwitchRow("Music glow", "A soft glow in the album's colours while music plays", s.islandMusicGlow, bool(KineticSettings.ISLAND_MUSIC_GLOW))
                 ChoiceRow(
                     "Island look",
                     listOf("black" to "Black", "glass" to "Glass", "outline" to "Outline"),
                     s.islandTheme,
                 ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.ISLAND_THEME, it) }
-                LinkRow("My teams", s.myTeams.ifBlank { "Every game · tap to pick your teams" }, on = s.myTeams.isNotBlank()) { editTeams() }
-                SwitchRow("Timers, stopwatch & alarms", "Countdown in orange; alarms ring with Snooze / Stop", s.islandTimers, bool(KineticSettings.ISLAND_TIMERS))
-                SwitchRow("Directions", "Next turn and distance from Google Maps", s.islandNavigation, bool(KineticSettings.ISLAND_NAVIGATION))
+                SwitchRow("Show resting pill", "The black pill around the camera when nothing's going on", s.islandRestingPill, bool(KineticSettings.ISLAND_RESTING))
+                SwitchRow("Music glow", "A soft glow in the album's colours while music plays", s.islandMusicGlow, bool(KineticSettings.ISLAND_MUSIC_GLOW))
                 SwitchRow("Lock animation", "A padlock that opens when you unlock", s.islandUnlock, bool(KineticSettings.ISLAND_UNLOCK))
                 SliderRow(
                     "Shrink paused music after",
@@ -393,6 +371,47 @@ class SettingsActivity : ComponentActivity() {
                     0f..7f,
                     steps = 6,
                 ) { KineticSettings.setInt(this@SettingsActivity, KineticSettings.ISLAND_GAP, it.roundToInt()) }
+            }
+
+            Section("What shows in the island") {
+                SwitchRow("Chowaniec messages", "New Chowaniec messages drop down from the island, with Reply", s.islandChowaniecPeek, bool(KineticSettings.ISLAND_CHOWANIEC))
+                SwitchRow("Messages from all apps", "Same for every messaging app", s.islandAllMessagesPeek, bool(KineticSettings.ISLAND_ALL_MESSAGES))
+                SwitchRow("All notifications", "Every notification shows in the island: pull down or hold for its buttons", s.islandNotifications, bool(KineticSettings.ISLAND_NOTIFICATIONS))
+                SwitchRow("Timers, stopwatch & alarms", "Countdown in orange; alarms ring with Snooze / Stop", s.islandTimers, bool(KineticSettings.ISLAND_TIMERS))
+                SwitchRow("Directions", "Next turn and distance from Google Maps", s.islandNavigation, bool(KineticSettings.ISLAND_NAVIGATION))
+                SwitchRow("Progress bars", "Downloads, uploads and other progress show in the island", s.islandProgress, bool(KineticSettings.ISLAND_PROGRESS))
+                SwitchRow(
+                    "Screenshot preview",
+                    if (com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) "After a screenshot, a preview drops from the island with Edit, Share and Vault"
+                    else "Tap to allow photo access (needed to see new screenshots)",
+                    s.islandScreenshots,
+                ) { on ->
+                    KineticSettings.setBoolean(this@SettingsActivity, KineticSettings.ISLAND_SCREENSHOTS, on)
+                    if (on && !com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) {
+                        com.kinetic.launcher.ui.PermissionActivity.start(this@SettingsActivity, android.Manifest.permission.READ_MEDIA_IMAGES, "")
+                    }
+                }
+                SwitchRow("Up next", "Your next calendar event counts down 15 minutes before", s.islandUpNext, bool(KineticSettings.ISLAND_UP_NEXT))
+                SwitchRow("Rain alerts", "\u201CRain in 15 min\u201D when it's about to rain where you are", s.islandRain, bool(KineticSettings.ISLAND_RAIN))
+                SwitchRow("Earbuds & headphones", "Show when they connect, with their battery", s.islandEarbuds, bool(KineticSettings.ISLAND_EARBUDS))
+                LinkRow("My teams", s.myTeams.ifBlank { "Live scores for every game · tap to pick your teams" }, on = s.myTeams.isNotBlank()) { editTeams() }
+            }
+
+            Section("Status bar, home bar & buttons") {
+                SwitchRow("Kinetic status bar", "Kinetic's own time, battery and signal around the island. Hide Samsung's first: Good Lock → QuickStar", s.statusBar, bool(KineticSettings.STATUS_BAR))
+                if (s.statusBar) ChoiceRow(
+                    "Status bar text",
+                    listOf("auto" to "Auto", "light" to "White", "dark" to "Black"),
+                    s.statusBarTint,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.STATUS_BAR_TINT, it) }
+                SwitchRow("Kinetic home bar", "Kinetic's own bar at the bottom that glows with music, calls and Focus. Hide Samsung's first: Good Lock → NavStar", s.homeBar, bool(KineticSettings.HOME_BAR))
+                SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
+                if (s.islandVolume) ChoiceRow(
+                    "Volume buttons change",
+                    listOf("media" to "Media", "ring" to "Ringtone"),
+                    s.volumeKeys,
+                ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.VOLUME_KEYS, it) }
+                SwitchRow("Brightness slider", "Changing brightness shows it in the island (when auto-brightness is off)", s.islandBrightness, bool(KineticSettings.ISLAND_BRIGHTNESS))
             }
 
             // ---- home ---------------------------------------------------------------------
@@ -496,6 +515,22 @@ class SettingsActivity : ComponentActivity() {
                 LinkRow("Command chains", "One name runs several commands (also works typed in search)", on = false) { editChains() }
                 LinkRow("Writing shortcuts", "Short words for long commands (\u201Cm\u201D → call mom)", on = false) { editShortcuts() }
             }
+
+            // ---- battery & help ---------------------------------------------------------------
+            Section("Battery & help") {
+                ChoiceRow(
+                    "Wallpaper smoothness",
+                    listOf("balanced" to "Balanced", "full" to "Always smooth"),
+                    s.wpMotion,
+                ) { KineticSettings.setString(this@SettingsActivity, WallpaperSignals.KEY_MOTION, it) }
+                Text(
+                    "Balanced draws the wallpaper at 30 fps while nothing on it moves, and at your screen's full rate when you touch it or it reacts. It always follows your screen's refresh rate and resolution. Power saving mode also pauses the plane look-ups and the status bar's colour checks.",
+                    color = Subtle, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                LinkRow("Report a problem", "Makes one file with Kinetic's log (crashes, errors) and settings to send. Nothing is sent by itself.", on = false) {
+                    ProblemReport.send(this@SettingsActivity)
+                }
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -567,19 +602,60 @@ private fun SettingsActivity.UpdatesSection() {
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Text(title, color = Accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp))
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(Card)
-            .padding(vertical = 4.dp),
-    ) { content() }
+    val q = SettingsSearch.query.trim()
+    val hits = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+    val titleMatch = q.isNotEmpty() && title.contains(q, ignoreCase = true)
+    val visible = q.isEmpty() || titleMatch || hits.isNotEmpty()
+    if (visible) Text(title, color = Accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp))
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalHits provides hits,
+        // A matching section shows all of its settings.
+        LocalShowAll provides titleMatch,
+    ) {
+        Column(
+            if (visible) {
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Card)
+                    .padding(vertical = 4.dp)
+            } else {
+                // Still composed (so matches inside can show it), just not visible.
+                Modifier.height(0.dp).clipToBounds()
+            },
+        ) { content() }
+    }
+}
+
+/** What's typed in the settings search box. */
+private object SettingsSearch {
+    var query by mutableStateOf("")
+}
+
+private val LocalHits = androidx.compose.runtime.compositionLocalOf<MutableMap<String, Boolean>?> { null }
+private val LocalShowAll = androidx.compose.runtime.compositionLocalOf { false }
+
+/** False when searching and this setting doesn't match (it then isn't drawn). */
+@Composable
+private fun shown(vararg words: String): Boolean {
+    val q = SettingsSearch.query.trim()
+    if (q.isEmpty() || LocalShowAll.current) return true
+    val match = words.any { it.contains(q, ignoreCase = true) }
+    if (match) {
+        val hits = LocalHits.current
+        val key = words.first()
+        androidx.compose.runtime.DisposableEffect(key, hits) {
+            hits?.put(key, true)
+            onDispose { hits?.remove(key) }
+        }
+    }
+    return match
 }
 
 /** A row of pill choices. */
 @Composable
 private fun ChoiceRow(title: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    if (!shown(title, *options.map { it.second }.toTypedArray())) return
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Text(title, color = Color.White, fontSize = 16.sp)
         Row(
@@ -606,6 +682,7 @@ private fun ChoiceRow(title: String, options: List<Pair<String, String>>, select
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    if (!shown(title, subtitle)) return
     Row(
         Modifier
             .fillMaxWidth()
@@ -635,6 +712,7 @@ private fun SliderRow(
     steps: Int = 0,
     onChange: (Float) -> Unit,
 ) {
+    if (!shown(title, valueText)) return
     // Follow the finger locally; save when it's let go.
     var live by remember(value) { mutableStateOf(value) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -655,6 +733,7 @@ private fun SliderRow(
 
 @Composable
 private fun LinkRow(title: String, subtitle: String, on: Boolean, onClick: () -> Unit) {
+    if (!shown(title, subtitle)) return
     Row(
         Modifier
             .fillMaxWidth()
