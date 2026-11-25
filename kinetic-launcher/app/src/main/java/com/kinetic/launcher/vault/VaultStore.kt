@@ -142,7 +142,7 @@ class VaultStore(context: Context, private val key: SecretKey, private val decoy
                 decodeScaled(uri.path!!, 360)
             } else {
                 runCatching { app.contentResolver.loadThumbnail(uri, Size(360, 360), null) }.getOrNull()
-                    ?: app.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                    ?: com.kinetic.launcher.ui.Bitmaps.decode(360) { app.contentResolver.openInputStream(uri) }
             }
         } catch (_: Exception) {
             null
@@ -180,7 +180,8 @@ class VaultStore(context: Context, private val key: SecretKey, private val decoy
         var sample = 1
         while (bounds.outWidth / sample > maxSide || bounds.outHeight / sample > maxSide) sample *= 2
         BitmapFactory.decodeByteArray(b, 0, b.size, BitmapFactory.Options().apply { inSampleSize = sample })
-    } catch (_: Exception) {
+    } catch (_: Throwable) {
+        // Includes running out of memory on a huge photo.
         null
     }
 
