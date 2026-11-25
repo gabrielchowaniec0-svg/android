@@ -273,6 +273,8 @@ Phone and computer must be on the **same network**. For Android 13+:
 - Setup status (default Home, Notification access, Dynamic Island) with shortcuts,
   every island feature, notification rings, haptics, icon size, and every
   wallpaper reaction.
+- The **Haptics** switch now covers every buzz in Kinetic: home screen, island,
+  Vault, secure camera and the plane spotter.
 
 **Lock screen + live wallpaper**
 - Kinetic uses the phone's normal lock screen. When you unlock straight to the

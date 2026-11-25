@@ -214,7 +214,7 @@ class SecureVideoActivity : ComponentActivity() {
                 is VideoRecordEvent.Start -> {
                     startedAt = SystemClock.elapsedRealtime()
                     isRecording = true
-                    window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                    com.kinetic.launcher.ui.Haptics.confirm(window.decorView)
                 }
                 is VideoRecordEvent.Finalize -> {
                     isRecording = false
@@ -240,7 +240,7 @@ class SecureVideoActivity : ComponentActivity() {
             val ok = withContext(Dispatchers.IO) { sealFile(app, file) }
             sealing = false
             val msg = if (ok) "Secure video saved to the Vault" else "Couldn't save the secure video"
-            if (!com.kinetic.launcher.island.IslandBus.say(if (ok) "🔒" else "✕", msg)) Toast.makeText(app, msg, Toast.LENGTH_SHORT).show()
+            com.kinetic.launcher.island.IslandBus.tell(app, if (ok) "🔒" else "✕", msg)
         }
     }
 

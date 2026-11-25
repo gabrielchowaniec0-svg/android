@@ -2209,7 +2209,7 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
                         val l = kotlin.math.round(f * cur.max).toInt().coerceIn(1, cur.max)
                         if (l != cur.level) {
                             TorchLive.setLevel(l)
-                            view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                            com.kinetic.launcher.ui.Haptics.tick(view)
                         }
                     }
                 }
@@ -2287,7 +2287,7 @@ private fun TorchExpandedContent(t: TorchLive.Torch, model: IslandModel) {
                     detectTapGestures {
                         TorchLive.toggle()
                         model.touched()
-                        view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                        com.kinetic.launcher.ui.Haptics.press(view)
                     }
                 },
         )

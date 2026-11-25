@@ -210,7 +210,7 @@ fun PinPad(resetTick: Int, onDone: (String) -> Unit) {
                             .clip(CircleShape)
                             .background(if (key.isEmpty() || key == "⌫") Color.Transparent else Color.White.copy(alpha = 0.12f))
                             .clickable(enabled = key.isNotEmpty()) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 if (key == "⌫") {
                                     pin = pin.dropLast(1)
                                 } else if (pin.length < PIN_LENGTH) {
@@ -255,7 +255,7 @@ fun PatternPad(resetTick: Int, minDots: Int = 1, onDone: (List<Int>) -> Unit) {
                         dots.clear()
                         hit(p)?.let {
                             dots += it
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                         finger = p
                     },
@@ -273,7 +273,7 @@ fun PatternPad(resetTick: Int, minDots: Int = 1, onDone: (List<Int>) -> Unit) {
                     hit(p)?.let { d ->
                         if (d !in dots) {
                             dots += d
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (com.kinetic.launcher.KineticSettings.current.haptics) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                     }
                 }

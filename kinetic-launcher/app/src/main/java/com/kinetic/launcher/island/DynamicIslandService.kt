@@ -99,10 +99,10 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         secureShot = SecureScreenshot(
             this, scope,
             onSaved = {
-                view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                com.kinetic.launcher.ui.Haptics.confirm(view)
                 if (::model.isInitialized) model.showVaultSaved()
             },
-            onFailed = { view?.performHapticFeedback(HapticFeedbackConstants.REJECT) },
+            onFailed = { com.kinetic.launcher.ui.Haptics.reject(view) },
         )
         KineticSettings.init(this)
         com.kinetic.launcher.FocusModes.init(this)
@@ -308,7 +308,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
                 ) {
                     flipped = true
                     model.cycleStack(if (dx < 0) 1 else -1)
-                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    com.kinetic.launcher.ui.Haptics.tick(view)
                     val cancel = MotionEvent.obtain(screen).apply { action = MotionEvent.ACTION_CANCEL }
                     v.dispatchTouchEvent(cancel)
                     cancel.recycle()

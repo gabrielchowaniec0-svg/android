@@ -70,4 +70,14 @@ object IslandBus {
         if (!DynamicIslandService.isRunning) return false
         return _celebrations.tryEmit(Say(icon, text))
     }
+
+    /** Says it in the island, or as a short message when the island is off. Safe from any thread. */
+    fun tell(context: android.content.Context, icon: String, text: String) {
+        if (!say(icon, text)) {
+            val app = context.applicationContext
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(app, Glyphs.text(text), android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }

@@ -71,11 +71,7 @@ private fun getJson(url: String): JSONObject? = runCatching {
 }.getOrNull()
 
 /** Says something in the island, or as a toast when the island is off. */
-private fun tell(context: Context, icon: String, text: String) {
-    if (!IslandBus.say(icon, text)) {
-        Handler(Looper.getMainLooper()).post { android.widget.Toast.makeText(context.applicationContext, text, android.widget.Toast.LENGTH_LONG).show() }
-    }
-}
+private fun tell(context: Context, icon: String, text: String) = IslandBus.tell(context, icon, text)
 
 /**
  * The island's own live things: up next, rain, brightness, Focus, stopwatch,

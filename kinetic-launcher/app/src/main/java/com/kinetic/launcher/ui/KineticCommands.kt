@@ -196,9 +196,7 @@ object KineticCommands {
                         Ready("✉", "Text ${c.first}", "\u201C${parsed.body}\u201D", "Send", Manifest.permission.SEND_SMS, confirm = true) { ctx ->
                             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED && sendSms(ctx, c.second, parsed.body)) {
                                 val said = "Texted \u201C${parsed.body}\u201D to ${c.first}"
-                                if (!com.kinetic.launcher.island.IslandBus.say("✉", said)) {
-                                    android.widget.Toast.makeText(ctx, said, android.widget.Toast.LENGTH_SHORT).show()
-                                }
+                                com.kinetic.launcher.island.IslandBus.tell(ctx, "✉", said)
                                 // "be there in 10" → offer a reminder for that time.
                                 Commands3.followUp(ctx, parsed.body, c.first)
                                 true

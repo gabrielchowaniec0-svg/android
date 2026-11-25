@@ -117,7 +117,7 @@ class HelpActivity : ComponentActivity() {
             runOnUiThread {
                 val sum = if (parsed == null) SmartSearch.calculate(text) else null
                 when {
-                    sum != null -> if (!com.kinetic.launcher.island.IslandBus.say("=", "$text = $sum")) Toast.makeText(app, "$text = $sum", Toast.LENGTH_LONG).show()
+                    sum != null -> com.kinetic.launcher.island.IslandBus.tell(app, "=", "$text = $sum")
                     ready == null -> Toast.makeText(app, "Try writing “$text” on the home screen", Toast.LENGTH_SHORT).show()
                     DynamicIslandService.isRunning -> {
                         finish()
