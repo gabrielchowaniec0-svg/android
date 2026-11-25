@@ -365,7 +365,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
         // Messages from the rest of Kinetic (S Pen answers…).
         scope.launch {
-            IslandBus.says.collect { s -> showAlert(IslandAlert.Say(s.icon, s.text)) }
+            IslandBus.says.collect { s -> showAlert(IslandAlert.Say(Glyphs.plain(s.icon), Glyphs.text(s.text))) }
         }
         scope.launch {
             IslandBus.levels.collect { l ->
@@ -379,7 +379,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                 }
             }
         }
-        scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(c.icon, c.text)) } }
+        scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(Glyphs.plain(c.icon), Glyphs.text(c.text))) } }
         LiveFeatures.start(context, scope)
         // Screenshot preview (iOS-style thumbnail with Edit / Share / Vault).
         ScreenshotPreview.onShot = { shot -> showAlert(IslandAlert.Screenshot(shot.id, shot.thumb)) }
@@ -394,7 +394,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
             IslandBus.asks.collect { a ->
                 askAction = a.onTap
                 askSecondary = a.onSecondary
-                showAlert(IslandAlert.Ask(a.icon, a.text, a.button, a.secondary))
+                showAlert(IslandAlert.Ask(Glyphs.plain(a.icon), Glyphs.text(a.text), Glyphs.text(a.button), a.secondary?.let(Glyphs::text)))
             }
         }
     }

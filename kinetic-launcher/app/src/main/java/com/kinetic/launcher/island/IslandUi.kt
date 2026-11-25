@@ -1132,8 +1132,10 @@ private fun CelebrateContent(alert: IslandAlert.Celebrate) {
             Modifier.fillMaxWidth().padding(top = s + 6.dp, start = 16.dp, end = 16.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(alert.icon, fontSize = 17.sp)
-            Spacer(Modifier.width(8.dp))
+            if (alert.icon.isNotBlank()) {
+                Text(alert.icon, color = Color.White, fontSize = 17.sp)
+                Spacer(Modifier.width(8.dp))
+            }
             Text(alert.text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -2259,7 +2261,7 @@ private fun ScreenshotContent(alert: IslandAlert.Screenshot) {
             Text("Tap the picture to open it", color = Grey, fontSize = 12.sp)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Edit" to { ScreenshotPreview.edit() }, "Share" to { ScreenshotPreview.share() }, "🔒 Vault" to { ScreenshotPreview.toVault() })
+                listOf("Edit" to { ScreenshotPreview.edit() }, "Share" to { ScreenshotPreview.share() }, "Vault" to { ScreenshotPreview.toVault() })
                     .forEachIndexed { i, (label, action) ->
                         Text(
                             label, color = if (i == 0) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,

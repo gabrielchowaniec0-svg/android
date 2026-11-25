@@ -39,7 +39,8 @@ object LiveHub {
     val lives: StateFlow<List<Live>> = _lives.asStateFlow()
 
     fun put(live: Live) = synchronized(this) {
-        _lives.value = (_lives.value.filter { it.id != live.id } + live).sortedByDescending { it.priority }
+        val plain = live.copy(icon = Glyphs.plain(live.icon), title = Glyphs.text(live.title), detail = Glyphs.text(live.detail), value = live.value?.let(Glyphs::text))
+        _lives.value = (_lives.value.filter { it.id != plain.id } + plain).sortedByDescending { it.priority }
     }
 
     fun remove(id: String) = synchronized(this) {

@@ -119,7 +119,7 @@ class SecureVideoActivity : ComponentActivity() {
                     val label = when {
                         sealing -> "Sealing into the Vault…"
                         isRecording -> "● " + clock(elapsed)
-                        else -> "🔒 Secure video · goes straight to the Vault"
+                        else -> "Secure video · goes straight to the Vault"
                     }
                     Text(
                         label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
