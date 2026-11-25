@@ -77,6 +77,8 @@ sealed interface IslandAlert {
     data class LowBattery(val level: Int) : IslandAlert
     /** Volume or brightness slider ([kind]: "volume", "ring", "call", "brightness"). */
     data class Level(val kind: String, val percent: Int) : IslandAlert
+    /** A screenshot was just taken: thumbnail with Edit / Share / Vault. */
+    data class Screenshot(val id: Long, val thumb: androidx.compose.ui.graphics.ImageBitmap?) : IslandAlert
     /** Confetti and a message (homework done, Focus finished…). */
     data class Celebrate(val icon: String, val text: String) : IslandAlert
     /** A Focus was switched on or off. */
@@ -379,6 +381,15 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         }
         scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(c.icon, c.text)) } }
         LiveFeatures.start(context, scope)
+        // Screenshot preview (iOS-style thumbnail with Edit / Share / Vault).
+        ScreenshotPreview.onShot = { shot -> showAlert(IslandAlert.Screenshot(shot.id, shot.thumb)) }
+        ScreenshotPreview.onDismiss = {
+            if (_alert.value is IslandAlert.Screenshot) {
+                alertJob?.cancel()
+                _alert.value = null
+            }
+        }
+        ScreenshotPreview.start(context, scope)
         scope.launch {
             IslandBus.asks.collect { a ->
                 askAction = a.onTap
@@ -400,6 +411,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
     }
 
     fun stop() {
+        ScreenshotPreview.stop()
         LiveFeatures.stop(context)
         runCatching { context.unregisterReceiver(receiver) }
         runCatching { audio.unregisterAudioRecordingCallback(recordingCallback) }
@@ -694,6 +706,7 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
                     is IslandAlert.Ask -> 9000
                     is IslandAlert.Level -> 1500
                     is IslandAlert.Celebrate -> 3200
+                    is IslandAlert.Screenshot -> 6500
                     else -> 2200
                 }
             )

@@ -196,6 +196,14 @@
             android:showWhenLocked="true"
             android:theme="@style/Theme.Kinetic" />
 
+        <!-- Shows Android's "Delete this photo?" after a screenshot is moved to the Vault. -->
+        <activity
+            android:name=".island.DeleteRequestActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/Theme.Kinetic.Invisible" />
+
         <!-- Level, ruler and sound meter ("level", "ruler", "decibels"). -->
         <activity
             android:name=".ui.ToolsActivity"

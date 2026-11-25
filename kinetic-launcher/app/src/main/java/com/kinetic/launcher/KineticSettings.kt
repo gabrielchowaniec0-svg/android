@@ -37,6 +37,10 @@ object KineticSettings {
         val volumeKeys: String = "media",
         /** Kinetic draws its own status bar (time, battery, signal) around the island. */
         val statusBar: Boolean = false,
+        /** After a screenshot, a preview drops from the island with Edit / Share / Vault. */
+        val islandScreenshots: Boolean = true,
+        /** Kinetic draws its own home bar at the bottom (hide Samsung's with Good Lock → NavStar). */
+        val homeBar: Boolean = false,
         /** "auto" (matches the app underneath), "light" or "dark" text. */
         val statusBarTint: String = "auto",
         /** Brightness changes show a slider in the island. */
@@ -108,6 +112,8 @@ object KineticSettings {
     const val ISLAND_VOLUME = "island_volume"
     const val VOLUME_KEYS = "volume_keys"
     const val STATUS_BAR = "status_bar"
+    const val ISLAND_SCREENSHOTS = "island_screenshots"
+    const val HOME_BAR = "home_bar"
     const val STATUS_BAR_TINT = "status_bar_tint"
     const val ISLAND_BRIGHTNESS = "island_brightness"
     const val ISLAND_UP_NEXT = "island_up_next"
@@ -180,6 +186,8 @@ object KineticSettings {
         islandVolume = p.getBoolean(ISLAND_VOLUME, true),
         volumeKeys = p.getString(VOLUME_KEYS, "media") ?: "media",
         statusBar = p.getBoolean(STATUS_BAR, false),
+        islandScreenshots = p.getBoolean(ISLAND_SCREENSHOTS, true),
+        homeBar = p.getBoolean(HOME_BAR, false),
         statusBarTint = p.getString(STATUS_BAR_TINT, "auto") ?: "auto",
         islandBrightness = p.getBoolean(ISLAND_BRIGHTNESS, true),
         islandUpNext = p.getBoolean(ISLAND_UP_NEXT, true),

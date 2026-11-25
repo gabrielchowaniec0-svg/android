@@ -683,3 +683,14 @@ Notes: 5G/LTE needs Android to share the network type; if it doesn't on your pho
 - The screen can't be screenshotted or shown in Recents while it's open.
 - **Inside the Vault:** there's also a new **Video** button next to Camera, which records with your camera app straight into the Vault.
 - The Vault needs to have been opened once before secure video works (that sets up its lock).
+
+### Screenshot preview and Kinetic home bar
+**Screenshot preview (iOS-style):** after you take a normal screenshot, a preview drops out of the island for about 6 seconds: the picture (tap it to open) plus **Edit**, **Share** and **🔒 Vault**.
+- *Vault* seals a copy into the Vault (no code needed), then Android asks once to delete it from the Gallery.
+- Needs photo access: Settings → Island → **Screenshot preview** (tap it to allow).
+- Turn off Samsung's own toolbar so only Kinetic's shows: Samsung Settings → Advanced features → Screenshots and screen recordings → **Show toolbar after capturing** → off.
+
+**Kinetic home bar:** Kinetic's own bar at the bottom of the screen.
+- Glows in the album's colours while music plays, pulses green during a call, takes on your Focus colour, and a green fill sweeps across when you plug in the charger. Otherwise it's plain white (black over light apps).
+- It never takes touches, so swiping up for home and recents works exactly as before.
+- **Setup:** Good Lock → **NavStar** → turn on and hide Samsung's gesture hint (the bottom bar). Then Kinetic Settings → Island → **Kinetic home bar**.

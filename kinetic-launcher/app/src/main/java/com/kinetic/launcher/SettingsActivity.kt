@@ -348,6 +348,18 @@ class SettingsActivity : ComponentActivity() {
                     listOf("auto" to "Auto", "light" to "White", "dark" to "Black"),
                     s.statusBarTint,
                 ) { KineticSettings.setString(this@SettingsActivity, KineticSettings.STATUS_BAR_TINT, it) }
+                SwitchRow(
+                    "Screenshot preview",
+                    if (com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) "After a screenshot, a preview drops from the island with Edit, Share and Vault"
+                    else "Tap to allow photo access (needed to see new screenshots)",
+                    s.islandScreenshots,
+                ) { on ->
+                    KineticSettings.setBoolean(this@SettingsActivity, KineticSettings.ISLAND_SCREENSHOTS, on)
+                    if (on && !com.kinetic.launcher.island.ScreenshotPreview.hasAccess(this@SettingsActivity)) {
+                        com.kinetic.launcher.ui.PermissionActivity.start(this@SettingsActivity, android.Manifest.permission.READ_MEDIA_IMAGES, "")
+                    }
+                }
+                SwitchRow("Kinetic home bar", "Kinetic's own bar at the bottom that glows with music, calls and Focus. Hide Samsung's first: Good Lock → NavStar", s.homeBar, bool(KineticSettings.HOME_BAR))
                 SwitchRow("Volume slider", "Volume buttons show a slider in the island instead of One UI's", s.islandVolume, bool(KineticSettings.ISLAND_VOLUME))
                 if (s.islandVolume) ChoiceRow(
                     "Volume buttons change",

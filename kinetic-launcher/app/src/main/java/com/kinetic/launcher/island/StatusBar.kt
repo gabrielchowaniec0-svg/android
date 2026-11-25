@@ -103,6 +103,8 @@ object StatusBarData {
         val locked: Boolean = false,
         /** True when the screen behind is light (so the text turns dark). */
         val lightBehind: Boolean = false,
+        /** Same, for the bottom edge (Kinetic's home bar). */
+        val lightBottom: Boolean = false,
         /** False while an app hides the status bar (full-screen videos, games). */
         val systemBarShown: Boolean = true,
     )
@@ -291,7 +293,8 @@ object StatusBarData {
 
     private fun wantsSampling(app: Context): Boolean {
         val s = com.kinetic.launcher.KineticSettings.current
-        return s.statusBar && s.statusBarTint == "auto" && app.getSystemService(PowerManager::class.java).isInteractive && _state.value.systemBarShown
+        return ((s.statusBar && s.statusBarTint == "auto") || s.homeBar) &&
+            app.getSystemService(PowerManager::class.java).isInteractive && _state.value.systemBarShown
     }
 
     /** Called when another app (or screen) comes to the front. */
@@ -329,8 +332,11 @@ object StatusBarData {
                                     hw.recycle()
                                     if (bmp != null) {
                                         val light = isLight(s, bmp)
+                                        val lightBottom = isLightBottom(bmp)
                                         bmp.recycle()
-                                        if (light != _state.value.lightBehind) update { it.copy(lightBehind = light) }
+                                        if (light != _state.value.lightBehind || lightBottom != _state.value.lightBottom) {
+                                            update { it.copy(lightBehind = light, lightBottom = lightBottom) }
+                                        }
                                     }
                                 }
                             } catch (_: Exception) {
@@ -347,6 +353,25 @@ object StatusBarData {
                 },
             )
         }.onFailure { sampling = false }
+    }
+
+    /** The bottom edge, either side of the home bar. */
+    private fun isLightBottom(bmp: Bitmap): Boolean {
+        val w = bmp.width
+        var sum = 0.0
+        var n = 0
+        for (y in listOf(bmp.height - 4, bmp.height - (bmp.height / 60).coerceAtLeast(8))) {
+            var x = (w * 0.04f).toInt()
+            while (x < w * 0.96f) {
+                if (x < w * 0.3f || x > w * 0.7f) {
+                    val p = bmp.getPixel(x, y.coerceIn(0, bmp.height - 1))
+                    sum += (0.2126 * ((p shr 16) and 0xFF) + 0.7152 * ((p shr 8) and 0xFF) + 0.0722 * (p and 0xFF)) / 255.0
+                    n++
+                }
+                x += (w / 40).coerceAtLeast(1)
+            }
+        }
+        return n > 0 && sum / n > 0.62
     }
 
     /** Looks at the very top edge and just under the status bar, away from the island. */
