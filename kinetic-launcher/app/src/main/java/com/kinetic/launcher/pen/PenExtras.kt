@@ -206,11 +206,11 @@ object StickyNotes {
             ink.map { s -> s.filterIndexed { i, _ -> i % 2 == 0 || i == s.lastIndex }.map { Offset((it.x - minX) / span, (it.y - minY) / span) } }
         }
         // Only as many as fit on the home page are kept, so none are ever hidden.
-        val all = listOf(Note(System.currentTimeMillis(), text, norm)) + _notes.value
-        if (all.size > MAX) {
-            com.kinetic.launcher.island.IslandBus.tell(c, "✎", "Removed your oldest note (\u201C${all.last().text}\u201D) to make room")
+        val kept = listOf(Note(System.currentTimeMillis(), text, norm)) + _notes.value
+        if (kept.size > MAX) {
+            com.kinetic.launcher.island.IslandBus.tell(c, "✎", "Removed your oldest note (\u201C${kept.last().text}\u201D) to make room")
         }
-        _notes.value = all.take(MAX)
+        _notes.value = kept.take(MAX)
         save(c)
     }
 

@@ -3,6 +3,7 @@ package com.kinetic.launcher.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,7 +70,7 @@ private fun Sticky(n: StickyNotes.Note, tilt: Float, onRemove: (Long) -> Unit) {
             .background(Color(0xFFFFE45C))
             .pointerInput(n.id) {
                 // Tap: the island asks whether to remove it.
-                androidx.compose.foundation.gestures.detectTapGestures(onTap = {
+                detectTapGestures(onTap = {
                     val asked = com.kinetic.launcher.island.IslandBus.ask("✎", n.text, "Remove", secondary = "Keep") { onRemove(n.id) }
                     if (!asked) android.widget.Toast.makeText(context, "Swipe a note sideways to remove it", android.widget.Toast.LENGTH_SHORT).show()
                 })
