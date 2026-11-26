@@ -217,6 +217,7 @@ class MainActivity : FragmentActivity() {
         resumedState.value = true
         // Tell the Dynamic Island we're in front (so music shows again straight away).
         com.kinetic.launcher.island.ForegroundHint.resumed(packageName)
+        com.kinetic.launcher.island.IslandWatch.check(this)
         if (unlockPhase.value == UnlockPhase.ARMED) {
             val now = SystemClock.elapsedRealtime()
             val unlockedSinceScreenOff = lastUserPresentAt > lastScreenOffAt

@@ -391,7 +391,14 @@ class IslandModel(private val context: Context, private val scope: CoroutineScop
         scope.launch { IslandBus.celebrations.collect { c -> showAlert(IslandAlert.Celebrate(Glyphs.plain(c.icon), Glyphs.text(c.text))) } }
         LiveFeatures.start(context, scope)
         // Screenshot preview (iOS-style thumbnail with Edit / Share / Vault).
-        ScreenshotPreview.onShot = { shot -> showAlert(IslandAlert.Screenshot(shot.id, shot.thumb)) }
+        ScreenshotPreview.onShot = { shot ->
+            if (DynamicIslandService.isShowing) {
+                showAlert(IslandAlert.Screenshot(shot.id, shot.thumb))
+            } else {
+                // Sideways the island (and its preview) is hidden: at least say it worked.
+                android.widget.Toast.makeText(context, "Screenshot saved", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
         ScreenshotPreview.onDismiss = {
             if (_alert.value is IslandAlert.Screenshot) {
                 alertJob?.cancel()

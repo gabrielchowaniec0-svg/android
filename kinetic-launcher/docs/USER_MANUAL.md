@@ -245,6 +245,9 @@ Both need the Dynamic Island switch on and the Good Lock setup from
 - **Status bar text:** Auto picks black or white for the app behind it. You can
   force White or Black.
 - Full-screen videos and games hide it.
+- **Sideways:** swipe down from the top edge and the time and battery slide in
+  across the top for a few seconds, then fade away. They never show by
+  themselves.
 
 **Kinetic home bar**
 - A bar at the bottom. It glows in the album's colours with music, pulses green
@@ -625,6 +628,9 @@ Settings ▸ Gestures:
   tell you when storage is full, instead of failing silently.
 
 **Other**
+- If Android or an update switches the Dynamic Island off, Kinetic shows a
+  notification. Tap it to switch the island back on.
+- A sideways screenshot shows "Screenshot saved" instead of the preview.
 - The island looks empty, or got stuck: pull it down and push it back up. If it
   stays wrong, switch the Dynamic Island off and on in Settings ▸ Setup.
 - Very large photos open at the size they're shown, so they don't crash
