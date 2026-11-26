@@ -799,3 +799,18 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
   parking spot could be forgotten), `remove word gato` (flashcards),
   `remove shortcut m`, `end focus`, `unsnooze`, `remove homework math`.
 - A new automated test checks that every add/turn-on command has its remove.
+
+### Sideways (full-screen videos and games)
+- The island hides when the phone is sideways, but Kinetic used to keep
+  sending things to it, so they vanished. Now, while sideways:
+  - **Volume buttons** show Samsung's own volume panel (Kinetic's slider comes
+    back when you turn the phone upright). "volume 40" and the other volume
+    commands do the same.
+  - **Messages and questions** from commands, reminders and the Vault show as
+    a short message at the bottom instead of disappearing. Questions that
+    need a button do the action straight away, or open the usual screen.
+  - **Secure screenshot** says "Saved to the Vault" with a short message (the
+    padlock is in the hidden island).
+- Fixed: if the island started while the phone was already sideways (for
+  example after an update during a game), it stayed visible in the wrong place
+  until the phone was turned.

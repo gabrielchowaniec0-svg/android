@@ -155,7 +155,7 @@ object VolumeHud {
     private fun repeatTimeout() = android.view.ViewConfiguration.getKeyRepeatTimeout().toLong().coerceIn(250L, 600L)
     private fun repeatInterval() = android.view.ViewConfiguration.getKeyRepeatDelay().toLong().coerceIn(45L, 120L)
 
-    fun enabled(): Boolean = KineticSettings.current.islandVolume && DynamicIslandService.isRunning
+    fun enabled(): Boolean = KineticSettings.current.islandVolume && DynamicIslandService.isShowing
 
     fun onKey(context: Context, e: KeyEvent): Boolean {
         val code = e.keyCode
@@ -265,7 +265,7 @@ object Stopwatch {
         laps += SystemClock.elapsedRealtime() - startedAt
         save(context)
         publish(context)
-        if (!DynamicIslandService.isRunning) tell(context, "⏱", "Lap ${laps.size} · ${LiveHub.clock(laps.last(), true)}")
+        if (!DynamicIslandService.isShowing) tell(context, "⏱", "Lap ${laps.size} · ${LiveHub.clock(laps.last(), true)}")
     }
 
     fun stop(context: Context) {

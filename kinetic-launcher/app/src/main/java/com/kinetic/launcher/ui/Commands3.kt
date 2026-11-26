@@ -722,7 +722,7 @@ object Commands3 {
         return when (action) {
             "start" -> Ready("⏱", "Stopwatch", "Counts in the island · write \"lap\" or \"stop\"", "Start", quiet = true) { ctx ->
                 sw.start(ctx)
-                if (!com.kinetic.launcher.island.DynamicIslandService.isRunning) tell(ctx, "⏱", "Stopwatch started · write \u201Clap\u201D or \u201Cstop\u201D")
+                if (!com.kinetic.launcher.island.DynamicIslandService.isShowing) tell(ctx, "⏱", "Stopwatch started · write \u201Clap\u201D or \u201Cstop\u201D")
                 true
             }
             "lap" -> Ready("⏱", "Lap", "", "Lap", quiet = true) { ctx -> sw.lap(ctx); true }

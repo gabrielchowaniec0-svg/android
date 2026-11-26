@@ -17,7 +17,7 @@ import com.kinetic.launcher.island.IslandBus
  */
 object IslandFlow {
     fun handle(context: Context, text: String, ready: KineticCommands.Ready, confirmed: Boolean = false): Boolean {
-        if (!DynamicIslandService.isRunning) return false
+        if (!DynamicIslandService.isShowing) return false
         val app = context.applicationContext
         val missing = ready.permission?.takeIf { ContextCompat.checkSelfPermission(app, it) != PackageManager.PERMISSION_GRANTED }
 
