@@ -408,13 +408,15 @@ object StatusBarData {
  * where the island's edges are right now (they change every frame while it morphs).
  */
 @Composable
-fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, islandRight: Dp, busy: Boolean = false) {
+fun KineticStatusBar(screenWidth: Dp, top: Dp, pillH: Dp, islandLeft: Dp, islandRight: Dp, busy: Boolean = false, sideways: Boolean = false) {
     val st by StatusBarData.state.collectAsState()
     val settings by com.kinetic.launcher.KineticSettings.values.collectAsState()
-    if (!settings.statusBar || !st.systemBarShown) return
-    val dark = when (settings.statusBarTint) {
-        "dark" -> true
-        "light" -> false
+    // Sideways it's only drawn while you've swiped the bars down, so it's always wanted then.
+    if (!settings.statusBar || (!sideways && !st.systemBarShown)) return
+    val dark = when {
+        sideways -> false // over a dark shade, so always white
+        settings.statusBarTint == "dark" -> true
+        settings.statusBarTint == "light" -> false
         else -> st.lightBehind
     }
     val tint by animateColorAsState(if (dark) Color(0xFF111114) else Color.White, tween(250), label = "sbTint")

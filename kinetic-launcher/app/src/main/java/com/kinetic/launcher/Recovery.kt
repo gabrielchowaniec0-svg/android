@@ -18,6 +18,7 @@ object Recovery {
         runCatching { focus(context) }
         runCatching { snooze(context) }
         runCatching { Homework.rescheduleAll(context) }
+        runCatching { com.kinetic.launcher.island.IslandWatch.check(context) }
     }
 
     private fun focus(context: Context) {

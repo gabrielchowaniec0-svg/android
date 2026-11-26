@@ -814,3 +814,15 @@ Then the share sheet opens so you can send it (e.g. save it and attach it in a c
 - Fixed: if the island started while the phone was already sideways (for
   example after an update during a game), it stayed visible in the wrong place
   until the phone was turned.
+
+### Sideways status bar, sideways screenshots, island-off notice
+- **Sideways:** swipe down from the top edge (the way you bring back Android's
+  bars in a full-screen video or game) and Kinetic's time and battery slide in
+  across the top for about 3.5 seconds, over a soft dark shade, then fade away.
+  They never show by themselves.
+- **Sideways screenshots:** the preview lives in the hidden island, so a short
+  "Screenshot saved" message shows instead.
+- **Island switched off:** if Android or an update turns the Dynamic Island
+  off, Kinetic shows one notification (or a message, if notifications are off)
+  when you next open the home screen or restart. Tap it to switch the island
+  back on.

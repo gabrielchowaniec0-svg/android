@@ -77,6 +77,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     private var touchView: View? = null
     /** Kinetic's home bar at the bottom (its own window, never touchable). */
     private var homeBarView: ComposeView? = null
+    private var sideBarView: ComposeView? = null
     private var touchParams: WindowManager.LayoutParams? = null
 
     /** Camera hole: centre x and centre y in screen pixels. */
@@ -92,6 +93,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        IslandWatch.on(this)
         com.kinetic.wallpaper.DiagLog.i("island", "connected")
         instance = this
         shake = ShakeDetector(this).also { it.start() }
@@ -161,6 +163,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         view?.visibility = if (landscape) View.GONE else View.VISIBLE
         touchView?.visibility = if (landscape) View.GONE else View.VISIBLE
         homeBarView?.visibility = if (landscape) View.GONE else View.VISIBLE
+        sideBarView?.visibility = if (landscape) View.VISIBLE else View.GONE
+        SidewaysBar.turned(landscape)
         if (!landscape) measureHole()
     }
 
@@ -378,6 +382,7 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         touchView = t
         runCatching { wm.addView(t, tp) }.onFailure { touchView = null }
         addHomeBar(wm)
+        addSidewaysBar(wm)
         // Started while the phone was sideways: hide straight away (no rotation event comes).
         applyOrientation(resources.configuration)
     }
@@ -421,6 +426,41 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         runCatching { windowManager?.updateViewLayout(v, p) }
     }
 
+    /** Time and battery across the top when you swipe down while sideways. */
+    private fun addSidewaysBar(wm: WindowManager) {
+        if (sideBarView != null) return
+        val sp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, (40 * resources.displayMetrics.density).roundToInt(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            setFitInsetsTypes(0)
+            title = "Kinetic sideways status bar"
+        }
+        val sv = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@DynamicIslandService)
+            setViewTreeSavedStateRegistryOwner(this@DynamicIslandService)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent { SidewaysStatusBar() }
+            // This window stays on screen sideways, so it's the one that hears about the bars.
+            setOnApplyWindowInsetsListener { _, insets ->
+                val shown = insets.isVisible(android.view.WindowInsets.Type.statusBars())
+                SidewaysBar.barChanged(shown, sideways)
+                if (sideways) StatusBarData.setSystemBarShown(shown)
+                insets
+            }
+            visibility = View.GONE
+        }
+        sideBarView = sv
+        runCatching { wm.addView(sv, sp) }.onFailure { sideBarView = null }
+    }
+
     private fun addHomeBar(wm: WindowManager) {
         if (homeBarView != null) return
         val hp = WindowManager.LayoutParams(
@@ -450,6 +490,9 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
     private fun removeIsland() {
         homeBarView?.let { h -> runCatching { windowManager?.removeView(h) } }
         homeBarView = null
+        sideBarView?.let { s -> runCatching { windowManager?.removeView(s) } }
+        sideBarView = null
+        SidewaysBar.dismiss()
         StatusBarData.stop()
         touchView?.let { t -> runCatching { windowManager?.removeView(t) } }
         touchView = null
