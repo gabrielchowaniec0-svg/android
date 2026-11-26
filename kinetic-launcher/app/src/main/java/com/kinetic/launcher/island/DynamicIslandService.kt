@@ -100,11 +100,15 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
             this, scope,
             onSaved = {
                 com.kinetic.launcher.ui.Haptics.confirm(view)
-                if (::model.isInitialized) model.showVaultSaved()
+                if (sideways) {
+                    android.widget.Toast.makeText(this, "Secure screenshot saved to the Vault", android.widget.Toast.LENGTH_SHORT).show()
+                } else if (::model.isInitialized) {
+                    model.showVaultSaved()
+                }
             },
             onFailed = {
                 com.kinetic.launcher.ui.Haptics.reject(view)
-                IslandBus.say("✕", "Couldn't take a secure screenshot. " + com.kinetic.launcher.vault.VaultStore.failReason(this))
+                IslandBus.tell(this, "✕", "Couldn't take a secure screenshot. " + com.kinetic.launcher.vault.VaultStore.failReason(this))
             },
         )
         KineticSettings.init(this)
@@ -143,8 +147,17 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        applyOrientation(newConfig)
+    }
+
+    /** Sideways (most full-screen videos and games) the island can't be seen. */
+    @Volatile
+    private var sideways = false
+
+    private fun applyOrientation(config: Configuration) {
         // The camera moves to the side in landscape; iOS hides the island there too.
-        val landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val landscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
+        sideways = landscape
         view?.visibility = if (landscape) View.GONE else View.VISIBLE
         touchView?.visibility = if (landscape) View.GONE else View.VISIBLE
         homeBarView?.visibility = if (landscape) View.GONE else View.VISIBLE
@@ -365,6 +378,8 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
         touchView = t
         runCatching { wm.addView(t, tp) }.onFailure { touchView = null }
         addHomeBar(wm)
+        // Started while the phone was sideways: hide straight away (no rotation event comes).
+        applyOrientation(resources.configuration)
     }
 
     /** Moves the touch window over the island ([r] in screen px), or switches it off (null). */
@@ -453,6 +468,12 @@ class DynamicIslandService : AccessibilityService(), LifecycleOwner, SavedStateR
 
         /** True while the island is on screen (so other parts of Kinetic can talk to it). */
         val isRunning: Boolean get() = instance?.view != null
+
+        /**
+         * True only when the island can actually be seen. Sideways it's hidden, so messages,
+         * questions and the volume slider go to Android's own pop-ups instead of vanishing.
+         */
+        val isShowing: Boolean get() = instance?.let { it.view != null && !it.sideways } ?: false
 
         /** Locks the phone (double-tap on the wallpaper). False if the island service is off. */
         fun lockScreen(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) ?: false

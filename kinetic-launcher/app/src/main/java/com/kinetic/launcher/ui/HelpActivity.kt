@@ -119,7 +119,7 @@ class HelpActivity : ComponentActivity() {
                 when {
                     sum != null -> com.kinetic.launcher.island.IslandBus.tell(app, "=", "$text = $sum")
                     ready == null -> Toast.makeText(app, "Try writing “$text” on the home screen", Toast.LENGTH_SHORT).show()
-                    DynamicIslandService.isRunning -> {
+                    DynamicIslandService.isShowing -> {
                         finish()
                         IslandFlow.handle(app, text, ready)
                     }

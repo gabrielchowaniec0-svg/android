@@ -33,7 +33,7 @@ object IslandBus {
         onSecondary: () -> Unit = {},
         onTap: () -> Unit,
     ): Boolean {
-        if (!DynamicIslandService.isRunning) return false
+        if (!DynamicIslandService.isShowing) return false
         return _asks.tryEmit(Ask(icon, text, button, onTap, secondary, onSecondary))
     }
 
@@ -42,7 +42,7 @@ object IslandBus {
 
     /** True if the island is on and will show it; false means show it some other way. */
     fun say(icon: String, text: String): Boolean {
-        if (!DynamicIslandService.isRunning) return false
+        if (!DynamicIslandService.isShowing) return false
         return _says.tryEmit(Say(icon, text))
     }
 
@@ -58,7 +58,7 @@ object IslandBus {
     }
 
     fun level(kind: String, percent: Int): Boolean {
-        if (!DynamicIslandService.isRunning) return false
+        if (!DynamicIslandService.isShowing) return false
         return _levels.tryEmit(Level(kind, percent.coerceIn(0, 100)))
     }
 
@@ -67,7 +67,7 @@ object IslandBus {
     val celebrations: SharedFlow<Say> = _celebrations.asSharedFlow()
 
     fun celebrate(icon: String, text: String): Boolean {
-        if (!DynamicIslandService.isRunning) return false
+        if (!DynamicIslandService.isShowing) return false
         return _celebrations.tryEmit(Say(icon, text))
     }
 

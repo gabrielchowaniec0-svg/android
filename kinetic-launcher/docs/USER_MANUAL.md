@@ -155,7 +155,9 @@ A black, iPhone-style pill around the front camera, above every app.
 - **Tap outside** to fold it. It also folds by itself after a few seconds, and
   when the screen turns off.
 - While resting, it lets touches through, so pulling the shade down from the
-  middle still works. It hides in landscape and during full-screen videos.
+  middle still works. It hides when the phone is sideways (most full-screen
+  videos and games). While it's hidden, the volume buttons show Samsung's own
+  volume panel, and Kinetic's messages appear as short pop-ups at the bottom.
 
 **What it shows**
 - **Music and video:** album art and a waveform tinted from the art. Opened:
